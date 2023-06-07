@@ -14,5 +14,12 @@
     ],
     "license": "MIT",
     "minimum-stability": "stable",
-    "require": {}
+    "require": {},
+    "extra": {
+        "laravel": {
+            "providers": [
+                "G4T\\Swagger\\SwaggerServiceProvider"
+            ]
+        }
+    }
 }

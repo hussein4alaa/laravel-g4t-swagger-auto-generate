@@ -1,0 +1,40 @@
+body {
+    padding: 0;
+    margin: 0;
+}
+
+.head {
+    text-align: center;
+    font-size: 20px;
+    background: #383838;
+    color: #fff;
+    padding: 2pc;
+    border-bottom: 6px solid #49cc90;
+}
+
+.openapi-icon {
+    position: fixed;
+    z-index: 999;
+    background: #49cc90;
+    height: 5pc;
+    width: 5pc;
+    text-align: center;
+    align-items: center;
+    justify-content: center;
+    display: flex;
+    border-radius: 100%;
+    box-shadow: 0px 0px 5px 0px #777;
+    right: 20px;
+    top: 20px;
+    transition: 0.5s;
+}
+
+.link-swagger {
+    text-decoration-line: blink;
+    color: black;
+    font-family: sans-serif;
+}
+.openapi-icon:hover {
+    transition: 0.5s;
+    background: gray;
+}

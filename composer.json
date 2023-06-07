@@ -3,7 +3,7 @@
     "description": "g4t laravel swagger",
     "autoload": {
         "psr-4": {
-            "G4t\\Swagger\\": "src/"
+            "G4T\\Swagger\\": "src/"
         }
     },
     "authors": [

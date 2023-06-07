@@ -2,7 +2,7 @@
 <html>
 
 <head>
-    <title>Swagger JSON Reader</title>
+    <title>G4T Swagger Documentation</title>
     <script src="{{ asset('g4t/swagger/js/jquery-3.6.0.min.js') }}"></script>
     <script src="{{ asset('g4t/swagger/js/js-yaml.min.js') }}"></script>
     <script src="{{ asset('g4t/swagger/js/swagger-ui-bundle.js') }}"></script>

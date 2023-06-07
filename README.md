@@ -55,6 +55,6 @@ The Swagger Laravel Autogenerate Package is developed and maintained by [Hussein
 
 - [Swagger Documentation](https://swagger.io/docs/)
 - [Laravel Documentation](https://laravel.com/docs)
-- [GitHub Repository](https://github.com/your-repo-url)
+- [GitHub](https://github.com/hussein4alaa/laravel-g4t-swagger-auto-generate)
 
 Feel free to customize and expand this README file according to your specific package features, guidelines, and requirements.

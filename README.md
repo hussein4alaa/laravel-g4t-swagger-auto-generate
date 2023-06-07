@@ -29,10 +29,8 @@ composer require g4t/swagger
 
 1. After installing the package, publish the configuration file:
 ```
-php artisan vendor:publish
+php artisan vendor:publish --provider "G4T\Swagger\SwaggerServiceProvider"
 ```
-and select `G4T\Swagger\SwaggerServiceProvider`
-
 
 2. Configure the package by modifying the `config/swagger.php` file according to your needs. This file allows you to specify various settings for the Swagger documentation generation.
 

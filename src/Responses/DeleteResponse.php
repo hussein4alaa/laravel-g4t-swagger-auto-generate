@@ -34,6 +34,9 @@ class DeleteResponse {
         if (!$route['has_schema']) {
             unset($response['requestBody']);
         }
+        if(!$route['need_token']) {
+            unset($response['security']);
+        }
         return $response;
     }
 

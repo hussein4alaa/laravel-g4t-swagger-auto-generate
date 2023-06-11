@@ -63,7 +63,6 @@ trait Helpers
                         $request = new $request();
                         return $request->rules();
                     } catch (\Throwable $th) {
-                        return [];
                     }
                 }
             }

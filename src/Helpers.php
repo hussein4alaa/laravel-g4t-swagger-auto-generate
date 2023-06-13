@@ -51,26 +51,27 @@ trait Helpers
 
     public function getRequestClassName(string $controllerMethod)
     {
-        list($class, $method) = explode('@', $controllerMethod);
-        try {
-            $reflection = new ReflectionMethod($class, $method);
-            $parameters = $reflection->getParameters() ?? [];
-            foreach ($parameters as $parameter) {
-                $typeHint = $parameter ? $parameter->getType() : null;
-                if ($typeHint && !$typeHint->isBuiltin()) {
-                    try {
-                        $request = $typeHint->getName();
-                        $request = new $request();
-                        return $request->rules();
-                    } catch (\Throwable $th) {
-                        return [];
+        if ($controllerMethod !== 'Closure') {
+            list($class, $method) = explode('@', $controllerMethod);
+            try {
+                $reflection = new ReflectionMethod($class, $method);
+                $parameters = $reflection->getParameters() ?? [];
+                foreach ($parameters as $parameter) {
+                    $typeHint = $parameter ? $parameter->getType() : null;
+                    if ($typeHint && !$typeHint->isBuiltin()) {
+                        try {
+                            $request = $typeHint->getName();
+                            $request = new $request();
+                            return $request->rules();
+                        } catch (\Throwable $th) {
+                        }
                     }
                 }
+            } catch (ReflectionException $e) {
+                return [];
             }
-        } catch (ReflectionException $e) {
-            return [];
+            return null;
         }
-        return null;
     }
 
 

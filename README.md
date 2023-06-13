@@ -23,16 +23,20 @@ Install the Swagger Laravel Autogenerate Package via Composer:
 composer require g4t/swagger
 ```
 
+Now go to `app\Http\Kernel.php` and add this line
 
-
+```
+'api' => [
+  // ... other middleware
+  \G4T\Swagger\Middleware\SetJsonResponseMiddleware::class,
+],
+```
 ## Usage
 
 1. After installing the package, publish the configuration file:
 ```
-php artisan vendor:publish
+php artisan vendor:publish --provider "G4T\Swagger\SwaggerServiceProvider"
 ```
-and select `G4T\Swagger\SwaggerServiceProvider`
-
 
 2. Configure the package by modifying the `config/swagger.php` file according to your needs. This file allows you to specify various settings for the Swagger documentation generation.
 
@@ -55,6 +59,4 @@ The Swagger Laravel Autogenerate Package is developed and maintained by [Hussein
 
 - [Swagger Documentation](https://swagger.io/docs/)
 - [Laravel Documentation](https://laravel.com/docs)
-- [GitHub Repository](https://github.com/your-repo-url)
-
-Feel free to customize and expand this README file according to your specific package features, guidelines, and requirements.
+- [GitHub](https://github.com/hussein4alaa/laravel-g4t-swagger-auto-generate)

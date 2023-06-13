@@ -87,6 +87,13 @@ trait Schemas
                         case 'in':
                             $schema['enum'] = explode(',', $parameters);
                             break;
+                        case 'exists':
+                            $parameters = explode(',', $parameters);
+                            $schema['exists'] = "must be exists in '$parameters[0]'" ;
+                            break;
+                        case 'unique':
+                            $schema['unique'] = true;
+                            break;
                         case 'digits':
                             $schema['type'] = 'integer';
                             $schema['minimum'] = pow(10, $parameters - 1);
@@ -110,6 +117,17 @@ trait Schemas
                         break;
                     case 'numeric':
                         $schema['type'] = 'number';
+                        break;
+                    case 'uuid':
+                        $schema['type'] = 'string';
+                        $schema['format'] = 'uuid';
+                        break;
+                    case 'boolean':
+                        $schema['type'] = 'boolean';
+                        break;
+                    case 'date':
+                        $schema['type'] = 'string';
+                        $schema['format'] = 'date';
                         break;
                     case 'array':
                         $schema['type'] = 'array';

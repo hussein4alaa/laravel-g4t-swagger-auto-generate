@@ -65,13 +65,11 @@ trait Schemas
 
     public function getSwaggerInputSchema($rules)
     {
-
         $schema = [];
-
         try {
             foreach ($rules as $rule) {
                 $colonIndex = strpos($rule, ':');
-                if ($colonIndex !== false) {
+                if ($colonIndex) {
                     $name = substr($rule, 0, $colonIndex);
                     $parameters = substr($rule, $colonIndex + 1);
     
@@ -86,6 +84,16 @@ trait Schemas
                             break;
                         case 'in':
                             $schema['enum'] = explode(',', $parameters);
+                            break;
+                        case 'exists':
+                            $parameters = explode(',', $parameters);
+                            $schema['exists']["table"] = substr(ucfirst($parameters[0]), 0, -1);
+                            $schema['exists']["column"] = $parameters[1];
+                            break;
+                        case 'unique':
+                            $parameters = explode(',', $parameters);
+                            $schema['unique']["table"] = substr(ucfirst($parameters[0]), 0, -1);
+                            $schema['unique']["column"] = $parameters[1];
                             break;
                         case 'digits':
                             $schema['type'] = 'integer';
@@ -110,6 +118,33 @@ trait Schemas
                         break;
                     case 'numeric':
                         $schema['type'] = 'number';
+                        break;
+                    case 'uuid':
+                        $schema['type'] = 'string';
+                        $schema['format'] = 'UUID';
+                        break;
+                    case 'boolean':
+                        $schema['type'] = 'boolean';
+                        break;
+                    case 'date':
+                        $schema['type'] = 'string';
+                        $schema['format'] = 'date';
+                        break;
+                    case 'datetime':
+                        $schema['type'] = 'string';
+                        $schema['format'] = 'date-time';
+                        break;
+                    case 'decimal':
+                        $schema['type'] = 'number';
+                        $schema['format'] = 'decimal';
+                        break;
+                    case 'float':
+                        $schema['type'] = 'number';
+                        $schema['format'] = 'float';
+                        break;
+                    case 'double':
+                        $schema['type'] = 'number';
+                        $schema['format'] = 'double';
                         break;
                     case 'array':
                         $schema['type'] = 'array';

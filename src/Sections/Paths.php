@@ -4,6 +4,7 @@ namespace G4T\Swagger\Sections;
 
 use G4T\Swagger\Responses\DeleteResponse;
 use G4T\Swagger\Responses\GetResponse;
+use G4T\Swagger\Responses\PatchResponse;
 use G4T\Swagger\Responses\PostResponse;
 use G4T\Swagger\Responses\PutResponse;
 
@@ -24,6 +25,8 @@ trait Paths {
                 $groupedData[$uri]['get'] = GetResponse::index($route);
             } else if ($route['method'] == 'PUT') {
                 $groupedData[$uri]['put']  = PutResponse::index($route);
+            } else if ($route['method'] == 'PATCH') {
+                $groupedData[$uri]['patch']  = PatchResponse::index($route);
             } else if ($route['method'] == 'DELETE') {
                 $groupedData[$uri]['delete'] = DeleteResponse::index($route);
             }

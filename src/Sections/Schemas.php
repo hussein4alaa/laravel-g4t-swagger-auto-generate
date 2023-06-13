@@ -129,6 +129,11 @@ trait Schemas
                         $schema['format'] = 'binary';
                         break;
                 }
+                
+                if(!array_key_exists('type', $schema)) {
+                    $schema['type'] = 'string';
+                }
+                
             }
         } catch (\Throwable $th) {
             $schema['type'] = 'string';

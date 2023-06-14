@@ -66,6 +66,7 @@ class Swagger
         $names = [];
         $schemas = [];
         $show_prefix_array = config('swagger.show_prefix');
+        $mapping_prefix = config('swagger.mapping_prefix');
 
         foreach ($routes as $route) {
             if ($this->isApiRoute($route)) {
@@ -74,7 +75,7 @@ class Swagger
                 $controller = $this->getControllerName($route->getAction('controller'));
                 $routeName = $this->getRouteName($route->uri(), $prefix);
                 $method = implode('|', $route->methods());
-                $uri = $route->uri();
+                $uri = '/'.$route->uri();
                 $operationId = $this->generateOperationId($uri, $method);
                 $validations = $this->getRequestClassName($action);
                 $schemaName = $this->schemaName($action);
@@ -84,6 +85,10 @@ class Swagger
                     if (in_array($prefix, $prefix_for_condition)) {
                     $hasSchema = false;
 
+                    if (isset($mapping_prefix[$prefix])) {
+                        $uri = str_replace($prefix, $mapping_prefix[$prefix], $uri);
+                        $prefix = $mapping_prefix[$prefix];
+                    }
                     
                     if (!is_null($validations) && count($validations) > 0) {
                         $hasSchema = true;
@@ -97,7 +102,7 @@ class Swagger
                         'prefix' => $prefix,
                         'method' => $method,
                         'controller' => $controller,
-                        'uri' => '/' . $uri,
+                        'uri' => $uri,
                         'name' => $routeName,
                         'schema_name' => $schemaName,
                         'action' => $action,
@@ -114,7 +119,6 @@ class Swagger
                 }
             }
         }
-
 
 
         $swaggerJson = new stdClass();

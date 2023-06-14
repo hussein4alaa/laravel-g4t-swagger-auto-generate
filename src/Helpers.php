@@ -86,19 +86,36 @@ trait Helpers
     }
 
 
+    public function checkIfQueryParamRequiredOrNot($params)
+    {
+        $required = false;
+        if (!is_array($params)) {
+            $params = explode('|', $params);
+        }
+        foreach ($params as $param) {
+            if ($param == 'required') {
+                $required = true;
+                break;
+            }
+        }
+        return $required;
+    }
 
     public function formatParams($validations, $route)
     {
         $method = $route->methods();
         $params_list = [];
-        if (in_array($method, ['PUT', 'put', 'Put'])) {
+        if (
+            in_array($method, ['PUT', 'put', 'Put'])
+            or is_array($method) && in_array('GET', $method)
+        ) {
             if (!is_null($validations)) {
                 foreach ($validations as $key => $param) {
                     $params_list[] = [
                         "name" => $key,
                         "in" => "query",
                         "description" => $key,
-                        "required" => true,
+                        "required" => $this->checkIfQueryParamRequiredOrNot($param),
                         "schema" => [
                             "type" => "string"
                         ]

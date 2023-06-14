@@ -18,6 +18,8 @@ return [
     "url" => env("SWAGGER_URL", "swagger/documentation"),
     
     "enable" => env('SWAGGER_ENABLED', true),
+    
+    "show_prefix" => [],
 
     "servers" => [
         [

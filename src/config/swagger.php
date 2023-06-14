@@ -21,8 +21,6 @@ return [
     
     "show_prefix" => [],
 
-    "show_prefix" => ["api/user", "api/manager"],
-
     "servers" => [
         [
             "url" => env("APP_URL"),

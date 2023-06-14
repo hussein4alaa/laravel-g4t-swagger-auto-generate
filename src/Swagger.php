@@ -65,6 +65,7 @@ class Swagger
         $apiRoutes = [];
         $names = [];
         $schemas = [];
+        $show_prefix_array = config('swagger.show_prefix');
 
         foreach ($routes as $route) {
             if ($this->isApiRoute($route)) {
@@ -79,6 +80,8 @@ class Swagger
                 $schemaName = $this->schemaName($action);
 
                 if ($action !== 'Closure') {
+                    $prefix_for_condition = isset($show_prefix_array) && count($show_prefix_array) > 0 ? $show_prefix_array : ["$prefix"];
+                    if (in_array($prefix, $prefix_for_condition)) {
                     $hasSchema = false;
 
                     
@@ -107,6 +110,7 @@ class Swagger
                     ];
 
                     $names[] = $controller;
+                    }
                 }
             }
         }

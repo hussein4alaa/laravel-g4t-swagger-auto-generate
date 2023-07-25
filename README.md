@@ -7,6 +7,12 @@ The Swagger Laravel Autogenerate Package is a convenient tool that automatically
 ![Swagger Laravel Autogenerate Package](https://www.scottbrady91.com/img/logos/swagger-banner.png)
 
 
+[![Total Downloads](http://poser.pugx.org/g4t/swagger/downloads)](https://packagist.org/packages/g4t/swagger)
+[![Monthly Downloads](http://poser.pugx.org/g4t/swagger/d/monthly)](https://packagist.org/packages/g4t/swagger)
+[![Daily Downloads](http://poser.pugx.org/g4t/swagger/d/daily)](https://packagist.org/packages/g4t/swagger)
+[![License](http://poser.pugx.org/g4t/swagger/license)](https://packagist.org/packages/g4t/swagger)
+[![Latest Stable Version](http://poser.pugx.org/g4t/swagger/v)](https://packagist.org/packages/g4t/swagger)
+
 ## Features
 
 - Automatically generates Swagger documentation for Laravel APIs.
@@ -14,6 +20,7 @@ The Swagger Laravel Autogenerate Package is a convenient tool that automatically
 - Supports request validations and parameter definitions.
 - Generates JSON output conforming to the Swagger/OpenAPI specification.
 - Easy integration and configuration within Laravel projects.
+
 
 ## Installation
 

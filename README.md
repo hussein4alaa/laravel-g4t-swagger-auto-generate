@@ -13,7 +13,7 @@ The Swagger Laravel Autogenerate Package is a convenient tool that automatically
 [![License](http://poser.pugx.org/g4t/swagger/license)](https://packagist.org/packages/g4t/swagger)
 [![Latest Stable Version](http://poser.pugx.org/g4t/swagger/v)](https://packagist.org/packages/g4t/swagger)
 
-Check out the demo video of my package on YouTube:
+Check out the demo video of the package on YouTube:
 
 [![Demo Video](https://img.youtube.com/vi/bI1BY9tAwOw/0.jpg)](https://www.youtube.com/watch?v=bI1BY9tAwOw)
 

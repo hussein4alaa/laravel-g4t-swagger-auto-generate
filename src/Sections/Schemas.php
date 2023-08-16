@@ -13,7 +13,7 @@ trait Schemas
      * @param string $name
      * @return array
      */
-    public function getSchemas(mixed $validations, string $name)
+    public function getSchemas($validations, string $name)
     {
         $schemas = [
             "required" => [],

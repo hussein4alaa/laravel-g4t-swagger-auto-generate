@@ -12,14 +12,17 @@ trait Helpers
     /**
      * Get pure name of controller
      *
-     * @param string $action
+     * @param string|null $action
      * @return array<string>|string
      */
-    public function getControllerName(string $action)
+    public function getControllerName(string $action = null)
     {
+        if (blank($action)) {
+            return 'unknown';
+        }
         $controller = class_basename($action);
         $controller = Str::contains($controller, '@') ? Str::beforeLast($controller, '@') : $controller;
-        $controller = Str::replace(['Controller', 'controller'], '', $controller);
+        $controller = str_replace(['Controller', 'controller'], '', $controller);
 
         return $controller;
     }
@@ -62,7 +65,7 @@ trait Helpers
      */
     public function generateOperationId(string $uri, string $method)
     {
-        return Str::replace(['/', '[', ']', '{', '}'], ['_', '_', '_', '_', '_'], $uri . '_' . $method);
+        return str_replace(['/', '[', ']', '{', '}'], ['_', '_', '_', '_', '_'], $uri . '_' . $method);
     }
 
     /**
@@ -147,7 +150,7 @@ trait Helpers
      * @param array|string $params
      * @return bool
      */
-    public function checkIfQueryParamRequiredOrNot(mixed $params)
+    public function checkIfQueryParamRequiredOrNot($params)
     {
         if (!is_array($params)) {
             $params = explode('|', $params);
@@ -163,7 +166,7 @@ trait Helpers
      * @param Route $route
      * @return array<array>
      */
-    public function formatParams(mixed $validations, Route $route)
+    public function formatParams($validations, Route $route)
     {
         $method = $route->methods();
         $params_list = [];

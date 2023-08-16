@@ -6,41 +6,17 @@ use Illuminate\Support\Str;
 
 trait Schemas
 {
-
-    public function getSchemas($validations, $name)
+    /**
+     * Get all schemas of controllers
+     *
+     * @param mixed $validations
+     * @param string $name
+     * @return array
+     */
+    public function getSchemas(mixed $validations, string $name)
     {
-        $rules = [];
-        $requireds = [];
         $schemas = [
             "required" => [],
-            "type" => "object",
-            "propertes" => $validations,
-            "xml" => [
-                "name" => Str::lower($name)
-            ]
-        ];
-
-        if (is_null($validations)) {
-            return $schemas;
-        }
-
-        foreach ($validations as $key => $validation) {
-            if (is_array($validation)) {
-                $rules[$key][] = $validation;
-            } else {
-                $rules[$key][] = explode('|', $validation);
-            }
-
-            // get required
-            foreach ($rules[$key] as $rule) {
-                if (in_array("required", $rule)) {
-                    $requireds[] = $key;
-                }
-            }
-        }
-
-        $schemas = [
-            "required" => $requireds,
             "type" => "object",
             "propertes" => [],
             "xml" => [
@@ -48,19 +24,41 @@ trait Schemas
             ]
         ];
 
-        foreach ($rules as $key => $rule_list) {
-            foreach ($rule_list as $rule) {
-                $schemas['properties'][$key] = $this->getSwaggerInputSchema($rule);
+        if (filled($validations)) {
+            $rules = $this->extractRules($validations);
+
+            foreach ($rules as $key => $rule_list) {
+                foreach ($rule_list as $rule) {
+                    $schemas['properties'][$key] = $this->getSwaggerInputSchema($rule);
+                    if ($this->isRequiredRule($rule)) {
+                        $schemas['required'][] = $key;
+                    }
+                }
             }
         }
 
         return $schemas;
     }
 
-
-    public function handleCustomRule($rule, $schema)
+    /**
+     * Extract rules
+     *
+     * @param array $validations
+     * @return array
+     */
+    protected function extractRules(array $validations)
     {
-        return ['type' => 'string'];
+        $rules = [];
+
+        foreach ($validations as $key => $validation) {
+            if (is_array($validation)) {
+                $rules[$key] = $validation;
+            } else {
+                $rules[$key] = explode('|', $validation);
+            }
+        }
+
+        return $rules;
     }
 
     public function getSwaggerInputSchema($rules)
@@ -74,7 +72,7 @@ trait Schemas
                 if ($colonIndex !== false) {
                     $name = substr($rule, 0, $colonIndex);
                     $parameters = substr($rule, $colonIndex + 1);
-    
+
                     switch ($name) {
                         case 'string':
                             $schema['type'] = 'string';
@@ -89,7 +87,7 @@ trait Schemas
                             break;
                         case 'exists':
                             $parameters = explode(',', $parameters);
-                            $schema['exists'] = "must be exists in '$parameters[0]'" ;
+                            $schema['exists'] = "must be exists in '$parameters[0]'";
                             break;
                         case 'unique':
                             $schema['unique'] = true;
@@ -101,7 +99,7 @@ trait Schemas
                             break;
                     }
                 }
-    
+
                 switch ($rule) {
                     case 'required':
                         $schema['required'] = true;
@@ -147,11 +145,10 @@ trait Schemas
                         $schema['format'] = 'binary';
                         break;
                 }
-                
-                if(!array_key_exists('type', $schema)) {
+
+                if (!array_key_exists('type', $schema)) {
                     $schema['type'] = 'string';
                 }
-                
             }
         } catch (\Throwable $th) {
             $schema['type'] = 'string';
@@ -160,7 +157,7 @@ trait Schemas
         return $schema;
     }
 
-    
+
     public function handleMinMax($parameters, &$schema)
     {
         if (strpos($parameters, 'max') !== false) {
@@ -169,6 +166,7 @@ trait Schemas
                 $schema['maxLength'] = $max;
             }
         }
+
         if (strpos($parameters, 'min') !== false) {
             $min = substr($parameters, strpos($parameters, 'min:') + 4);
             if (is_numeric($min)) {
@@ -177,10 +175,14 @@ trait Schemas
         }
     }
 
-
-    public function isRequiredRule($rule)
+    /**
+     * Is rule equal required
+     *
+     * @param string $rule
+     * @return bool
+     */
+    public function isRequiredRule(string $rule)
     {
-        return in_array("required", $rule);
+        return $rule == "required";
     }
-
 }

@@ -2,20 +2,22 @@
 
 namespace G4T\Swagger\Sections;
 
-trait Tags {
+trait Tags
+{
 
-    public function getTags($names)
+    /**
+     * Get tags of the sections
+     *
+     * @param array $names
+     * @return array<array>
+     */
+    public function getTags(array $names)
     {
-        $tags = [];
-        $list_of_names = array_unique($names);
-        foreach ($list_of_names as $name) {
-            $tags[] = [
+        return array_map(function ($name) {
+            return [
                 'name' => $name,
                 'description' => "Everything about your $name"
             ];
-        }
-        return $tags;
+        }, array_values(array_unique($names)));
     }
-
-
 }

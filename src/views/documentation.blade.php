@@ -61,17 +61,6 @@
             overlay.style.display = 'none';
         }
 
-        // Function to close the modal
-        // function closeModal() {
-        //     const modal = document.getElementById('myModal');
-        //     const overlay = document.getElementById('modalOverlay');
-
-        //     modal.style.display = 'none';
-        //     overlay.style.display = 'none';
-        // }
-
-
-        // Function to save the authorization token to a cookie
         function saveAuthToken() {
             const authToken = document.getElementById('authTokenInput').value;
             const authTokenKey = document.getElementById('authTokenKey').value;

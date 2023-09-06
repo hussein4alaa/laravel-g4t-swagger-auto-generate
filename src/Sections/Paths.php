@@ -21,9 +21,9 @@ trait Paths {
             }
             if ($route['method'] == 'POST') {
                 $groupedData[$uri]['post'] = PostResponse::index($route);
-            } else if ($route['method'] == 'GET|HEAD') {
+            } else if ($route['method'] == 'GET|HEAD' OR $route['method'] == 'GET') {
                 $groupedData[$uri]['get'] = GetResponse::index($route);
-            } else if ($route['method'] == 'PUT') {
+            } else if ($route['method'] == 'PUT|PATCH' OR $route['method'] == 'PUT') {
                 $groupedData[$uri]['put']  = PutResponse::index($route);
             } else if ($route['method'] == 'PATCH') {
                 $groupedData[$uri]['patch']  = PatchResponse::index($route);

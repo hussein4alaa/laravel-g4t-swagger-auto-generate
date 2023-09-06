@@ -35,8 +35,8 @@ Now go to `app\Http\Kernel.php` and add this line
 
 ```
 'api' => [
-  // ... other middleware
   \G4T\Swagger\Middleware\SetJsonResponseMiddleware::class,
+  // ... other middleware
 ],
 ```
 ## Usage

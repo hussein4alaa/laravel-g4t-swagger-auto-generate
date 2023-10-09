@@ -101,6 +101,13 @@ trait Helpers
         return $required;
     }
 
+
+    public function getInputName($string)
+    {
+        return preg_replace('/\.(\w+)/', '[$1]', $string);
+    }
+
+
     public function formatParams($validations, $route)
     {
         $method = $route->methods();
@@ -112,7 +119,7 @@ trait Helpers
             if (!is_null($validations)) {
                 foreach ($validations as $key => $param) {
                     $params_list[] = [
-                        "name" => $key,
+                        "name" => $this->getInputName($key),
                         "in" => "query",
                         "description" => $key,
                         "required" => $this->checkIfQueryParamRequiredOrNot($param),

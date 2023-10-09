@@ -7,7 +7,19 @@ use Illuminate\Support\Str;
 trait Schemas
 {
 
-    public function getSchemas($validations, $name)
+    public function getSchemas($validations, $name, $method = 'POST')
+    {
+        if ($method == 'POST') {
+            return $this->generateGenericSchema($validations, $name);
+        } else if ($method == 'PUT|PATCH' OR $method == 'PUT') {
+            return $this->generateSchemaNested($validations);
+        } else {
+            return $this->generateGenericSchema($validations, $name);
+        }
+    }
+
+
+    protected function generateGenericSchema($validations, $name)
     {
         $rules = [];
         $requireds = [];
@@ -58,13 +70,74 @@ trait Schemas
         }
 
         return $schemas;
+
     }
-
-
-    public function getInputName($string)
+    
+    protected function generateSchemaNested($validations)
     {
-        return preg_replace('/\.(\w+)/', '[$1]', $string);
+        $schema = [
+            "type" => "object",
+            "properties" => [],
+        ];
+        $requireds = [];
+    
+        foreach ($validations as $key => $validation) {
+            if (strpos($key, '.') !== false) {
+                // If the validation key contains a dot, create a nested property
+                $this->addNestedProperty($schema["properties"], $key, $validation);
+            } else {
+                // Otherwise, create a non-nested property
+                $rule_key = $this->getInputName($key);
+                
+                $type = 'object';
+                // Determine whether it's the last nested key (no more dots)
+                if (substr_count($key, '.') === 0) {
+                    $type = 'string';
+                }
+                
+                $schema["properties"][$rule_key] = [
+                    'type' => $type,
+                    'properties' => $this->getSwaggerInputSchema(explode('|', $validation))
+                ];
+    
+                // Get required
+                if ($this->isRequiredRule(explode('|', $validation))) {
+                    $requireds[] = $rule_key;
+                }
+            }
+        }
+    
+        if (!empty($requireds)) {
+            $schema["required"] = $requireds;
+        }
+    
+        return $schema;
     }
+    
+    protected function addNestedProperty(&$properties, $key, $validation)
+    {
+        $keys = explode('.', $key);
+        $current = &$properties;
+    
+        foreach ($keys as $index => $nestedKey) {
+            if (!isset($current[$nestedKey])) {
+                $type = 'object';
+                if ($index === count($keys) - 1) {
+                    $type = 'string';
+                }
+                
+                $current[$nestedKey] = [
+                    'type' => $type,
+                    'properties' => []
+                ];
+            }
+            $current = &$current[$nestedKey]['properties'];
+        }
+    
+        $current = $this->getSwaggerInputSchema(explode('|', $validation));
+    }
+    
+
 
 
     public function handleCustomRule($rule, $schema)
@@ -72,7 +145,7 @@ trait Schemas
         return ['type' => 'string'];
     }
 
-    public function getSwaggerInputSchema($rules)
+    public function getSwaggerInputSchema($rules, $type = 'string')
     {
 
         $schema = [];
@@ -164,6 +237,9 @@ trait Schemas
             }
         } catch (\Throwable $th) {
             $schema['type'] = 'string';
+        }
+        if($type == 'object') {
+            $schema['type'] = 'object';
         }
 
         return $schema;

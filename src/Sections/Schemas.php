@@ -25,19 +25,22 @@ trait Schemas
         }
 
         foreach ($validations as $key => $validation) {
+            $rule_key = $this->getInputName($key);
             if (is_array($validation)) {
-                $rules[$key][] = $validation;
+                $rules[$rule_key][] = $validation;
             } else {
-                $rules[$key][] = explode('|', $validation);
+                $rules[$rule_key][] = explode('|', $validation);
             }
 
             // get required
-            foreach ($rules[$key] as $rule) {
+            foreach ($rules[$rule_key] as $rule) {
                 if (in_array("required", $rule)) {
-                    $requireds[] = $key;
+                    $requireds[] = $this->getInputName($key);
                 }
             }
+            
         }
+
 
         $schemas = [
             "required" => $requireds,
@@ -50,11 +53,17 @@ trait Schemas
 
         foreach ($rules as $key => $rule_list) {
             foreach ($rule_list as $rule) {
-                $schemas['properties'][$key] = $this->getSwaggerInputSchema($rule);
+                $schemas['properties'][$this->getInputName($key)] = $this->getSwaggerInputSchema($rule);
             }
         }
 
         return $schemas;
+    }
+
+
+    public function getInputName($string)
+    {
+        return preg_replace('/\.(\w+)/', '[$1]', $string);
     }
 
 

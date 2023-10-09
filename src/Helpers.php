@@ -134,13 +134,15 @@ trait Helpers
             }
         }
 
+        $required = $this->pathRequired($route);
+
         $params = $route->parameterNames();
         foreach ($params as $param) {
             $params_list[] = [
                 "name" => $param,
                 "in" => "path",
                 "description" => $param,
-                "required" => true,
+                "required" => $required,
                 "schema" => [
                     "type" => "string"
                 ]
@@ -149,6 +151,15 @@ trait Helpers
         return $params_list;
     }
 
+
+    public function pathRequired($route)
+    {
+        $required = true;
+        if (strpos($route->uri, '?') !== false) {
+            $required = false;
+        }
+        return $required;
+    }
 
 
     public function checkIfTokenIsRequired($route)

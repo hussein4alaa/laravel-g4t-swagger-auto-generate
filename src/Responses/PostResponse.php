@@ -24,32 +24,15 @@ class PostResponse {
                     ],
                     "application/json" => [
                         "schema" => [
-                            '$ref' => "#/components/schemas/{$route['schema_name']}"
+                            '$ref' => "#/components/schemas/Json{$route['schema_name']}"
                         ]
                     ],
-                    "application/xml" => [
-                        "schema" => [
-                            '$ref' => "#/components/schemas/{$route['schema_name']}"
-                        ]
-                    ],
-                    "application/x-www-form-urlencoded" => [
-                        "schema" => [
-                            '$ref' => "#/components/schemas/{$route['schema_name']}"
-                        ]
-                    ]
                 ],
                 "required" => true
             ],
             "responses" => [
                 "200" => [
                     "description" => "Successful operation",
-                    // "content" => [
-                    //     "application/json" => [
-                    //         "schema" => [
-                    //             '$ref' => "#/components/schemas/{$route['schema_name']}"
-                    //         ]
-                    //     ]
-                    // ]
                 ],
                 "422" => [
                     "description" => "Validation Issues"

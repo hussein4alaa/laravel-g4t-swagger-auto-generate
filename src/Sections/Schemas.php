@@ -9,9 +9,7 @@ trait Schemas
 
     public function getSchemas($validations, $name, $method = 'POST')
     {
-        if ($method == 'POST') {
-            return $this->generateGenericSchema($validations, $name);
-        } else if ($method == 'PUT|PATCH' OR $method == 'PUT') {
+        if ($method == 'PUT|PATCH' OR $method == 'PUT') {
             return $this->generateSchemaNested($validations);
         } else {
             return $this->generateGenericSchema($validations, $name);

@@ -113,8 +113,11 @@ trait Helpers
         $method = $route->methods();
         $params_list = [];
         if (
-            in_array($method, ['PUT', 'put', 'Put'])
-            or is_array($method) && in_array('GET', $method)
+            in_array($method, ['PUT', 'put', 'Put', 'PUT|PATCH']) or
+            is_array($method) && in_array('GET', $method) or
+            in_array('GET|HEAD', $method) or
+            in_array('DELETE', $method) or
+            in_array('DELETE|HEAD', $method)
         ) {
             if (!is_null($validations)) {
                 foreach ($validations as $key => $param) {

@@ -92,14 +92,18 @@ trait Schemas
                 if (substr_count($key, '.') === 0) {
                     $type = 'string';
                 }
+
+                if(!is_array($validation)) {
+                    $validation = explode('|', $validation);
+                }
                 
                 $schema["properties"][$rule_key] = [
                     'type' => $type,
-                    'properties' => $this->getSwaggerInputSchema(explode('|', $validation))
+                    'properties' => $this->getSwaggerInputSchema($validation)
                 ];
     
                 // Get required
-                if ($this->isRequiredRule(explode('|', $validation))) {
+                if ($this->isRequiredRule($validation)) {
                     $requireds[] = $rule_key;
                 }
             }
@@ -131,8 +135,13 @@ trait Schemas
             }
             $current = &$current[$nestedKey]['properties'];
         }
-    
-        $current = $this->getSwaggerInputSchema(explode('|', $validation));
+        
+        if(!is_array($validation)) {
+            $validation = explode('|', $validation);
+        }
+
+            $current = $this->getSwaggerInputSchema($validation);
+
     }
     
 

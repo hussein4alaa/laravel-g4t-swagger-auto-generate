@@ -122,13 +122,6 @@ trait Helpers
             if (!is_null($validations)) {
                 foreach ($validations as $key => $param) {
                     $params_list[] = [
-                        "name" => $this->getInputName($key),
-                        "in" => "query",
-                        "description" => $key,
-                        "required" => $this->checkIfQueryParamRequiredOrNot($param),
-                        "schema" => [
-                            "type" => "string"
-                        ]
                     ];
                 }
             }
@@ -160,7 +153,6 @@ trait Helpers
         }
         return $required;
     }
-
 
     public function checkIfTokenIsRequired($route)
     {

@@ -122,6 +122,13 @@ trait Helpers
             if (!is_null($validations)) {
                 foreach ($validations as $key => $param) {
                     $params_list[] = [
+                        "name" => $key,
+                        "in" => "query",
+                        "description" => $key,
+                        "required" => $this->checkIfQueryParamRequiredOrNot($param),
+                        "schema" => [
+                            "type" => "string"
+                        ]
                     ];
                 }
             }

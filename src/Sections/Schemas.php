@@ -6,25 +6,21 @@ use Illuminate\Support\Str;
 
 trait Schemas
 {
-
     public function getSchemas($validations, $name, $method = 'POST')
     {
-        if ($method == 'PUT|PATCH' OR $method == 'PUT') {
+        if ($method === 'PUT|PATCH' || $method === 'PUT') {
             return $this->generateSchemaNested($validations);
         } else {
             return $this->generateGenericSchema($validations, $name);
         }
     }
 
-
     protected function generateGenericSchema($validations, $name)
     {
-        $rules = [];
-        $requireds = [];
         $schemas = [
             "required" => [],
             "type" => "object",
-            "propertes" => $validations,
+            "properties" => [],
             "xml" => [
                 "name" => Str::lower($name)
             ]
@@ -34,32 +30,26 @@ trait Schemas
             return $schemas;
         }
 
+        $rules = [];
+        $requireds = [];
+
         foreach ($validations as $key => $validation) {
             $rule_key = $this->getInputName($key);
+
             if (is_array($validation)) {
                 $rules[$rule_key][] = $validation;
             } else {
                 $rules[$rule_key][] = explode('|', $validation);
             }
 
-            // get required
             foreach ($rules[$rule_key] as $rule) {
                 if (in_array("required", $rule)) {
-                    $requireds[] = $this->getInputName($key);
+                    $requireds[] = $rule_key;
                 }
             }
-            
         }
 
-
-        $schemas = [
-            "required" => $requireds,
-            "type" => "object",
-            "propertes" => [],
-            "xml" => [
-                "name" => Str::lower($name)
-            ]
-        ];
+        $schemas["required"] = $requireds;
 
         foreach ($rules as $key => $rule_list) {
             foreach ($rule_list as $rule) {
@@ -68,84 +58,78 @@ trait Schemas
         }
 
         return $schemas;
-
     }
-    
+
     protected function generateSchemaNested($validations)
     {
         $schema = [
             "type" => "object",
             "properties" => [],
         ];
+
         $requireds = [];
-    
+
         foreach ($validations as $key => $validation) {
             if (strpos($key, '.') !== false) {
-                // If the validation key contains a dot, create a nested property
                 $this->addNestedProperty($schema["properties"], $key, $validation);
             } else {
-                // Otherwise, create a non-nested property
                 $rule_key = $this->getInputName($key);
-                
                 $type = 'object';
-                // Determine whether it's the last nested key (no more dots)
+
                 if (substr_count($key, '.') === 0) {
                     $type = 'string';
                 }
 
-                if(!is_array($validation)) {
+                if (!is_array($validation)) {
                     $validation = explode('|', $validation);
                 }
-                
+
                 $schema["properties"][$rule_key] = [
                     'type' => $type,
                     'properties' => $this->getSwaggerInputSchema($validation)
                 ];
-    
-                // Get required
+
                 if ($this->isRequiredRule($validation)) {
                     $requireds[] = $rule_key;
                 }
             }
         }
-    
+
         if (!empty($requireds)) {
             $schema["required"] = $requireds;
         }
-    
+
         return $schema;
     }
-    
+
     protected function addNestedProperty(&$properties, $key, $validation)
     {
         $keys = explode('.', $key);
         $current = &$properties;
-    
+
         foreach ($keys as $index => $nestedKey) {
             if (!isset($current[$nestedKey])) {
                 $type = 'object';
+
                 if ($index === count($keys) - 1) {
                     $type = 'string';
                 }
-                
+
                 $current[$nestedKey] = [
                     'type' => $type,
                     'properties' => []
                 ];
             }
+
             $current = &$current[$nestedKey]['properties'];
         }
-        
-        if(!is_array($validation)) {
+
+        if (!is_array($validation)) {
             $validation = explode('|', $validation);
         }
 
-            $current = $this->getSwaggerInputSchema($validation);
-
+        $current = $this->getSwaggerInputSchema($validation);
     }
-    
-
-
 
     public function handleCustomRule($rule, $schema)
     {
@@ -154,16 +138,16 @@ trait Schemas
 
     public function getSwaggerInputSchema($rules, $type = 'string')
     {
-
         $schema = [];
 
-        try {
+        if (is_array($rules)) {
             foreach ($rules as $rule) {
                 $colonIndex = strpos($rule, ':');
+
                 if ($colonIndex !== false) {
                     $name = substr($rule, 0, $colonIndex);
                     $parameters = substr($rule, $colonIndex + 1);
-    
+
                     switch ($name) {
                         case 'string':
                             $schema['type'] = 'string';
@@ -178,7 +162,7 @@ trait Schemas
                             break;
                         case 'exists':
                             $parameters = explode(',', $parameters);
-                            $schema['exists'] = "must be exists in '$parameters[0]'" ;
+                            $schema['exists'] = "must exist in '$parameters[0]'";
                             break;
                         case 'unique':
                             $schema['unique'] = true;
@@ -190,7 +174,7 @@ trait Schemas
                             break;
                     }
                 }
-    
+
                 switch ($rule) {
                     case 'required':
                         $schema['required'] = true;
@@ -236,43 +220,43 @@ trait Schemas
                         $schema['format'] = 'binary';
                         break;
                 }
-                
-                if(!array_key_exists('type', $schema)) {
+
+                if (!array_key_exists('type', $schema)) {
                     $schema['type'] = 'string';
                 }
-                
             }
-        } catch (\Throwable $th) {
+        } else {
             $schema['type'] = 'string';
         }
-        if($type == 'object') {
+
+        if ($type === 'object') {
             $schema['type'] = 'object';
         }
 
         return $schema;
     }
 
-    
     public function handleMinMax($parameters, &$schema)
     {
         if (strpos($parameters, 'max') !== false) {
             $max = substr($parameters, strpos($parameters, 'max:') + 4);
+
             if (is_numeric($max)) {
                 $schema['maxLength'] = $max;
             }
         }
+
         if (strpos($parameters, 'min') !== false) {
             $min = substr($parameters, strpos($parameters, 'min:') + 4);
+
             if (is_numeric($min)) {
                 $schema['minLength'] = $min;
             }
         }
     }
 
-
     public function isRequiredRule($rule)
     {
         return in_array("required", $rule);
     }
-
 }

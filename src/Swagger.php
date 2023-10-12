@@ -121,10 +121,11 @@ class Swagger
 
                     $names[] = $controller;
                     }
+
                 }
             }
-        }
 
+        }
 
         $swaggerJson = new stdClass();
         $swaggerJson->tags = $this->getTags($names);
@@ -134,5 +135,6 @@ class Swagger
 
         return $swaggerJson;
     }
-    
+
+
 }

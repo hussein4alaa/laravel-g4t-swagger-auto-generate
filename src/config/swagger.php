@@ -10,6 +10,8 @@ return [
 
     "version" => env("SWAGGER_VERSION", "1.0.0"),
 
+    "enable_response_schema" => true,
+
     "auth_middlewares" => [
         "auth",
         "auth:api"

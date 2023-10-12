@@ -16,7 +16,7 @@ class SetJsonResponseMiddleware
         $request->headers->set('Accept', 'application/json');
         $response = $next($request);
         $response->header('Content-Type', 'application/json');
-        if($request->header('is_swagger')) {
+        if($request->header('is-swagger')) {
             $enable_response_schema = config('swagger.enable_response_schema');
             if($enable_response_schema) {
                 $this->createSchemaExampleDir($response, $request);

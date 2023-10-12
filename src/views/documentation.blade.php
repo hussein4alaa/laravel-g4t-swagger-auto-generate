@@ -107,6 +107,7 @@
                         if (authToken && authKey) {
                             request.headers[authKey] = `Bearer ${authToken}`;
                         }
+                        request.headers['is-swagger'] = 'true';
                         return request;
                     }
 

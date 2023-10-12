@@ -12,6 +12,8 @@ return [
 
     "enable_response_schema" => true,
 
+    "stop_saving_response" => true,
+
     "auth_middlewares" => [
         "auth",
         "auth:api"

@@ -18,7 +18,8 @@ class SetJsonResponseMiddleware
         $response->header('Content-Type', 'application/json');
         if($request->header('is-swagger')) {
             $enable_response_schema = config('swagger.enable_response_schema');
-            if($enable_response_schema) {
+            $stop_saving_response = config('swagger.stop_saving_response');
+            if($enable_response_schema && !$stop_saving_response) {
                 $this->createSchemaExampleDir($response, $request);
             }
         }

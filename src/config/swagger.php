@@ -21,6 +21,9 @@ return [
 
     "url" => env("SWAGGER_URL", "swagger/documentation"),
     
+    "issues_url" => env("SWAGGER_ISSUE_URL", "swagger/issues"),
+
+
     "enable" => env('SWAGGER_ENABLED', true),
     
     "show_prefix" => [],
@@ -42,6 +45,11 @@ return [
             "name" => "authorization",
             "in" => "header"
         ],
-    ]
+        "apiKey1" => [
+            "type" => "apiKey",
+            "name" => "key1",
+            "in" => "query"
+        ],
+    ],
 
 ];

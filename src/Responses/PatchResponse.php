@@ -10,12 +10,12 @@ class PatchResponse {
             "tags" => [
                 $route['controller']
             ],
-            "summary" => "Update an existing {$route['name']}",
-            "description" => "Update an existing {$route['name']} by id",
+            "summary" => "{$route['name']}",
+            "description" => "{$route['name']} by id",
             "operationId" => $route['operation_id'],
             "parameters" => $route['params'],
             "requestBody" => [
-                "description" => "Update an existent {$route['name']}",
+                "description" => "{$route['name']}",
                 "content" => [
                     "application/json" => [
                         "schema" => [
@@ -38,7 +38,16 @@ class PatchResponse {
             ],
             "security" => config('swagger.security_schemes')
         ];
-        if(!$route['need_token']) {
+        if($route['need_token']) {
+            $security_array = [];
+            $security_schemes = config('swagger.security_schemes');
+            foreach ($security_schemes as $key => $security_scheme) {
+                $security_array[] = [
+                    $key => []
+                ];
+            }
+            $response['security'] = $security_array;
+        } else {
             unset($response['security']);
         }
         if (!$route['has_schema']) {

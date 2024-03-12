@@ -9,7 +9,7 @@ use Illuminate\Support\Str;
 trait Helpers
 {
 
-    public function getControllerName($action)
+    public function getControllerName(string $action) : string
     {
         $segments = explode('\\', $action);
         $controller = end($segments);
@@ -22,13 +22,13 @@ trait Helpers
         return $controller;
     }
 
-    public function isApiRoute($route)
+    public function isApiRoute(object $route) : bool
     {
         return in_array('api', $route->middleware());
     }
 
 
-    public function getRouteName($route, $prefix)
+    public function getRouteName(string $route, string $prefix) : string
     {
         $escapedPrefix = preg_quote($prefix, '/');
         $regex = "/{$escapedPrefix}\/([^\/]+)/";
@@ -39,7 +39,7 @@ trait Helpers
     }
 
 
-    public function generateOperationId($uri, $method)
+    public function generateOperationId(string $uri, string $method) : string
     {
         $operationId = str_replace(['/', '[', ']'], '_', $uri) . '_' . $method;
         $operationId = str_replace(['{', '}'], '_', $operationId);
@@ -49,7 +49,7 @@ trait Helpers
 
 
 
-    public function getRequestClassName(string $controllerMethod)
+    public function getRequestClassName(string $controllerMethod) : array
     {
         if ($controllerMethod !== 'Closure') {
             list($class, $method) = explode('@', $controllerMethod);
@@ -70,12 +70,12 @@ trait Helpers
             } catch (ReflectionException $e) {
                 return [];
             }
-            return null;
+            return [];
         }
     }
 
 
-    public function schemaName($action)
+    public function schemaName(string $action) : string
     {
         $className = class_basename($action);
         $className = str_replace('Controller', '', $className);
@@ -102,9 +102,13 @@ trait Helpers
     }
 
 
-    public function getInputName($string)
+    public function getInputName(string $string, int $number = 0) : string
     {
-        return preg_replace('/\.(\w+)/', '[$1]', $string);
+        $name = preg_replace('/\.(\w+)/', '[$1]', $string);
+        if (str_contains($name, '.*')) { 
+            return str_replace(".*", "[merge_input]", $name);
+        }
+        return $name;
     }
 
 

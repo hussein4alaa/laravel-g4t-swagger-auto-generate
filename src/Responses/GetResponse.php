@@ -24,7 +24,8 @@ class GetResponse {
             ],
             "security" => [
                 [
-                    "authorization" => []
+                    "authorization" => [],
+                    "apiKey1" => []
                 ],
             ]
         ];
@@ -34,7 +35,16 @@ class GetResponse {
         if (!$route['has_schema']) {
             unset($response['requestBody']);
         }
-        if(!$route['need_token']) {
+        if($route['need_token']) {
+            $security_array = [];
+            $security_schemes = config('swagger.security_schemes');
+            foreach ($security_schemes as $key => $security_scheme) {
+                $security_array[] = [
+                    $key => []
+                ];
+            }
+            $response['security'] = $security_array;
+        } else {
             unset($response['security']);
         }
 

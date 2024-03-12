@@ -10,21 +10,16 @@ class PostResponse {
             "tags" => [
                 "{$route['controller']}"
             ],
-            "summary" => "Add {$route['name']}",
-            "description" => "Add {$route['name']}",
+            "summary" => "{$route['name']}",
+            "description" => "{$route['name']}",
             "operationId" => $route['operation_id'],
             "parameters" => $route['params'],
             "requestBody" => [
-                "description" => "add {$route['name']}",
+                "description" => "{$route['name']}",
                 "content" => [
                     "multipart/form-data" => [
                         "schema" => [
                             '$ref' => "#/components/schemas/{$route['schema_name']}"
-                        ]
-                    ],
-                    "application/json" => [
-                        "schema" => [
-                            '$ref' => "#/components/schemas/Json{$route['schema_name']}"
                         ]
                     ],
                 ],
@@ -44,7 +39,16 @@ class PostResponse {
                 ],
             ]
         ];
-        if(!$route['need_token']) {
+        if($route['need_token']) {
+            $security_array = [];
+            $security_schemes = config('swagger.security_schemes');
+            foreach ($security_schemes as $key => $security_scheme) {
+                $security_array[] = [
+                    $key => []
+                ];
+            }
+            $response['security'] = $security_array;
+        } else {
             unset($response['security']);
         }
         if (!$route['has_schema']) {

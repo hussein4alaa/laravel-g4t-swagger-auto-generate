@@ -92,12 +92,7 @@ class Swagger
                     
                     if (!is_null($validations) && count($validations) > 0) {
                         $hasSchema = true;
-                        if($method == 'POST') {
-                            $schemas[$schemaName] = $this->getSchemas($validations, $schemaName, $method);
-                            $schemas["Json$schemaName"] = $this->getSchemas($validations, "Json$schemaName", "PUT");
-                        } else {
-                            $schemas[$schemaName] = $this->getSchemas($validations, $schemaName, $method);
-                        }
+                        $schemas[$schemaName] = $this->getSchemas($validations, $schemaName, $method);
                     }
          
 
@@ -126,7 +121,6 @@ class Swagger
             }
 
         }
-
         $swaggerJson = new stdClass();
         $swaggerJson->tags = $this->getTags($names);
         $swaggerJson->paths = $this->formatPaths($apiRoutes);

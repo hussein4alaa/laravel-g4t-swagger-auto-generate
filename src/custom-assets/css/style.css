@@ -85,7 +85,10 @@ a.link-swagger {
     cursor: pointer;
     background: #fff;
     border: 2px solid;
-    border-radius: 6px;
+}
+
+select, button, text, input, span.opblock-summary-method, div {
+    border-radius: 0 !important;
 }
 
 a.link-swagger:hover {
@@ -108,3 +111,4 @@ div#overlay {
     background-color: rgba(0, 0, 0, 0.7);
     z-index: 998;
 }
+

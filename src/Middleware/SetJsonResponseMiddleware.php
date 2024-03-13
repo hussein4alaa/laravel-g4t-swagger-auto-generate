@@ -16,13 +16,13 @@ class SetJsonResponseMiddleware
         $request->headers->set('Accept', 'application/json');
         $response = $next($request);
         $response->header('Content-Type', 'application/json');
-        // if($request->header('is-swagger')) {
-        //     $enable_response_schema = config('swagger.enable_response_schema');
-        //     $stop_saving_response = config('swagger.stop_saving_response');
-        //     if($enable_response_schema && !$stop_saving_response) {
-        //         $this->createSchemaExampleDir($response, $request);
-        //     }
-        // }
+        if($request->header('is-swagger')) {
+            $enable_response_schema = config('swagger.enable_response_schema');
+            $stop_saving_response = config('swagger.stop_saving_response');
+            if($enable_response_schema && !$stop_saving_response) {
+                $this->createSchemaExampleDir($response, $request);
+            }
+        }
         return $response;
     }
 

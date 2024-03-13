@@ -70,56 +70,56 @@ class Swagger
 
         foreach ($routes as $route) {
             if ($this->isApiRoute($route)) {
-                $prefix = $route->getPrefix();
-                $action = ltrim($route->getActionName(), '\\');
-                $controller = $this->getControllerName($route->getAction('controller'));
-                $routeName = $this->getRouteName($route->uri(), $prefix);
-                $method = implode('|', $route->methods());
-                $uri = '/'.$route->uri();
-                $operationId = $this->generateOperationId($uri, $method);
-                $validations = $this->getRequestClassName($action);
-                $schemaName = $this->schemaName($action);
+                if (is_string($route->getAction('controller'))) {
+                    $prefix = $route->getPrefix();
+                    $action = ltrim($route->getActionName(), '\\');
+                    $controller = $this->getControllerName($route->getAction('controller'));
+                    $routeName = $this->getRouteName($route->uri(), $prefix);
+                    $method = implode('|', $route->methods());
+                    $uri = '/' . $route->uri();
+                    $operationId = $this->generateOperationId($uri, $method);
+                    $validations = $this->getRequestClassName($action);
+                    $schemaName = $this->schemaName($action);
 
-                if ($action !== 'Closure') {
-                    $prefix_for_condition = isset($show_prefix_array) && count($show_prefix_array) > 0 ? $show_prefix_array : ["$prefix"];
-                    if (in_array($prefix, $prefix_for_condition)) {
-                    $hasSchema = false;
+                    if ($action !== 'Closure') {
+                        $prefix_for_condition = isset($show_prefix_array) && count($show_prefix_array) > 0 ? $show_prefix_array : ["$prefix"];
+                        if (in_array($prefix, $prefix_for_condition)) {
+                            $hasSchema = false;
 
-                    if (isset($mapping_prefix[$prefix])) {
-                        $uri = str_replace($prefix, $mapping_prefix[$prefix], $uri);
-                        $prefix = $mapping_prefix[$prefix];
+                            if (isset($mapping_prefix[$prefix])) {
+                                $uri = str_replace($prefix, $mapping_prefix[$prefix], $uri);
+                                $prefix = $mapping_prefix[$prefix];
+                            }
+
+                            if (!is_null($validations) && count($validations) > 0) {
+                                $hasSchema = true;
+                                $schemas[$schemaName] = $this->getSchemas($validations, $schemaName, $method);
+                            }
+
+
+                            $needToken = $this->checkIfTokenIsRequired($route);
+
+                            $apiRoutes[] = [
+                                'prefix' => $prefix,
+                                'method' => $method,
+                                'controller' => $controller,
+                                'uri' => $uri,
+                                'name' => $routeName,
+                                'schema_name' => $schemaName,
+                                'action' => $action,
+                                'middleware' => $route->middleware(),
+                                'validations' => $validations,
+                                'params' => $this->formatParams($validations, $route),
+                                'operation_id' => $operationId,
+                                'has_schema' => $hasSchema,
+                                'need_token' => $needToken
+                            ];
+
+                            $names[] = $controller;
+                        }
                     }
-                    
-                    if (!is_null($validations) && count($validations) > 0) {
-                        $hasSchema = true;
-                        $schemas[$schemaName] = $this->getSchemas($validations, $schemaName, $method);
-                    }
-         
-
-                    $needToken = $this->checkIfTokenIsRequired($route);
-
-                    $apiRoutes[] = [
-                        'prefix' => $prefix,
-                        'method' => $method,
-                        'controller' => $controller,
-                        'uri' => $uri,
-                        'name' => $routeName,
-                        'schema_name' => $schemaName,
-                        'action' => $action,
-                        'middleware' => $route->middleware(),
-                        'validations' => $validations,
-                        'params' => $this->formatParams($validations, $route),
-                        'operation_id' => $operationId,
-                        'has_schema' => $hasSchema,
-                        'need_token' => $needToken
-                    ];
-
-                    $names[] = $controller;
-                    }
-
                 }
             }
-
         }
         $swaggerJson = new stdClass();
         $swaggerJson->tags = $this->getTags($names);
@@ -129,6 +129,4 @@ class Swagger
 
         return $swaggerJson;
     }
-
-
 }

@@ -31,13 +31,26 @@ Install the Swagger Laravel Autogenerate Package via Composer:
 composer require g4t/swagger
 ```
 
-Now go to `app\Http\Kernel.php` and add this line
+## Add the middleware ( Laravel 10 or below )
+go to `app\Http\Kernel.php` and add this line
 
 ```
 'api' => [
   \G4T\Swagger\Middleware\SetJsonResponseMiddleware::class,
   // ... other middleware
 ],
+```
+
+## Add the middleware ( Laravel 11 )
+go to `bootstrap\app.php` and add this line
+```
+// ...
+    ->withMiddleware(function (Middleware $middleware) {
+        $middleware->group('api', [
+            \G4T\Swagger\Middleware\SetJsonResponseMiddleware::class,
+        ]);
+    })
+// ...
 ```
 ## Usage
 
@@ -49,6 +62,8 @@ php artisan vendor:publish --provider "G4T\Swagger\SwaggerServiceProvider"
 2. Configure the package by modifying the `config/swagger.php` file according to your needs. This file allows you to specify various settings for the Swagger documentation generation.
 
 3. Access the generated Swagger documentation by visiting the `/swagger/documentation` route in your Laravel application. For example, `http://your-app-url/swagger/documentation`.
+
+4. The issues history page is now included in config/swagger.php, and the default route is `http://your-app-url/swagger/issues`.
 
 ## Contributing
 

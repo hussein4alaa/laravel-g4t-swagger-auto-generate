@@ -1,44 +1,148 @@
 <?php
 
 return [
+    /*
+    |--------------------------------------------------------------------------
+    | API Title
+    |--------------------------------------------------------------------------
+    |
+    | The title of your API documentation.
+    |
+    */
+    "title" => env("SWAGGER_TITLE", "Laravel G4T Documentation"),
 
-    "title" => env("SWAGGER_TITLE","Laravel G4T Documentation"),
-    
+    /*
+    |--------------------------------------------------------------------------
+    | API Description
+    |--------------------------------------------------------------------------
+    |
+    | The description of your API.
+    |
+    */
     "description" => env("SWAGGER_DESCRIPTION", "Laravel autogenerate swagger"),
 
-    "email" => env("SWAGGER_EMAIL","hussein4alaa@gmail.com"),
+    /*
+    |--------------------------------------------------------------------------
+    | API Email
+    |--------------------------------------------------------------------------
+    |
+    | The email associated with your API documentation.
+    |
+    */
+    "email" => env("SWAGGER_EMAIL", "hussein4alaa@gmail.com"),
 
+    /*
+    |--------------------------------------------------------------------------
+    | API Version
+    |--------------------------------------------------------------------------
+    |
+    | The version of your API.
+    |
+    */
     "version" => env("SWAGGER_VERSION", "1.0.0"),
 
+    /*
+    |--------------------------------------------------------------------------
+    | Enable Response Schema
+    |--------------------------------------------------------------------------
+    |
+    | Whether to enable response schema or not.
+    |
+    */
     "enable_response_schema" => true,
 
+    /*
+    |--------------------------------------------------------------------------
+    | Stop Saving Response
+    |--------------------------------------------------------------------------
+    |
+    | Whether to stop saving responses or not.
+    |
+    */
     "stop_saving_response" => true,
 
+    /*
+    |--------------------------------------------------------------------------
+    | Authentication Middlewares
+    |--------------------------------------------------------------------------
+    |
+    | List of middleware names used for authentication.
+    |
+    */
     "auth_middlewares" => [
         "auth",
         "auth:api"
     ],
 
+    /*
+    |--------------------------------------------------------------------------
+    | API URL
+    |--------------------------------------------------------------------------
+    |
+    | The URL path for accessing your API documentation.
+    |
+    */
     "url" => env("SWAGGER_URL", "swagger/documentation"),
-    
+
+    /*
+    |--------------------------------------------------------------------------
+    | Issues URL
+    |--------------------------------------------------------------------------
+    |
+    | The URL path for accessing issues related to your API documentation.
+    |
+    */
     "issues_url" => env("SWAGGER_ISSUE_URL", "swagger/issues"),
 
-
+    /*
+    |--------------------------------------------------------------------------
+    | Enable Swagger
+    |--------------------------------------------------------------------------
+    |
+    | Whether Swagger is enabled or not.
+    |
+    */
     "enable" => env('SWAGGER_ENABLED', true),
-    
+
+    /*
+    |--------------------------------------------------------------------------
+    | Show Prefix
+    |--------------------------------------------------------------------------
+    |
+    | List of prefixes to show in Swagger.
+    |
+    */
     "show_prefix" => [],
 
+
+    /*
+    |--------------------------------------------------------------------------
+    | Servers
+    |--------------------------------------------------------------------------
+    |
+    | List of servers associated with your API.
+    |
+    */
     "servers" => [
         [
             "url" => env("APP_URL"),
-            "description" => "localhost"    
+            "description" => "localhost"
         ],
         [
             "url" => "http://localhost",
-            "description" => "production"    
+            "description" => "production"
         ],
     ],
 
+
+    /*
+    |--------------------------------------------------------------------------
+    | Security Schemes
+    |--------------------------------------------------------------------------
+    |
+    | Security schemes used in your API.
+    |
+    */
     "security_schemes" => [
         "authorization" => [
             "type" => "apiKey",
@@ -49,6 +153,64 @@ return [
             "type" => "apiKey",
             "name" => "key1",
             "in" => "query"
+        ],
+    ],
+
+
+    /*
+    |--------------------------------------------------------------------------
+    | Status
+    |--------------------------------------------------------------------------
+    |
+    | HTTP response statuses for various methods.
+    |
+    */
+    "status" => [
+        "GET" => [
+            "200" => [
+                "description" => "Successful Operation",
+            ],
+            "404" => [
+                "description" => "Not Found"
+            ]
+        ],
+        "POST" => [
+            "200" => [
+                "description" => "Successful Operation",
+            ],
+            "422" => [
+                "description" => "Validation Issues"
+            ]
+        ],
+        "PUT" => [
+            "200" => [
+                "description" => "Successful Operation",
+            ],
+            "404" => [
+                "description" => "Not Found"
+            ],
+            "405" => [
+                "description" => "Validation exception"
+            ]
+        ],
+        "PATCH" => [
+            "200" => [
+                "description" => "Successful Operation",
+            ],
+            "404" => [
+                "description" => "Not Found"
+            ],
+            "405" => [
+                "description" => "Validation exception"
+            ]
+        ],
+        "DELETE" => [
+            "200" => [
+                "description" => "successful Operation",
+            ],
+            "404" => [
+                "description" => "page Not Found"
+            ]
         ],
     ],
 

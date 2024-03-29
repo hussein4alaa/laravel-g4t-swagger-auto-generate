@@ -4,6 +4,7 @@ namespace G4T\Swagger;
 
 use g4t\Pattern\GenerateRepo;
 use Illuminate\Support\ServiceProvider;
+use Illuminate\Routing\Route;
 
 
 class SwaggerServiceProvider extends ServiceProvider
@@ -15,6 +16,12 @@ class SwaggerServiceProvider extends ServiceProvider
      */
     public function register()
     {
+        Route::macro('description', function ($description) {
+            $this->action['description'] = $description;
+            return $this;
+        });
+
+
         $this->publishes([
             __DIR__ . '/config/swagger.php' => base_path('config/swagger.php'),
         ]);

@@ -80,8 +80,8 @@ class Swagger
                     $operationId = $this->generateOperationId($uri, $method);
                     $validations = $this->getRequestClassName($action);
                     $schemaName = $this->schemaName($action);
-
                     if ($action !== 'Closure') {
+                        $description = isset($route->action['description']) ? $route->action['description'] : '';
                         $prefix_for_condition = isset($show_prefix_array) && count($show_prefix_array) > 0 ? $show_prefix_array : ["$prefix"];
                         if (in_array($prefix, $prefix_for_condition)) {
                             $hasSchema = false;
@@ -96,7 +96,6 @@ class Swagger
                                 $schemas[$schemaName] = $this->getSchemas($validations, $schemaName, $method);
                             }
 
-
                             $needToken = $this->checkIfTokenIsRequired($route);
 
                             $apiRoutes[] = [
@@ -104,6 +103,7 @@ class Swagger
                                 'method' => $method,
                                 'controller' => $controller,
                                 'uri' => $uri,
+                                'description' => $description,
                                 'name' => $routeName,
                                 'schema_name' => $schemaName,
                                 'action' => $action,
@@ -114,7 +114,6 @@ class Swagger
                                 'has_schema' => $hasSchema,
                                 'need_token' => $needToken
                             ];
-
                             $names[] = $controller;
                         }
                     }

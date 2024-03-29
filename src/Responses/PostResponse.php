@@ -2,7 +2,25 @@
 
 namespace G4T\Swagger\Responses;
 
-class PostResponse {
+class PostResponse
+{
+
+    public static function getResponses()
+    {
+        $status = config('swagger.status');
+        if (isset($status['GET'])) {
+            return $status['GET'];
+        } else {
+            return [
+                "200" => [
+                    "description" => "Successful operation",
+                ],
+                "422" => [
+                    "description" => "Validation Issues"
+                ]
+            ];
+        }
+    }
 
     public static function index($route)
     {
@@ -11,7 +29,7 @@ class PostResponse {
                 "{$route['controller']}"
             ],
             "summary" => "{$route['name']}",
-            "description" => "{$route['name']}",
+            "description" => "{$route['description']}",
             "operationId" => $route['operation_id'],
             "parameters" => $route['params'],
             "requestBody" => [
@@ -25,21 +43,14 @@ class PostResponse {
                 ],
                 "required" => true
             ],
-            "responses" => [
-                "200" => [
-                    "description" => "Successful operation",
-                ],
-                "422" => [
-                    "description" => "Validation Issues"
-                ]
-            ],
+            "responses" => self::getResponses(),
             "security" => [
                 [
                     "authorization" => []
                 ],
             ]
         ];
-        if($route['need_token']) {
+        if ($route['need_token']) {
             $security_array = [];
             $security_schemes = config('swagger.security_schemes');
             foreach ($security_schemes as $key => $security_scheme) {
@@ -56,7 +67,7 @@ class PostResponse {
         }
 
         $enable_response_schema = config('swagger.enable_response_schema');
-        if($enable_response_schema) {
+        if ($enable_response_schema) {
             $dir = str_replace(['/', '{', '}', '?'], '-', $route['uri']);
             $jsonDirPath = storage_path("swagger/{$route['controller']}/{$dir}");
             if (is_dir($jsonDirPath)) {
@@ -67,13 +78,12 @@ class PostResponse {
                     if (preg_match('/(\d+)\.json$/', $lastPart, $matches)) {
                         $statusCode = $matches[1];
                         $jsonContent = json_decode(file_get_contents($file), true);
-                        $response["responses"]["$statusCode"]["description"] = $jsonContent['status_text'];    
-                        $response["responses"]["$statusCode"]["content"]["application/json"]["example"] = $jsonContent['response'];    
+                        $response["responses"]["$statusCode"]["description"] = $jsonContent['status_text'];
+                        $response["responses"]["$statusCode"]["content"]["application/json"]["example"] = $jsonContent['response'];
                     }
                 }
-            } 
+            }
         }
         return $response;
     }
-
 }

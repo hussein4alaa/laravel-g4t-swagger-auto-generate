@@ -65,6 +65,14 @@ php artisan vendor:publish --provider "G4T\Swagger\SwaggerServiceProvider"
 
 4. The issues history page is now included in config/swagger.php, and the default route is `http://your-app-url/swagger/issues`.
 
+5. To add a description in a Swagger route using the ->description() method, you can follow the example you provided and include it in your Laravel application's routes.
+   Here's how you can describe a route using the ->description() method in a Swagger route:
+   ```
+    Route::get('user', [UserController::class, 'index'])->description('Get list of users with pagination.');
+   ```
+
+ 
+
 ## Contributing
 
 Contributions to the Swagger Laravel Autogenerate Package are always welcome! If you find any issues or have suggestions for improvements, please feel free to open an issue or submit a pull request.

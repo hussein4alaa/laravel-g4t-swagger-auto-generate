@@ -52,8 +52,16 @@ trait Helpers
     public function getRequestClassName(string $controllerMethod) : array
     {
         if ($controllerMethod !== 'Closure') {
-            list($class, $method) = explode('@', $controllerMethod);
+            $exploded = explode('@', $controllerMethod);
+
+            if(!isset($exploded[0], $exploded[1])) {
+                return [];
+            }
             try {
+                $class = $exploded[0];
+                if(isset($exploded[1])) {
+                    $method = $exploded[1];
+                }
                 $reflection = new ReflectionMethod($class, $method);
                 $parameters = $reflection->getParameters() ?? [];
                 foreach ($parameters as $parameter) {
@@ -73,6 +81,7 @@ trait Helpers
             return [];
         }
     }
+
 
 
     public function schemaName(string $action) : string

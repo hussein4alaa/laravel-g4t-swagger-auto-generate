@@ -68,53 +68,56 @@ class Swagger
         $show_prefix_array = config('swagger.show_prefix');
         $mapping_prefix = config('swagger.mapping_prefix');
 
+        $version = $this->getVersion();
         foreach ($routes as $route) {
             if ($this->isApiRoute($route)) {
                 if (is_string($route->getAction('controller'))) {
-                    $prefix = $route->getPrefix();
-                    $action = ltrim($route->getActionName(), '\\');
-                    $controller = $this->getControllerName($route->getAction('controller'));
-                    $routeName = $this->getRouteName($route->uri(), $prefix);
-                    $method = implode('|', $route->methods());
                     $uri = '/' . $route->uri();
-                    $operationId = $this->generateOperationId($uri, $method);
-                    $validations = $this->getRequestClassName($action);
-                    $schemaName = $this->schemaName($action);
-                    if ($action !== 'Closure') {
-                        $description = isset($route->action['description']) ? $route->action['description'] : '';
-                        $prefix_for_condition = isset($show_prefix_array) && count($show_prefix_array) > 0 ? $show_prefix_array : ["$prefix"];
-                        if (in_array($prefix, $prefix_for_condition)) {
-                            $hasSchema = false;
+                    if (str_contains($uri, $version)) {
+                        $prefix = $route->getPrefix();
+                        $action = ltrim($route->getActionName(), '\\');
+                        $controller = $this->getControllerName($route->getAction('controller'));
+                        $routeName = $this->getRouteName($route->uri(), $prefix);
+                        $method = implode('|', $route->methods());
+                        $operationId = $this->generateOperationId($uri, $method);
+                        $validations = $this->getRequestClassName($action);
+                        $schemaName = $this->schemaName($action);
+                        if ($action !== 'Closure') {
+                            $description = isset($route->action['description']) ? $route->action['description'] : '';
+                            $prefix_for_condition = isset($show_prefix_array) && count($show_prefix_array) > 0 ? $show_prefix_array : ["$prefix"];
+                            if (in_array($prefix, $prefix_for_condition)) {
+                                $hasSchema = false;
 
-                            if (isset($mapping_prefix[$prefix])) {
-                                $uri = str_replace($prefix, $mapping_prefix[$prefix], $uri);
-                                $prefix = $mapping_prefix[$prefix];
+                                if (isset($mapping_prefix[$prefix])) {
+                                    $uri = str_replace($prefix, $mapping_prefix[$prefix], $uri);
+                                    $prefix = $mapping_prefix[$prefix];
+                                }
+
+                                if (!is_null($validations) && count($validations) > 0) {
+                                    $hasSchema = true;
+                                    $schemas[$schemaName] = $this->getSchemas($validations, $schemaName, $method);
+                                }
+
+                                $needToken = $this->checkIfTokenIsRequired($route);
+
+                                $apiRoutes[] = [
+                                    'prefix' => $prefix,
+                                    'method' => $method,
+                                    'controller' => $controller,
+                                    'uri' => $uri,
+                                    'description' => $description,
+                                    'name' => $routeName,
+                                    'schema_name' => $schemaName,
+                                    'action' => $action,
+                                    'middleware' => $route->middleware(),
+                                    'validations' => $validations,
+                                    'params' => $this->formatParams($validations, $route),
+                                    'operation_id' => $operationId,
+                                    'has_schema' => $hasSchema,
+                                    'need_token' => $needToken
+                                ];
+                                $names[] = $controller;
                             }
-
-                            if (!is_null($validations) && count($validations) > 0) {
-                                $hasSchema = true;
-                                $schemas[$schemaName] = $this->getSchemas($validations, $schemaName, $method);
-                            }
-
-                            $needToken = $this->checkIfTokenIsRequired($route);
-
-                            $apiRoutes[] = [
-                                'prefix' => $prefix,
-                                'method' => $method,
-                                'controller' => $controller,
-                                'uri' => $uri,
-                                'description' => $description,
-                                'name' => $routeName,
-                                'schema_name' => $schemaName,
-                                'action' => $action,
-                                'middleware' => $route->middleware(),
-                                'validations' => $validations,
-                                'params' => $this->formatParams($validations, $route),
-                                'operation_id' => $operationId,
-                                'has_schema' => $hasSchema,
-                                'need_token' => $needToken
-                            ];
-                            $names[] = $controller;
                         }
                     }
                 }
@@ -127,5 +130,15 @@ class Swagger
         $swaggerJson->securitySchemes = config('swagger.security_schemes');
 
         return $swaggerJson;
+    }
+
+    private function getVersion()
+    {
+        $versions = config('swagger.versions');
+        $version = 'api/';
+        if (request()->filled('version') && in_array(request()->version, $versions)) {
+            $version = 'api/' . request()->version;
+        }
+        return $version;
     }
 }

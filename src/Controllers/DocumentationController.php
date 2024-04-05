@@ -23,7 +23,17 @@ class DocumentationController extends Controller
     public function showViewDocumentation()
     {
         $response = $this->getSwaggerData();
-        return view('swagger::documentation', ['response' => $response]);
+        $versions = $this->getVersions();
+        return view('swagger::documentation', [
+            'response' => $response,
+            'versions' => $versions
+        ]);
+    }
+
+    private function getVersions()
+    {
+        $versions = config('swagger.versions');
+        return $versions;
     }
 
     public function showJsonDocumentation()

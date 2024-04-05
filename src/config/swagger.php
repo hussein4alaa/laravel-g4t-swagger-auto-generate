@@ -9,7 +9,7 @@ return [
     | The title of your API documentation.
     |
     */
-    "title" => env("SWAGGER_TITLE", "Laravel G4T Documentation"),
+    "title" => env("SWAGGER_TITLE", "Api Documentation"),
 
     /*
     |--------------------------------------------------------------------------
@@ -39,7 +39,7 @@ return [
     | The version of your API.
     |
     */
-    "version" => env("SWAGGER_VERSION", "1.0.0"),
+    "version" => env("SWAGGER_VERSION", "3.0.5"),
 
     /*
     |--------------------------------------------------------------------------
@@ -114,6 +114,19 @@ return [
     */
     "show_prefix" => [],
 
+
+    /*
+    |--------------------------------------------------------------------------
+    | API Versions
+    |--------------------------------------------------------------------------
+    |
+    | List of versions to show in Swagger.
+    |
+    */
+    "versions" => [
+        // "v1",
+        // "v2"
+    ],
 
     /*
     |--------------------------------------------------------------------------

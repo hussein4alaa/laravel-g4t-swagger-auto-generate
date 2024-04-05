@@ -14,7 +14,7 @@
 
     <div class="swagger-nav">
         <div class="swagger-logo-cont">
-            <img src="https://leizl.gallerycdn.vsassets.io/extensions/leizl/swagger-generate-ts/0.0.10/1673338730649/Microsoft.VisualStudio.Services.Icons.Default"
+            <img src="{{ asset('g4t/swagger/images/swagger.png') }}"
                 class="swagger-logo">
             <span class="swagger-logo-title">G4T Swagger</span>
         </div>

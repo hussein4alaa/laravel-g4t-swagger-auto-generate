@@ -4,14 +4,13 @@ namespace G4T\Swagger\Sections;
 
 trait Tags {
 
-    public function getTags($names)
+    public function getTags($controllers)
     {
         $tags = [];
-        $list_of_names = array_unique($names);
-        foreach ($list_of_names as $name) {
+        foreach ($controllers as $controller) {
             $tags[] = [
-                'name' => $name,
-                'description' => "Everything about your $name"
+                'name' => $controller['name'],
+                'description' => $controller['description']
             ];
         }
         return $tags;

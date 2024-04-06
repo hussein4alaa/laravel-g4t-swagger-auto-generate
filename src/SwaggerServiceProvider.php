@@ -21,6 +21,11 @@ class SwaggerServiceProvider extends ServiceProvider
             return $this;
         });
 
+        Route::macro('summary', function ($summary) {
+            $this->action['summary'] = $summary;
+            return $this;
+        });
+
 
         $this->publishes([
             __DIR__ . '/config/swagger.php' => base_path('config/swagger.php'),

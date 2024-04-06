@@ -25,6 +25,10 @@ class PatchResponse
         }
     }
 
+    private static function getSummary($route)
+    {
+        return !is_null($route['summary']) ? $route['summary'] : $route['name'];
+    }
 
     public static function index($route)
     {
@@ -32,13 +36,18 @@ class PatchResponse
             "tags" => [
                 $route['controller']
             ],
-            "summary" => "{$route['name']}",
+            "summary" => self::getSummary($route),
             "description" => "{$route['description']}",
             "operationId" => $route['operation_id'],
             "parameters" => $route['params'],
             "requestBody" => [
-                "description" => "{$route['name']}",
+                "description" => "{$route['description']}",
                 "content" => [
+                    "application/x-www-form-urlencoded" => [
+                        "schema" => [
+                            '$ref' => "#/components/schemas/{$route['schema_name']}"
+                        ]
+                    ],
                     "application/json" => [
                         "schema" => [
                             '$ref' => "#/components/schemas/{$route['schema_name']}"

@@ -75,7 +75,7 @@ php artisan vendor:publish --provider "G4T\Swagger\SwaggerServiceProvider"
    ```php
     Route::get('user', [UserController::class, 'index'])->summary('get users.');
    ```
-   7. To add a Section Description you can use this attribute `#[SwaggerSection('everything about your users')]` in your controller.
+7. To add a Section Description you can use this attribute `#[SwaggerSection('everything about your users')]` in your controller.
       Here's how you can use this attribute in your controller:
    ```php
     <?php

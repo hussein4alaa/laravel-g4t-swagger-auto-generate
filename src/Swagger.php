@@ -2,11 +2,13 @@
 
 namespace G4T\Swagger;
 
+use G4T\Swagger\Attributes\SwaggerSection;
 use G4T\Swagger\Sections\Paths;
 use G4T\Swagger\Sections\Schemas;
 use G4T\Swagger\Sections\Tags;
 use Illuminate\Support\Facades\Route;
 use Illuminate\Support\Str;
+use ReflectionClass;
 use stdClass;
 
 class Swagger
@@ -67,6 +69,7 @@ class Swagger
         $schemas = [];
         $show_prefix_array = config('swagger.show_prefix');
         $mapping_prefix = config('swagger.mapping_prefix');
+        $controllers = [];
 
         $version = $this->getVersion();
         foreach ($routes as $route) {
@@ -84,6 +87,7 @@ class Swagger
                         $schemaName = $this->schemaName($action);
                         if ($action !== 'Closure') {
                             $description = isset($route->action['description']) ? $route->action['description'] : '';
+                            $summary = isset($route->action['summary']) ? $route->action['summary'] : null;
                             $prefix_for_condition = isset($show_prefix_array) && count($show_prefix_array) > 0 ? $show_prefix_array : ["$prefix"];
                             if (in_array($prefix, $prefix_for_condition)) {
                                 $hasSchema = false;
@@ -99,13 +103,20 @@ class Swagger
                                 }
 
                                 $needToken = $this->checkIfTokenIsRequired($route);
-
+                                $controller_path = $this->getControllerPath($route->getAction('controller'));
+                                $controller_description = $this->getSectionAttributeValue($controller_path);
+                                $controllers[$controller] = [
+                                    "name" => $controller,
+                                    "class" => $controller_path,
+                                    "description" => $controller_description
+                                ];
                                 $apiRoutes[] = [
                                     'prefix' => $prefix,
                                     'method' => $method,
                                     'controller' => $controller,
                                     'uri' => $uri,
                                     'description' => $description,
+                                    'summary' => $summary,
                                     'name' => $routeName,
                                     'schema_name' => $schemaName,
                                     'action' => $action,
@@ -116,7 +127,6 @@ class Swagger
                                     'has_schema' => $hasSchema,
                                     'need_token' => $needToken
                                 ];
-                                $names[] = $controller;
                             }
                         }
                     }
@@ -124,12 +134,40 @@ class Swagger
             }
         }
         $swaggerJson = new stdClass();
-        $swaggerJson->tags = $this->getTags($names);
+        $swaggerJson->tags = $this->getTags($controllers);
         $swaggerJson->paths = $this->formatPaths($apiRoutes);
         $swaggerJson->schemas = $schemas;
         $swaggerJson->securitySchemes = config('swagger.security_schemes');
 
         return $swaggerJson;
+    }
+
+
+    public function getControllerPath($controller)
+    {
+        try {
+            $controller = explode("@", $controller);
+            return $controller[0];
+        } catch (\Throwable $th) {
+            return null;
+        }
+    }
+
+    private function getSectionAttributeValue(string $controllerClassName)
+    {
+        try {
+            $class = new $controllerClassName;
+            $reflector = new ReflectionClass($class);
+            $attributes = $reflector->getAttributes(SwaggerSection::class);
+            if (!empty($attributes)) {
+                $attribute = $attributes[0];
+                return $attribute->newInstance()->getValue();
+            } else {
+                return null;
+            }
+        } catch (\Throwable $th) {
+            return null;
+        }
     }
 
     private function getVersion()

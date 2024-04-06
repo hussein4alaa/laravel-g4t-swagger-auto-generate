@@ -22,13 +22,18 @@ class GetResponse
         }
     }
 
+    private static function getSummary($route)
+    {
+        return !is_null($route['summary']) ? $route['summary'] : $route['name'];
+    }
+
     public static function index($route)
     {
         $response = [
             "tags" => [
                 "{$route['controller']}"
             ],
-            "summary" => "{$route['name']}",
+            "summary" => self::getSummary($route),
             "description" => "{$route['description']}",
             "operationId" => $route['operation_id'],
             "parameters" => $route['params'],

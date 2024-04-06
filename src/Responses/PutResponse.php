@@ -26,6 +26,10 @@ class PutResponse
         }
     }
 
+    private static function getSummary($route)
+    {
+        return !is_null($route['summary']) ? $route['summary'] : $route['name'];
+    }
 
     public static function index($route)
     {
@@ -33,12 +37,12 @@ class PutResponse
             "tags" => [
                 $route['controller']
             ],
-            "summary" => "{$route['name']}",
+            "summary" => self::getSummary($route),
             "description" => "{$route['description']}",
             "operationId" => $route['operation_id'],
             "parameters" => $route['params'],
             "requestBody" => [
-                "description" => "Update an existent {$route['name']}",
+                "description" => "{$route['description']}",
                 "content" => [
                     "application/x-www-form-urlencoded" => [
                         "schema" => [

@@ -39,7 +39,7 @@ return [
     | The version of your API.
     |
     */
-    "version" => env("SWAGGER_VERSION", "3.0.6"),
+    "version" => env("SWAGGER_VERSION", "3.0.7"),
 
     /*
     |--------------------------------------------------------------------------

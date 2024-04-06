@@ -34,7 +34,7 @@ composer require g4t/swagger
 ## Add the middleware ( Laravel 10 or below )
 go to `app\Http\Kernel.php` and add this line
 
-```
+```php
 'api' => [
   \G4T\Swagger\Middleware\SetJsonResponseMiddleware::class,
   // ... other middleware
@@ -43,7 +43,7 @@ go to `app\Http\Kernel.php` and add this line
 
 ## Add the middleware ( Laravel 11 )
 go to `bootstrap\app.php` and add this line
-```
+```php
 // ...
     ->withMiddleware(function (Middleware $middleware) {
         $middleware->group('api', [
@@ -67,9 +67,32 @@ php artisan vendor:publish --provider "G4T\Swagger\SwaggerServiceProvider"
 
 5. To add a description in a Swagger route using the ->description() method, you can follow the example you provided and include it in your Laravel application's routes.
    Here's how you can describe a route using the ->description() method in a Swagger route:
-   ```
+   ```php
     Route::get('user', [UserController::class, 'index'])->description('Get list of users with pagination.');
    ```
+6. To add a summary in a Swagger route using the ->summary() method, you can follow the example you provided and include it in your Laravel application's routes.
+   Here's how you can describe a route using the ->summary() method in a Swagger route:
+   ```php
+    Route::get('user', [UserController::class, 'index'])->summary('get users.');
+   ```
+   7. To add a Section Description you can use this attribute `#[SwaggerSection('everything about your users')]` in your controller.
+      Here's how you can use this attribute in your controller:
+   ```php
+    <?php
+    
+    namespace App\Http\Controllers;
+    
+    use G4T\Swagger\Attributes\SwaggerSection;
+    
+    #[SwaggerSection('everything about your users')]
+    class UserController extends Controller
+    {
+       // ...
+       // ...
+       // ...
+    }
+   ```
+      
 
  
 

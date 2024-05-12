@@ -54,6 +54,10 @@ go to `bootstrap\app.php` and add this line
 ```
 ## Usage
 
+#### Click here to watch a video on how to use this package
+[![Explanatory video on how to use](https://img.youtube.com/vi/bI1BY9tAwOw/0.jpg)](https://www.youtube.com/watch?v=bI1BY9tAwOw)
+
+
 1. After installing the package, publish the configuration file:
 ```
 php artisan vendor:publish --provider "G4T\Swagger\SwaggerServiceProvider"

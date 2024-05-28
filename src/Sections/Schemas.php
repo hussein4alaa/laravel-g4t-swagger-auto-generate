@@ -4,6 +4,7 @@ namespace G4T\Swagger\Sections;
 
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
+use ReflectionClass;
 
 trait Schemas
 {
@@ -39,6 +40,8 @@ trait Schemas
             return $schemas;
         }
         [$validation_content, $required] = $this->generateGenericRequiredAndRules($validations, $method);
+
+
         $schemas["required"] = $required;
         foreach ($validation_content as $column_name => $validation_value) {
             if (!str_contains($column_name, "[merge_input]")) {
@@ -92,10 +95,47 @@ trait Schemas
                 } else {
                     $formated_validation .= $format_validation . "|";
                 }
+            } else {
+                try {
+                    $reflection = new ReflectionClass($format_validation);
+                    $property = $reflection->getProperty('type');
+                    $property->setAccessible(true);
+                    $enumClass = $property->getValue($format_validation);
+                    $is_enum = $this->isEnum($enumClass);
+                    if($is_enum) {
+                        $formated_validation .= $this->getCasesFromEnum($enumClass);
+                    }
+                } catch (\Throwable $th) {
+
+                }
             }
         }
         return $formated_validation;
     }
+
+
+    private function getCasesFromEnum($class)
+    {
+        $reflection = new ReflectionClass($class);
+        $cases = $reflection->getReflectionConstants();
+        $caseList = 'in:';
+        foreach ($cases as $case) {
+            $caseList .= $case->getValue()->value.",";
+        }
+        if (substr($caseList, -1) === ',') {
+            $caseList = substr($caseList, 0, -1);
+        }        
+        return $caseList;
+        
+    }
+
+
+    private function isEnum($className) {
+        $reflection = new ReflectionClass($className);
+        return $reflection->isEnum();
+    }
+    
+    
 
     public function generateGenericRequiredAndRules(array $validations, string $method): array
     {

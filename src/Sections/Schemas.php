@@ -102,11 +102,10 @@ trait Schemas
                     $property->setAccessible(true);
                     $enumClass = $property->getValue($format_validation);
                     $is_enum = $this->isEnum($enumClass);
-                    if($is_enum) {
+                    if ($is_enum) {
                         $formated_validation .= $this->getCasesFromEnum($enumClass);
                     }
                 } catch (\Throwable $th) {
-
                 }
             }
         }
@@ -120,22 +119,22 @@ trait Schemas
         $cases = $reflection->getReflectionConstants();
         $caseList = 'in:';
         foreach ($cases as $case) {
-            $caseList .= $case->getValue()->value.",";
+            $caseList .= $case->getValue()->value . ",";
         }
         if (substr($caseList, -1) === ',') {
             $caseList = substr($caseList, 0, -1);
-        }        
+        }
         return $caseList;
-        
     }
 
 
-    private function isEnum($className) {
+    private function isEnum($className)
+    {
         $reflection = new ReflectionClass($className);
         return $reflection->isEnum();
     }
-    
-    
+
+
 
     public function generateGenericRequiredAndRules(array $validations, string $method): array
     {
@@ -173,7 +172,6 @@ trait Schemas
                     }
                 }
             }
-   
         }
         $string_rules = json_encode($rules);
         if ($method == 'PUT' && (str_contains($string_rules, 'image') || str_contains($string_rules, 'file') || str_contains($string_rules, 'mimes'))) {
@@ -242,58 +240,66 @@ trait Schemas
 
     public function setColumnAttributes(string $validation_value, string $condition, string $key, string $value): array
     {
-        $schema = [];
-        if (str_contains($validation_value, $condition)) {
-            $schema[$key] = $value;
+        try {
+            $schema = [];
+            if (str_contains($validation_value, $condition)) {
+                $schema[$key] = $value;
+            }
+            return $schema;
+        } catch (\Throwable $th) {
+            return [];
         }
-        return $schema;
     }
 
     public function setCustomColumnAttributes(string $validation_value, string $condition, string $key): array
     {
-        $schema = [];
-        preg_match('/' . $condition . '\:([^|]+)/', $validation_value, $matches);
-        if (isset($matches[1])) {
-            $schema[$key] = $matches[1];
+        try {
+            $schema = [];
+            preg_match('/' . $condition . '\:([^|]+)/', $validation_value, $matches);
+            if (isset($matches[1])) {
+                $schema[$key] = $matches[1];
+            }
+            return $schema;
+        } catch (\Throwable $th) {
+            return [];
         }
-        return $schema;
     }
 
     public function setEnumColumnAttributes(string $validation_value, string $condition, string $key): array
     {
-        $schema = [];
-        if (str_contains($validation_value, "min")) {
+        try {
+            $schema = [];
+            if (str_contains($validation_value, "min")) {
+                return $schema;
+            }
+            $data = $this->setCustomColumnAttributes($validation_value, $condition, $key);
+            if (isset($data[$key])) {
+                $schema[$key] = explode(',', $data[$key]);
+            }
             return $schema;
+        } catch (\Throwable $th) {
+            return [];
         }
-        $data = $this->setCustomColumnAttributes($validation_value, $condition, $key);
-        if (isset($data[$key])) {
-            $schema[$key] = explode(',', $data[$key]);
-        }
-        return $schema;
     }
 
 
     public function setExistsColumnAttributes(string $validation_value, string $condition, string $key): array
     {
-        $schema = [];
-        $data = $this->setCustomColumnAttributes($validation_value, $condition, $key);
-        if (isset($data[$key])) {
-            [$table, $column] = explode(',', $data[$key]);
-            $schema[$key] = $this->getExistsData($table, $column);
-        }
-        return $schema;
-    }
-
-    public function getExistsData(string $table, string $column): array
-    {
         try {
-            return DB::table($table)->pluck($column)->toArray();
+            $schema = [];
+            $data = $this->setCustomColumnAttributes($validation_value, $condition, $key);
+            if (isset($data[$key])) {
+                [$table, $column] = explode(',', $data[$key]);
+                $schema[$key] = DB::table($table)->pluck($column)->toArray();
+            }
+            return $schema;
         } catch (\Throwable $th) {
             return [
                 "Error: Check Database connection"
             ];
         }
     }
+
 
     public function setArrayOfInputsAttributes()
     {
@@ -374,7 +380,7 @@ trait Schemas
             $array_of_inputs,
             $schema,
         );
-        if(!isset($schema['type'])) {
+        if (!isset($schema['type'])) {
             $schema['type'] = 'string';
         }
         return $schema;

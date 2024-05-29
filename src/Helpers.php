@@ -139,9 +139,7 @@ trait Helpers
                         "in" => "query",
                         "description" => $this->getInputName($key),
                         "required" => $this->checkIfQueryParamRequiredOrNot($param),
-                        "schema" => [
-                            "type" => "string"
-                        ]
+                        "schema" => $this->checkSchemaType($param)
                     ];
                 }
             }
@@ -156,13 +154,31 @@ trait Helpers
                 "in" => "path",
                 "description" => $param,
                 "required" => $required,
-                "schema" => [
-                    "type" => "string"
-                ]
+                "schema" => $this->checkSchemaType($param)
             ];
         }
         return $params_list;
     }
+
+
+    private function checkSchemaType($param)
+    {
+        if (str_contains($param, 'integer') || str_contains($param, 'numerical') ||
+            str_contains($param, 'number') || str_contains($param, 'int') ||
+            str_contains($param, 'numeric')
+        ) {
+            $response = [
+                'type' => 'integer',
+                'format' => 'int64'
+            ];
+        } else {
+            $response = [
+                'type' => 'string'
+            ];
+        }
+        return $response;
+    }
+
 
 
     public function pathRequired($route)

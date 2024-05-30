@@ -5,11 +5,12 @@ namespace G4T\Swagger;
 use ReflectionException;
 use ReflectionMethod;
 use Illuminate\Support\Str;
+use ReflectionClass;
 
 trait Helpers
 {
 
-    public function getControllerName(string $action) : string
+    public function getControllerName(string $action): string
     {
         $segments = explode('\\', $action);
         $controller = end($segments);
@@ -22,13 +23,13 @@ trait Helpers
         return $controller;
     }
 
-    public function isApiRoute(object $route) : bool
+    public function isApiRoute(object $route): bool
     {
         return in_array('api', $route->middleware());
     }
 
 
-    public function getRouteName(string $route, string $prefix) : string
+    public function getRouteName(string $route, string $prefix): string
     {
         $escapedPrefix = preg_quote($prefix, '/');
         $regex = "/{$escapedPrefix}\/([^\/]+)/";
@@ -39,7 +40,7 @@ trait Helpers
     }
 
 
-    public function generateOperationId(string $uri, string $method) : string
+    public function generateOperationId(string $uri, string $method): string
     {
         $operationId = str_replace(['/', '[', ']'], '_', $uri) . '_' . $method;
         $operationId = str_replace(['{', '}'], '_', $operationId);
@@ -49,17 +50,17 @@ trait Helpers
 
 
 
-    public function getRequestClassName(string $controllerMethod) : array
+    public function getRequestClassName(string $controllerMethod): array
     {
         if ($controllerMethod !== 'Closure') {
             $exploded = explode('@', $controllerMethod);
 
-            if(!isset($exploded[0], $exploded[1])) {
+            if (!isset($exploded[0], $exploded[1])) {
                 return [];
             }
             try {
                 $class = $exploded[0];
-                if(isset($exploded[1])) {
+                if (isset($exploded[1])) {
                     $method = $exploded[1];
                 }
                 $reflection = new ReflectionMethod($class, $method);
@@ -84,7 +85,7 @@ trait Helpers
 
 
 
-    public function schemaName(string $action) : string
+    public function schemaName(string $action): string
     {
         $className = class_basename($action);
         $className = str_replace('Controller', '', $className);
@@ -111,10 +112,10 @@ trait Helpers
     }
 
 
-    public function getInputName(string $string, int $number = 0) : string
+    public function getInputName(string $string, int $number = 0): string
     {
         $name = preg_replace('/\.(\w+)/', '[$1]', $string);
-        if (str_contains($name, '.*')) { 
+        if (str_contains($name, '.*')) {
             return str_replace(".*", "[merge_input]", $name);
         }
         return $name;
@@ -163,20 +164,12 @@ trait Helpers
 
     private function checkSchemaType($param)
     {
-        if (str_contains($param, 'integer') || str_contains($param, 'numerical') ||
-            str_contains($param, 'number') || str_contains($param, 'int') ||
-            str_contains($param, 'numeric')
-        ) {
-            $response = [
-                'type' => 'integer',
-                'format' => 'int64'
-            ];
+        if (is_string($param)) {
+            return $this->getSwaggerInputSchema($param);
         } else {
-            $response = [
-                'type' => 'string'
-            ];
+            $param = $this->convertValidationToOneLine($param);
+            return $this->getSwaggerInputSchema($param);
         }
-        return $response;
     }
 
 

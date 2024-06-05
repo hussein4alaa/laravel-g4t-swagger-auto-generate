@@ -45,7 +45,7 @@ class DocumentationController extends Controller
         foreach ($config['versions'] as $version) {
             $versions[] = [
                 'name' => $version,
-                'url' => env('APP_URL')."/".$config["url"]."/json?version=$version"
+                'url' => url($config["url"]."/json?version=$version")
             ];
         }
         $data['versions'] = $versions;

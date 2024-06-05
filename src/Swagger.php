@@ -175,7 +175,11 @@ class Swagger
         $versions = config('swagger.versions');
         $version = 'api/';
         if (request()->filled('version') && in_array(request()->version, $versions)) {
-            $version = 'api/' . request()->version;
+            if(request()->version == 'all') {
+                $version = null;
+            } else {
+                $version = 'api/' . request()->version;
+            }
         }
         return $version;
     }

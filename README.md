@@ -31,27 +31,6 @@ Install the Swagger Laravel Autogenerate Package via Composer:
 composer require g4t/swagger
 ```
 
-## Add the middleware ( Laravel 10 or below )
-go to `app\Http\Kernel.php` and add this line
-
-```php
-'api' => [
-  \G4T\Swagger\Middleware\SetJsonResponseMiddleware::class,
-  // ... other middleware
-],
-```
-
-## Add the middleware ( Laravel 11 )
-go to `bootstrap\app.php` and add this line
-```php
-// ...
-    ->withMiddleware(function (Middleware $middleware) {
-        $middleware->group('api', [
-            \G4T\Swagger\Middleware\SetJsonResponseMiddleware::class,
-        ]);
-    })
-// ...
-```
 ## Usage
 
 #### Click here to watch a video on how to use this package

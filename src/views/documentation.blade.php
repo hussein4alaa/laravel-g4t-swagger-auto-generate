@@ -176,6 +176,16 @@
                     SwaggerUIStandalonePreset
                 ],
                 layout: 'StandaloneLayout',
+                requestInterceptor: (request) => {
+                    request.headers['content-type'] = 'application/json';
+                    request.headers['accept'] = 'application/json';
+                    return request;
+                },
+                responseInterceptor: (request) => {
+                    request.headers['content-type'] = 'application/json';
+                    request.headers['accept'] = 'application/json';
+                    return request;
+                }
             });
         };
     </script>

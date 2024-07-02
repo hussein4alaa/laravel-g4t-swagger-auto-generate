@@ -1,0 +1,2 @@
+*.css linguist-detectable=false
+*.php linguist-detectable=true

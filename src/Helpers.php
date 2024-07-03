@@ -67,7 +67,7 @@ trait Helpers
                 $parameters = $reflection->getParameters() ?? [];
                 foreach ($parameters as $parameter) {
                     $typeHint = $parameter ? $parameter->getType() : null;
-                    if ($typeHint && !$typeHint->isBuiltin()) {
+                    if ($typeHint instanceof ReflectionNamedType && !$typeHint->isBuiltin()) {
                         try {
                             $request = $typeHint->getName();
                             $request = new $request();

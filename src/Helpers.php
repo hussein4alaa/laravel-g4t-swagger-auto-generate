@@ -6,6 +6,7 @@ use ReflectionException;
 use ReflectionMethod;
 use Illuminate\Support\Str;
 use ReflectionClass;
+use ReflectionNamedType;
 
 trait Helpers
 {

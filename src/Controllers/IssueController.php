@@ -2,9 +2,7 @@
 
 namespace G4T\Swagger\Controllers;
 
-use App\Http\Controllers\Controller;
-
-class IssueController extends Controller
+class IssueController
 {
 
     public function index()

@@ -2,12 +2,11 @@
 
 namespace G4T\Swagger\Controllers;
 
-use App\Http\Controllers\Controller;
 use G4T\Swagger\Swagger;
 use Illuminate\Http\Response;
 use Illuminate\Support\Facades\File;
 
-class DocumentationController extends Controller
+class DocumentationController
 {
     
     public function getSwaggerData()

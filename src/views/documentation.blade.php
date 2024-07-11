@@ -177,12 +177,11 @@
                 ],
                 layout: 'StandaloneLayout',
                 requestInterceptor: (request) => {
-                    request.headers['Content-Type'] = 'application/json';
                     request.headers['accept'] = 'application/json';
                     return request;
                 },
                 responseInterceptor: (response) => {
-                    response.headers['Content-Type'] = 'application/json';
+                    response.headers['content-type'] = 'application/json';
                     response.headers['accept'] = 'application/json';
                     return response;
                 }

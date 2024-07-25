@@ -369,7 +369,6 @@ trait Schemas
             $mimes_description,
             $unique,
             $enum,
-            $exists,
             $array_of_inputs,
             $schema,
         );

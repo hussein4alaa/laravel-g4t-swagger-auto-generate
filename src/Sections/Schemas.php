@@ -336,14 +336,7 @@ trait Schemas
         $mimes_type = $this->setColumnAttributes($validation_value, 'mimes', 'type', 'string');
         $mimes_description = $this->setCustomColumnAttributes($validation_value, 'mimes', 'description');
         $unique = $this->setColumnAttributes($validation_value, 'unique', 'unique', 'true');
-
-        if(config('swagger.suggestions_select_input')) {
-            $enum = $this->setEnumColumnAttributes($validation_value, 'in', 'enum');
-        } else {
-            $enum = $this->setColumnAttributes($validation_value, 'string', 'type', 'string');
-        }
-        
-        $exists = $this->setExistsColumnAttributes($validation_value, 'exists', 'enum');
+        $enum = $this->setEnumColumnAttributes($validation_value, 'in', 'enum');
         if ($array && ($file_type || $mimes_type || $image_type)) {
             $array_of_inputs = $this->setArrayOfInputsAttributes();
         } else {

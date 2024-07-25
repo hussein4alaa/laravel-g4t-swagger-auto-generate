@@ -51,6 +51,10 @@ return [
     */
     "enable_response_schema" => true,
 
+    "suggestions_select_input" => false,
+
+    "load_from_json" => false,
+
     /*
     |--------------------------------------------------------------------------
     | Authentication Middlewares

@@ -22,7 +22,7 @@ class DocumentationController
 
     public function showViewDocumentation()
     {
-        $response = $this->getSwaggerData();
+        $response = $this->showJsonDocumentation();
         $versions = $this->reformatVersions();
         $themes = $this->getThemesList();
         $themes_path = url('g4t/swagger/themes');
@@ -52,16 +52,21 @@ class DocumentationController
         return $data;
     }
 
-    private function getVersions()
-    {
-        $versions = config('swagger.versions');
-        return $versions;
-    }
 
     public function showJsonDocumentation()
     {
-        $response = $this->getSwaggerData();
-        return response()->json($response);
+        $static_json = config('swagger.load_from_json');
+        if ($static_json) {
+            $filePath = public_path('doc.json');
+            if (!file_exists($filePath)) {
+                return [];
+            }
+            $jsonContent = file_get_contents($filePath);
+            return json_decode($jsonContent, true);
+        } else {
+            $response = $this->getSwaggerData();
+            return response()->json($response);
+        }
     }
 
     public function getThemesList()
@@ -84,6 +89,9 @@ class DocumentationController
             return $fileNamesWithoutCss;
         }
     }
+
+
+
 
 
 }

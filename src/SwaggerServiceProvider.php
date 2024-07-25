@@ -3,6 +3,7 @@
 namespace G4T\Swagger;
 
 use g4t\Pattern\GenerateRepo;
+use G4T\Swagger\Commands\GenerateDocsCommand;
 use Illuminate\Support\ServiceProvider;
 use Illuminate\Routing\Route;
 
@@ -34,6 +35,11 @@ class SwaggerServiceProvider extends ServiceProvider
         $this->publishes([
             __DIR__.'/custom-assets' => public_path('g4t/swagger'),
         ], 'public');
+
+        $this->commands([
+            GenerateDocsCommand::class,
+        ]);
+    
     
     }
 

@@ -8,11 +8,11 @@ use Illuminate\Support\Facades\File;
 
 class DocumentationController
 {
-    
+
     public function getSwaggerData()
     {
         $enable = config('swagger.enable');
-        if(!$enable) {
+        if (!$enable) {
             abort(Response::HTTP_FORBIDDEN);
         }
         $swager_json = new Swagger;
@@ -44,7 +44,7 @@ class DocumentationController
         foreach ($config['versions'] as $version) {
             $versions[] = [
                 'name' => $version,
-                'url' => url($config["url"]."/json?version=$version")
+                'url' => url($config["url"] . "/json?version=$version")
             ];
         }
         $data['versions'] = $versions;
@@ -62,11 +62,41 @@ class DocumentationController
                 return [];
             }
             $jsonContent = file_get_contents($filePath);
-            return json_decode($jsonContent, true);
+            $data = json_decode($jsonContent, true);
+            if (request()->filled('version')) {
+                return $this->filter($data);
+            }
+            return $data;
         } else {
             $response = $this->getSwaggerData();
             return response()->json($response);
         }
+    }
+
+    public function filter($data)
+    {
+        $searchTerm = request()->version;
+        if ($searchTerm == 'all') {
+            return $data;
+        }
+
+        $paths = [];
+        $tags = [];
+        foreach ($data['components']['paths'] as $key => $path) {
+            if (str_contains($key, $searchTerm)) {
+                $paths[$key] = $data['components']['paths'][$key];
+                foreach ($path as $path_key => $path_value) {
+                    $tags[] = $path_value['tags'][0];
+                }
+            }
+        }
+
+
+        $data['components']['paths'] = $paths;
+        $data['components']['tags'] = $tags;
+        $data['tags'] = $tags;
+        $data['paths'] = $paths;
+        return $data;
     }
 
     public function getThemesList()
@@ -89,9 +119,4 @@ class DocumentationController
             return $fileNamesWithoutCss;
         }
     }
-
-
-
-
-
 }

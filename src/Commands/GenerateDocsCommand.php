@@ -9,7 +9,7 @@ use Illuminate\Support\Str;
 
 class GenerateDocsCommand extends Command
 {
-    protected $signature = 'make:swagger {environment? : Environment name}';
+    protected $signature = 'make:swagger}';
 
     protected $description = 'Generate API documentation for Swagger';
 

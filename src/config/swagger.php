@@ -64,8 +64,11 @@ return [
     |
     */
     "auth_middlewares" => [
-        "auth",
-        "auth:api"
+        "delete-order",
+        "user-auth",
+        "company-auth",
+        "merchant-auth",
+        "merchant-auth",
     ],
 
     /*
@@ -119,7 +122,12 @@ return [
     */
     "versions" => [
         "all",
-        // "v1",
+        "driver/auth",
+        "driver/v1",
+        "company/v1/auth",
+        "company/v1",
+        "merchant/auth",
+        "merchant/v1",
     ],
 
     "default" => "all",
@@ -139,8 +147,8 @@ return [
             "description" => "localhost"
         ],
         [
-            "url" => "http://localhost",
-            "description" => "production"
+            "url" => "https://api.uat.tasleem.wasl.dev",
+            "description" => "UAT"
         ],
     ],
 

@@ -8,11 +8,9 @@ use Illuminate\Support\Str;
 use ReflectionClass;
 use ReflectionNamedType;
 
-trait Helpers
-{
+trait Helpers {
 
-    public function getControllerName(string $action): string
-    {
+    public function getControllerName(string $action): string {
         $segments = explode('\\', $action);
         $controller = end($segments);
 
@@ -24,14 +22,12 @@ trait Helpers
         return $controller;
     }
 
-    public function isApiRoute(object $route): bool
-    {
+    public function isApiRoute(object $route): bool {
         return in_array('api', $route->middleware());
     }
 
 
-    public function getRouteName(string $route, string $prefix): string
-    {
+    public function getRouteName(string $route, string $prefix): string {
         $escapedPrefix = preg_quote($prefix, '/');
         $regex = "/{$escapedPrefix}\/([^\/]+)/";
         if (preg_match($regex, $route, $matches)) {
@@ -41,8 +37,7 @@ trait Helpers
     }
 
 
-    public function generateOperationId(string $uri, string $method): string
-    {
+    public function generateOperationId(string $uri, string $method): string {
         $operationId = str_replace(['/', '[', ']'], '_', $uri) . '_' . $method;
         $operationId = str_replace(['{', '}'], '_', $operationId);
 
@@ -51,14 +46,13 @@ trait Helpers
 
 
 
-    public function getRequestClassName(string $controllerMethod): array
-    {
+    public function getRequestClassName(string $controllerMethod): array {
         if ($controllerMethod !== 'Closure') {
             $exploded = explode('@', $controllerMethod);
 
-            if (!isset($exploded[0], $exploded[1])) {
-                return [];
-            }
+            if (!isset($exploded[0])) return [];
+            if (!isset($exploded[1])) $exploded[1] = '__invoke';
+
             try {
                 $class = $exploded[0];
                 if (isset($exploded[1])) {
@@ -86,8 +80,7 @@ trait Helpers
 
 
 
-    public function schemaName(string $action): string
-    {
+    public function schemaName(string $action): string {
         $className = class_basename($action);
         $className = str_replace('Controller', '', $className);
         $className = strstr($className, '@', true);
@@ -97,8 +90,7 @@ trait Helpers
     }
 
 
-    public function checkIfQueryParamRequiredOrNot($params)
-    {
+    public function checkIfQueryParamRequiredOrNot($params) {
         $required = false;
         if (!is_array($params)) {
             $params = explode('|', $params);
@@ -113,8 +105,7 @@ trait Helpers
     }
 
 
-    public function getInputName(string $string, int $number = 0): string
-    {
+    public function getInputName(string $string, int $number = 0): string {
         $name = preg_replace('/\.(\w+)/', '[$1]', $string);
         if (str_contains($name, '.*')) {
             return str_replace(".*", "[merge_input]", $name);
@@ -123,8 +114,7 @@ trait Helpers
     }
 
 
-    public function formatParams($validations, $route)
-    {
+    public function formatParams($validations, $route) {
         $method = $route->methods();
         $params_list = [];
         if (
@@ -163,8 +153,7 @@ trait Helpers
     }
 
 
-    private function checkSchemaType($param)
-    {
+    private function checkSchemaType($param) {
         if (is_string($param)) {
             return $this->getSwaggerInputSchema($param);
         } else {
@@ -175,8 +164,7 @@ trait Helpers
 
 
 
-    public function pathRequired($route)
-    {
+    public function pathRequired($route) {
         $required = true;
         if (strpos($route->uri, '?') !== false) {
             $required = false;
@@ -184,8 +172,7 @@ trait Helpers
         return $required;
     }
 
-    public function checkIfTokenIsRequired($route)
-    {
+    public function checkIfTokenIsRequired($route) {
         $middlewares = $route->gatherMiddleware();
         $authMiddlewares = config('swagger.auth_middlewares');
 

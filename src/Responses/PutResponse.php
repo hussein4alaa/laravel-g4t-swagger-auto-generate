@@ -9,8 +9,8 @@ class PutResponse
     public static function getResponses($route)
     {
         $status = config('swagger.status');
-        if (isset($status['GET'])) {
-            return $status['GET'];
+        if (isset($status['PUT'])) {
+            return $status['PUT'];
         } else {
             return [
                 "200" => [

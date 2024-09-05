@@ -8,8 +8,8 @@ class PostResponse
     public static function getResponses()
     {
         $status = config('swagger.status');
-        if (isset($status['GET'])) {
-            return $status['GET'];
+        if (isset($status['POST'])) {
+            return $status['POST'];
         } else {
             return [
                 "200" => [

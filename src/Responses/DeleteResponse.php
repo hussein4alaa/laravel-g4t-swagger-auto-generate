@@ -9,8 +9,8 @@ class DeleteResponse
     public static function getResponses()
     {
         $status = config('swagger.status');
-        if (isset($status['GET'])) {
-            return $status['GET'];
+        if (isset($status['DELETE'])) {
+            return $status['DELETE'];
         } else {
             return [
                 "200" => [

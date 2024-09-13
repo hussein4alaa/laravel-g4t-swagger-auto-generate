@@ -110,6 +110,11 @@ class Swagger
                                     "class" => $controller_path,
                                     "description" => $controller_description
                                 ];
+
+                                $params = $this->formatParams($validations, $route);
+
+                                $this->spatieSchema($params, $method);
+
                                 $apiRoutes[] = [
                                     'prefix' => $prefix,
                                     'method' => $method,
@@ -122,7 +127,7 @@ class Swagger
                                     'action' => $action,
                                     'middleware' => $route->middleware(),
                                     'validations' => $validations,
-                                    'params' => $this->formatParams($validations, $route),
+                                    'params' => $params,
                                     'operation_id' => $operationId,
                                     'has_schema' => $hasSchema,
                                     'need_token' => $needToken
@@ -183,4 +188,48 @@ class Swagger
         }
         return $version;
     }
+
+
+    private function spatieSchema(&$params, $method)
+    {
+        $spatie_query_builder = config('swagger.spatie_query_builder');
+        if ($method == 'GET|HEAD' &&  $spatie_query_builder) {
+            $params[] = [
+                "name" => "filter",
+                "in" => "query",
+                "description" => "Filter",
+                "required" => false,
+                "style" => "deepObject",
+                "explode" => true,
+                "schema" => [
+                    "type" => "object",
+                    "additionalProperties" => [
+                        "type" => "string",
+                        "description" => "The dynamic filtering"
+                    ]
+                ]
+            ];
+            $params[] = [
+                "name" => "sort",
+                "in" => "query",
+                "description" => "sort",
+                "required" => false,
+                "schema" => [
+                    "nullable" => "true",
+                    "type" => "string",
+                ]
+            ];
+            $params[] = [
+                "name" => "include",
+                "in" => "query",
+                "description" => "include",
+                "required" => false,
+                "schema" => [
+                    "nullable" => "true",
+                    "type" => "string",
+                ]
+            ];
+        }
+    }
+
 }

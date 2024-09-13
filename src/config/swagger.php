@@ -172,6 +172,16 @@ return [
         ]
     ],
 
+    /*
+    |--------------------------------------------------------------------------
+    | Spatie Query Builder
+    |--------------------------------------------------------------------------
+    |
+    | Enable it if you using Spatie query builder package to add spatie filters in all GET routes.
+    |
+    */
+    "spatie_query_builder" => false,
+
 
     /*
     |--------------------------------------------------------------------------

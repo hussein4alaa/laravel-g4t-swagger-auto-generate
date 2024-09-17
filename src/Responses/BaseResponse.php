@@ -144,19 +144,23 @@ abstract class BaseResponse
         foreach ($lines as &$line) {
             foreach ($linesWithBackslash as $lineWithBackslash) {
                 if (trim($line) === trim($lineWithBackslash)) {
-                    // Replace the entire line with "string"
-                    // $extension = '';
                     $extension = "";
                     $className = self::extractResourcePathAndExtension($line, $extension);
-                    $subSchema = self::generateSchemaFromResourceDocumentation($className, $schema);
+                    $subSchema = self::generateSchemaFromResourceDocumentation($className, $schemas); // Pass $schemas
+
                     $reflection = new ReflectionClass($className);
                     $schemaName = $reflection->getShortName();
+
+                    // Save the nested schema
                     $schemas[$schemaName] = $subSchema;
                     $schemas[$schemaName]["xml"] = Str::lower($schemaName);
+
+                    // Generate the correct reference for arrays and optional fields
                     $isArray = strpos($extension, "[]") !== false;
                     $isOptional = strpos($extension, "?") !== false;
                     $schemaPath = "#/components/schemas/{$schemaName}";
                     $schemaToMatch = [];
+
                     if ($isArray) {
                         $schemaToMatch['type'] = "array";
                         $schemaToMatch['items'] = [
@@ -165,9 +169,12 @@ abstract class BaseResponse
                     } else {
                         $schemaToMatch['$ref'] = $schemaPath;
                     }
+
                     if ($isOptional) {
                         $schemaToMatch['nullable'] = true;
                     }
+
+                    // Replace the line with the updated schema reference
                     $line = str_replace(substr($line, strpos($line, ':') + 1), json_encode($schemaToMatch), $line);
                     break;
                 }
@@ -177,6 +184,7 @@ abstract class BaseResponse
         // Join the lines back into a single string
         return implode("\n", $lines);
     }
+
     protected static function findLinesWithBackslash(string $lines)
     {
         $lines = explode("\n", $lines); // Split the string into an array of lines
@@ -293,7 +301,9 @@ abstract class BaseResponse
             $attributes = preg_replace('/\*\s*/', '', $attributes);
             $attributes = trim($attributes);
             $attributes = str_replace(['“', '”'], '"', $attributes);
-            $attributes = self::replaceLinesWithBackslashSchema($attributes, $extension, $schemas);
+
+            // Handle nested schema generation with recursive handling for arrays and nullable types
+            $attributes = self::replaceLinesWithBackslashSchema($attributes, $resourceClass, $schemas);
             $attributes = preg_replace('/(\w+):\s*"(\w+)\[\]?\??"/', '"$1": {"type": "array", "items": {"type": "$2"}}', $attributes);
             $attributes = preg_replace('/(\w+):\s*"(\w+)\??"/', '"$1": {"type": "$2"}', $attributes);
             $attributes = rtrim($attributes, ',');
@@ -304,12 +314,17 @@ abstract class BaseResponse
             if (json_last_error() !== JSON_ERROR_NONE) {
                 throw new \RuntimeException('Failed to decode JSON: ' . json_last_error_msg());
             }
+
             foreach ($attributesArray as $key => $type) {
                 $schema['properties'][$key] = self::mapTypeToSchemaType($type);
             }
 
             $schema['required'] = array_keys($schema['properties']);
         }
+
+        // Store the schema in the $schemas array using the resource class name
+        $schemaName = self::getSchemaNameForResource($resourceClass);
+        $schemas[$schemaName] = $schema;
 
         return $schema;
     }
@@ -368,7 +383,6 @@ abstract class BaseResponse
             ];
         }
         self::addResponseExamples($response, $route, $schemas);
-
         return $response;
     }
 

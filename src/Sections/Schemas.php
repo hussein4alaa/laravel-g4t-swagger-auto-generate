@@ -102,7 +102,7 @@ trait Schemas
                     $property->setAccessible(true);
                     $enumClass = $property->getValue($format_validation);
                     $is_enum = $this->isEnum($enumClass);
-                    if($is_enum) {
+                    if ($is_enum) {
                         $formated_validation .= $this->getCasesFromEnum($enumClass);
                     }
                 } catch (\Throwable $th) {
@@ -120,22 +120,23 @@ trait Schemas
         $cases = $reflection->getReflectionConstants();
         $caseList = 'in:';
         foreach ($cases as $case) {
-            $caseList .= $case->getValue()->value.",";
+            $caseList .= $case->getValue()->value . ",";
         }
         if (substr($caseList, -1) === ',') {
             $caseList = substr($caseList, 0, -1);
-        }        
+        }
         return $caseList;
-        
+
     }
 
 
-    private function isEnum($className) {
+    private function isEnum($className)
+    {
         $reflection = new ReflectionClass($className);
         return $reflection->isEnum();
     }
-    
-    
+
+
 
     public function generateGenericRequiredAndRules(array $validations, string $method): array
     {
@@ -173,7 +174,7 @@ trait Schemas
                     }
                 }
             }
-   
+
         }
         $string_rules = json_encode($rules);
         if ($method == 'PUT' && (str_contains($string_rules, 'image') || str_contains($string_rules, 'file') || str_contains($string_rules, 'mimes'))) {
@@ -372,7 +373,7 @@ trait Schemas
             $array_of_inputs,
             $schema,
         );
-        if(!isset($schema['type'])) {
+        if (!isset($schema['type'])) {
             $schema['type'] = 'string';
         }
         return $schema;

@@ -11,7 +11,8 @@ use Illuminate\Support\Str;
 use ReflectionClass;
 use stdClass;
 
-class Swagger {
+class Swagger
+{
 
     use Tags, Paths, Helpers, Schemas;
 
@@ -20,7 +21,8 @@ class Swagger {
      *
      * @return array
      */
-    public function swagger() {
+    public function swagger()
+    {
         return [
             "openapi" => "3.0.3",
             "info" => [
@@ -59,7 +61,8 @@ class Swagger {
      * @return object The Swagger JSON response for API documentation.
      */
 
-    public function generateSwaggerJsonResponse() {
+    public function generateSwaggerJsonResponse()
+    {
         $routes = Route::getRoutes();
         $apiRoutes = [];
         $names = [];
@@ -70,12 +73,7 @@ class Swagger {
 
         $version = $this->getVersion();
         foreach ($routes as $route) {
-            $filter_route = $this->isApiRoute($route);
-
-            if (config('swagger.include_web_routes'))
-                $filter_route = str_contains($route->getActionName(), 'App\\Http\\Controllers');
-
-            if ($filter_route) {
+            if ($this->isApiRoute($route)) {
                 if (is_string($route->getAction('controller'))) {
                     $uri = '/' . $route->uri();
                     if (str_contains($uri, $version)) {
@@ -142,15 +140,15 @@ class Swagger {
         }
         $swaggerJson = new stdClass();
         $swaggerJson->tags = $this->getTags($controllers);
-        $swaggerJson->paths = $this->formatPaths($apiRoutes);
+        $swaggerJson->paths = $this->formatPaths($apiRoutes, $schemas);
         $swaggerJson->schemas = $schemas;
         $swaggerJson->securitySchemes = config('swagger.security_schemes');
-
         return $swaggerJson;
     }
 
 
-    public function getControllerPath($controller) {
+    public function getControllerPath($controller)
+    {
         try {
             $controller = explode("@", $controller);
             return $controller[0];
@@ -159,7 +157,8 @@ class Swagger {
         }
     }
 
-    private function getSectionAttributeValue(string $controllerClassName) {
+    private function getSectionAttributeValue(string $controllerClassName)
+    {
         try {
             $class = new $controllerClassName;
             $reflector = new ReflectionClass($class);
@@ -175,7 +174,8 @@ class Swagger {
         }
     }
 
-    private function getVersion() {
+    private function getVersion()
+    {
         $versions = config('swagger.versions');
         $version = 'api/';
         if (request()->filled('version') && in_array(request()->version, $versions)) {
@@ -192,7 +192,7 @@ class Swagger {
     private function spatieSchema(&$params, $method)
     {
         $spatie_query_builder = config('swagger.spatie_query_builder');
-        if ($method == 'GET|HEAD' &&  $spatie_query_builder) {
+        if ($method == 'GET|HEAD' && $spatie_query_builder) {
             $params[] = [
                 "name" => "filter",
                 "in" => "query",

@@ -92,4 +92,4 @@ The Swagger Laravel Autogenerate Package is developed and maintained by [Hussein
 - [GitHub](https://github.com/hussein4alaa/laravel-g4t-swagger-auto-generate)
 
 
-![stand with palestine](https://i.ebayimg.com/images/g/aYYAAOSwXnNhplzM/s-l1200.jpg)
+<img src="https://raw.githubusercontent.com/hussein4alaa/laravel-g4t-swagger-auto-generate/refs/heads/main/i_stand.png" alt="stand with humanity" width="800"/>

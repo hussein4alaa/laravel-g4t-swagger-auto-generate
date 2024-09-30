@@ -78,7 +78,7 @@ class Swagger {
             if ($filter_route) {
                 if (is_string($route->getAction('controller'))) {
                     $uri = '/' . $route->uri();
-                    if (str_contains($uri, $version)) {
+                    if (is_null($version) || str_contains($uri, $version)) {
                         $prefix = $route->getPrefix();
                         $action = ltrim($route->getActionName(), '\\');
                         $controller = $this->getControllerName($route->getAction('controller'));

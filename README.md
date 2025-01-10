@@ -51,7 +51,12 @@ php artisan vendor:publish --provider "G4T\Swagger\SwaggerServiceProvider"
    ```php
     Route::get('user', [UserController::class, 'index'])->summary('get users.');
    ```
-7. To add a Section Description you can use this attribute `#[SwaggerSection('everything about your users')]` in your controller.
+7. To hide endpoint from Swagger documentation using the ->hiddenDoc() method.
+   Here's how you can hide route using the ->hiddenDoc() method:
+   ```php
+    Route::get('user', [UserController::class, 'index'])->hiddenDoc();
+   ```
+8. To add a Section Description you can use this attribute `#[SwaggerSection('everything about your users')]` in your controller.
       Here's how you can use this attribute in your controller:
    ```php
     <?php
@@ -92,4 +97,3 @@ The Swagger Laravel Autogenerate Package is developed and maintained by [Hussein
 - [GitHub](https://github.com/hussein4alaa/laravel-g4t-swagger-auto-generate)
 
 
-<img src="https://raw.githubusercontent.com/hussein4alaa/laravel-g4t-swagger-auto-generate/refs/heads/main/i_stand.png" alt="stand with humanity" width="800"/>

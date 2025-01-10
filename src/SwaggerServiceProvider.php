@@ -27,6 +27,10 @@ class SwaggerServiceProvider extends ServiceProvider
             return $this;
         });
 
+        Route::macro('hiddenDoc', function () {
+            $this->action['is_hidden'] = true;
+            return $this;
+        });
 
         $this->publishes([
             __DIR__ . '/config/swagger.php' => base_path('config/swagger.php'),

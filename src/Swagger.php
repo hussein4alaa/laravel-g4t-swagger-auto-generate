@@ -90,6 +90,10 @@ class Swagger {
                         if ($action !== 'Closure') {
                             $description = isset($route->action['description']) ? $route->action['description'] : '';
                             $summary = isset($route->action['summary']) ? $route->action['summary'] : null;
+                            $is_hidden = isset($route->action['is_hidden']) ? $route->action['is_hidden'] : false;
+                            if($is_hidden) {
+                                continue;
+                            }
                             $prefix_for_condition = isset($show_prefix_array) && count($show_prefix_array) > 0 ? $show_prefix_array : ["$prefix"];
                             if (in_array($prefix, $prefix_for_condition)) {
                                 $hasSchema = false;

@@ -104,8 +104,11 @@ class Swagger {
                                 }
 
                                 if (!is_null($validations) && count($validations) > 0) {
-                                    $hasSchema = true;
-                                    $schemas[$schemaName] = $this->getSchemas($validations, $schemaName, $method);
+                                    $accept_methods = ['PUT', 'POST', 'PATCH'];
+                                    if(in_array($method, $accept_methods)) {
+                                        $hasSchema = true;
+                                        $schemas[$schemaName] = $this->getSchemas($validations, $schemaName, $method);    
+                                    }
                                 }
 
                                 $needToken = $this->checkIfTokenIsRequired($route);

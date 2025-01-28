@@ -72,7 +72,8 @@ trait Helpers
                         try {
                             $request = $typeHint->getName();
                             $request = new $request();
-                            return $request->rules();
+                            $rules = $request->rules();
+                            return $this->confirmedValidation($rules);
                         } catch (\Throwable $th) {
                         }
                     }
@@ -84,6 +85,18 @@ trait Helpers
         }
     }
 
+
+    private function confirmedValidation($rules)
+    {
+        if (str_contains(json_encode($rules), 'confirmed')) {
+            foreach ($rules as $key => $rule) {
+                if (str_contains($rule, 'confirmed')) {
+                    $rules["{$key}_confirmation"] = str_replace('confirmed', '', $rule);
+                }
+            }
+        }
+        return $rules;
+    }
 
 
     public function schemaName(string $action): string

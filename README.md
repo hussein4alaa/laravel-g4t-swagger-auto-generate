@@ -73,7 +73,13 @@ php artisan vendor:publish --provider "G4T\Swagger\SwaggerServiceProvider"
        // ...
     }
    ```
-      
+9. To enable documentation auth, open `config/swagger.php` and edit this
+   ```php
+    "enable_auth" => false,
+    "username" => "admin",
+    "password" => "pass",
+    "sesson_ttl" => 100000,
+   ```
 
  
 

@@ -81,6 +81,10 @@ php artisan vendor:publish --provider "G4T\Swagger\SwaggerServiceProvider"
     "sesson_ttl" => 100000,
    ```
 
+## Suggestions
+
+If you have any suggestions or feature requests, please feel free to add them on our [Canny board](https://g4t.canny.io/).
+
  
 
 ## Contributing

@@ -44,11 +44,11 @@ trait Schemas
 
         $schemas["required"] = $required;
         foreach ($validation_content as $column_name => $validation_value) {
-            if (!str_contains($column_name, "[merge_input]")) {
-                $name = $this->getInputName($column_name);
-                if (str_contains($validation_value, "array")) {
-                    $schemas['properties'][$name . "[]"] = $this->getSwaggerInputSchema($validation_value);
-                } else {
+            $name = $this->getInputName($column_name);
+            if (str_contains($validation_value, "array")) {
+                $schemas['properties'][$name . "[]"] = $this->getSwaggerInputSchema($validation_value);
+            } else {
+                if (!str_contains($name, "merge_input")) {
                     $schemas['properties'][$name] = $this->getSwaggerInputSchema($validation_value);
                 }
             }
@@ -102,11 +102,10 @@ trait Schemas
                     $property->setAccessible(true);
                     $enumClass = $property->getValue($format_validation);
                     $is_enum = $this->isEnum($enumClass);
-                    if($is_enum) {
+                    if ($is_enum) {
                         $formated_validation .= $this->getCasesFromEnum($enumClass);
                     }
                 } catch (\Throwable $th) {
-
                 }
             }
         }
@@ -120,22 +119,22 @@ trait Schemas
         $cases = $reflection->getReflectionConstants();
         $caseList = 'in:';
         foreach ($cases as $case) {
-            $caseList .= $case->getValue()->value.",";
+            $caseList .= $case->getValue()->value . ",";
         }
         if (substr($caseList, -1) === ',') {
             $caseList = substr($caseList, 0, -1);
-        }        
+        }
         return $caseList;
-        
     }
 
 
-    private function isEnum($className) {
+    private function isEnum($className)
+    {
         $reflection = new ReflectionClass($className);
         return $reflection->isEnum();
     }
-    
-    
+
+
 
     public function generateGenericRequiredAndRules(array $validations, string $method): array
     {
@@ -147,18 +146,22 @@ trait Schemas
             if (is_array($validation)) {
                 $rules[$rule_key] = $this->convertValidationToOneLine($validation);
             } else {
-                if (str_contains($validation, 'image') || str_contains($validation, 'file') || str_contains($validation, 'mimes')) {
-                    $rule_key = $this->getInputName($key);
-                }
+                // if (str_contains($validation, 'image') || str_contains($validation, 'file') || str_contains($validation, 'mimes')) {
+                //     $rule_key = $this->getInputName($key);
+                // }
                 $rules[$rule_key] = $validation;
             }
-            if (str_contains($rule_key, "[merge_input]")) {
-                $new_key_for_merge = str_replace('[merge_input]', '', $rule_key);
+            if (str_contains($rule_key, "*")) {
+                $new_key_for_merge = str_replace('.*', '', $rule_key);
                 foreach ($validations as $merge_key => $merge_validation) {
                     $merge_name = $this->getInputName($merge_key);
                     if ($merge_name == $new_key_for_merge) {
                         $response = implode('|', array_unique(array_filter(explode('|', $merge_validation . '|' . $validation))));
                         $rules[$merge_name] = $response;
+                        $unset_key = $merge_name . '.*';
+                        if (isset($rules[$unset_key])) {
+                            unset($unset_key);
+                        }
                     }
                 }
             }
@@ -173,8 +176,12 @@ trait Schemas
                     }
                 }
             }
-   
         }
+        $required = array_filter($required, function ($value) {
+            return !str_contains($value, '.*');
+        });
+        $required = array_values($required);
+
         $string_rules = json_encode($rules);
         if ($method == 'PUT' && (str_contains($string_rules, 'image') || str_contains($string_rules, 'file') || str_contains($string_rules, 'mimes'))) {
             $method_rule = ["_method" => "required|in:PUT"];
@@ -245,6 +252,12 @@ trait Schemas
         $schema = [];
         if (str_contains($validation_value, $condition)) {
             $schema[$key] = $value;
+            if ($value == 'true') {
+                $schema[$key] = true;
+            }
+            if ($value == 'false') {
+                $schema[$key] = false;
+            }
         }
         return $schema;
     }
@@ -254,7 +267,11 @@ trait Schemas
         $schema = [];
         preg_match('/' . $condition . '\:([^|]+)/', $validation_value, $matches);
         if (isset($matches[1])) {
-            $schema[$key] = $matches[1];
+            if (is_numeric($matches[1])) {
+                $schema[$key] = (int) $matches[1];
+            } else {
+                $schema[$key] = $matches[1];
+            }
         }
         return $schema;
     }
@@ -345,7 +362,6 @@ trait Schemas
             $mimes_format = $this->setColumnAttributes($validation_value, 'mimes', 'format', 'binary');
         }
         $schema = array_merge(
-            $required,
             $nullable,
             $string,
             $integer,
@@ -372,8 +388,13 @@ trait Schemas
             $array_of_inputs,
             $schema,
         );
-        if(!isset($schema['type'])) {
+        if (!isset($schema['type'])) {
             $schema['type'] = 'string';
+        }
+        if ($schema['type'] == 'array' && !isset($schema['items'])) {
+            $schema['items'] = [
+                "type" => "string"
+            ];
         }
         return $schema;
     }

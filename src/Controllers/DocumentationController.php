@@ -2,21 +2,30 @@
 
 namespace G4T\Swagger\Controllers;
 
+use G4T\Swagger\Helpers;
 use G4T\Swagger\Swagger;
 use Illuminate\Http\Response;
 use Illuminate\Support\Facades\File;
+use Illuminate\Support\Facades\Http;
+use PhpParser\Node\Stmt\Return_;
 
 class DocumentationController
 {
+    use Helpers;
+
+    protected $remote_data;
 
     public function getSwaggerData()
     {
-        $enable = config('swagger.enable');
-        if (!$enable) {
+        $remote = app('remote_data');
+        if (!$remote['enable']) {
             abort(Response::HTTP_FORBIDDEN);
         }
         $swager_json = new Swagger;
         $response = $swager_json->swagger();
+        $response['servers'] = $remote['servers'];
+        $response['components']->securitySchemes = $remote['security'];
+        $response['info']['title'] = $remote['name'];
         return $response;
     }
 
@@ -28,29 +37,51 @@ class DocumentationController
         $themes_path = url('g4t/swagger/themes');
 
         $stylesheet = config('swagger.stylesheet');
+        $remote = app('remote_data');
         return view('swagger::documentation', [
             'themes_path' => $themes_path,
             'response' => $response,
             'versions' => $versions,
             'stylesheet' => $stylesheet,
-            'themes' => $themes
+            'themes' => $themes,
+            'mode' => $remote['mode']
         ]);
     }
 
     private function reformatVersions()
     {
-        $config = config('swagger');
+        $remote = app('remote_data');
         $versions = [];
-        foreach ($config['versions'] as $version) {
+        foreach ($remote['versions'] as $version) {
             $versions[] = [
                 'name' => $version,
-                'url' => url($config["url"] . "/json?version=$version")
+                'url' => url($remote["path"] . "/json?version=$version")
             ];
         }
         $data['versions'] = $versions;
-        $data['default'] = $config['default'];
+        $data['default'] = $remote['default'];
         return $data;
     }
+
+
+
+    // private function reformatVersions()
+    // {
+    //     $remote = app('remote_data');
+    //     $versions = [];
+    //     foreach ($remote['versions'] as $version) {
+    //         $versions[] = [
+    //             'name' => $version,
+    //             'url' => url($remote["url"] . "/json?version=$version")
+    //         ];
+    //     }
+    //     $data['versions'] = $versions;
+    //     $data['default'] = $remote['default'];
+    //     return $data;
+    // }
+
+
+
 
 
     public function showJsonDocumentation()
@@ -118,5 +149,12 @@ class DocumentationController
             $fileNamesWithoutCss[] = 'default';
             return $fileNamesWithoutCss;
         }
+    }
+
+
+    public function testing()
+    {
+        $swager_json = new Swagger;
+        return $swager_json->generateSwaggerJsonResponse(true);
     }
 }

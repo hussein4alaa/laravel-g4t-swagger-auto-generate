@@ -33,4 +33,9 @@ class IssueController
         }
         return $newEntries;
     }
+
+    public function testing()
+    {
+        
+    }
 }

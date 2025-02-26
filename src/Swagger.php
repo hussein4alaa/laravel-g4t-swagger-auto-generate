@@ -21,6 +21,7 @@ class Swagger {
      * @return array
      */
     public function swagger() {
+        $swagger_json_response = $this->generateSwaggerJsonResponse();
         return [
             "openapi" => "3.0.3",
             "info" => [
@@ -37,9 +38,12 @@ class Swagger {
                 "version" => config('swagger.version')
             ],
             "servers" => config('swagger.servers'),
-            "components" => $this->generateSwaggerJsonResponse(),
-            "tags" => $this->generateSwaggerJsonResponse()->tags,
-            "paths" => $this->generateSwaggerJsonResponse()->paths,
+            "components" => (object)[
+                'schemas' => $swagger_json_response->schemas,
+                'securitySchemes' => $swagger_json_response->securitySchemes,
+            ],
+            "tags" => $swagger_json_response->tags,
+            "paths" => $swagger_json_response->paths,
         ];
     }
 
@@ -62,7 +66,6 @@ class Swagger {
     public function generateSwaggerJsonResponse() {
         $routes = Route::getRoutes();
         $apiRoutes = [];
-        $names = [];
         $schemas = [];
         $show_prefix_array = config('swagger.show_prefix');
         $mapping_prefix = config('swagger.mapping_prefix');
@@ -152,7 +155,6 @@ class Swagger {
         $swaggerJson->paths = $this->formatPaths($apiRoutes);
         $swaggerJson->schemas = $schemas;
         $swaggerJson->securitySchemes = config('swagger.security_schemes');
-
         return $swaggerJson;
     }
 
@@ -183,7 +185,8 @@ class Swagger {
     }
 
     private function getVersion() {
-        $versions = config('swagger.versions');
+        $remote = app('remote_data');
+        $versions = array_merge(['all'], $remote['versions']);
         $version = 'api/';
         if (request()->filled('version') && in_array(request()->version, $versions)) {
             if (request()->version == 'all') {

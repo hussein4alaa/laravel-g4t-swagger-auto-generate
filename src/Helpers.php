@@ -2,6 +2,7 @@
 
 namespace G4T\Swagger;
 
+use Illuminate\Support\Facades\Http;
 use ReflectionException;
 use ReflectionMethod;
 use Illuminate\Support\Str;
@@ -199,15 +200,20 @@ trait Helpers
 
     public function checkIfTokenIsRequired($route)
     {
-        $middlewares = $route->gatherMiddleware();
-        $authMiddlewares = config('swagger.auth_middlewares');
-
-        foreach ($middlewares as $middleware) {
-            if (in_array($middleware, $authMiddlewares)) {
-                return true;
+        try {
+            $middlewares = $route->gatherMiddleware();
+            $remote = app('remote_data');
+            $authMiddlewares = $remote['auth_middlewares'];
+            foreach ($middlewares as $middleware) {
+                if (in_array($middleware, $authMiddlewares)) {
+                    return true;
+                }
             }
+            return false;
+        } catch (\Throwable $th) {
+            return false;
         }
-
-        return false;
     }
+
+
 }

@@ -47,12 +47,16 @@ return [
     |--------------------------------------------------------------------------
     |
     | This options to enable documentation auth
+    | Auth Types: ["local"]
     |
     */
-    "enable_auth" => false,
-    "username" => "admin",
-    "password" => "pass",
-    "sesson_ttl" => 100000,
+    "auth" => [
+        "type" => "local",
+        "enable" => false,
+        "email" => "admin@site.com",
+        "password" => "123456",
+        "sesson_ttl" => 10000
+    ],
     
     /*
     |--------------------------------------------------------------------------

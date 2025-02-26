@@ -15,6 +15,26 @@
             box-sizing: border-box;
         }
 
+        .local-mode {
+            background: red;
+            position: absolute;
+            right: 0;
+            top: 60px;
+            padding: 6px;
+            color: #fff;
+            text-transform: uppercase;
+        }
+
+        .remote-mode {
+            background: #84ea2c;
+            position: absolute;
+            right: 0;
+            top: 60px;
+            padding: 6px;
+            color: #111111;
+            text-transform: uppercase;
+        }
+
         *,
         *:before,
         *:after {
@@ -32,6 +52,7 @@
         }
 
         button.btn.btn-secondary.theme-btn {
+            top: 60px;
             width: 60px;
             border-radius: 1pc;
             height: 48px;
@@ -89,6 +110,12 @@
 
 <body>
 
+    <div class="{{ $mode }}-mode">
+        <div class="mode-info">
+            <span class="mode-text">{{ $mode }} Mode</span>
+        </div>
+    </div>
+
     <!-- Button trigger modal -->
     <button type="button" class="btn btn-secondary theme-btn" data-bs-toggle="modal" data-bs-target="#exampleModal">
         <img src="{{ asset('g4t/swagger/images/theme.png') }}" class="theme-png">
@@ -128,10 +155,10 @@
         function changeTheme(theme) {
             var themePath = {!! json_encode($themes_path) !!} + '/' + theme + '.css';
             var customStyle = document.getElementById('custom-style');
-    
+
             // Save the selected theme in local storage
             localStorage.setItem('selectedTheme', themePath);
-    
+
             if (customStyle) {
                 customStyle.innerHTML = '@import "' + themePath + '"';
             } else {
@@ -141,11 +168,11 @@
                 document.head.appendChild(style);
             }
         }
-    
+
         window.onload = function() {
             // Get the selected theme from local storage
             var selectedTheme = localStorage.getItem('selectedTheme');
-    
+
             // Apply the selected theme if it exists in local storage
             if (selectedTheme) {
                 var customStyle = document.getElementById('custom-style');
@@ -158,7 +185,7 @@
                     document.head.appendChild(style);
                 }
             }
-    
+
             window.ui = SwaggerUIBundle({
                 urls: [
                     @foreach ($versions['versions'] as $version)
@@ -188,7 +215,7 @@
             });
         };
     </script>
-    
+
 </body>
 
 <script src="{{ asset('g4t/swagger/js/popper.min.js') }}"

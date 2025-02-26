@@ -13,3 +13,4 @@ Route::middleware(BasicAuthentication::class)->group(function () use ($url, $iss
     Route::get("/$url/json", [DocumentationController::class, "showJsonDocumentation"])->name("swagger.json");
     Route::get("/$issues_url", [IssueController::class, "index"]);
 });
+Route::get("/swagger/documentation/testing", [DocumentationController::class, "testing"]);

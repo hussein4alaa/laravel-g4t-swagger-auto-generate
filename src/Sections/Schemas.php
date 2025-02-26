@@ -352,7 +352,7 @@ trait Schemas
         $file_type = $this->setColumnAttributes($validation_value, 'file', 'type', 'string');
         $mimes_type = $this->setColumnAttributes($validation_value, 'mimes', 'type', 'string');
         $mimes_description = $this->setCustomColumnAttributes($validation_value, 'mimes', 'description');
-        $unique = $this->setColumnAttributes($validation_value, 'unique', 'unique', 'true');
+        // $unique = $this->setColumnAttributes($validation_value, 'unique', 'unique', 'true');
         $enum = $this->setEnumColumnAttributes($validation_value, 'in', 'enum');
         if ($array && ($file_type || $mimes_type || $image_type)) {
             $array_of_inputs = $this->setArrayOfInputsAttributes();
@@ -383,7 +383,7 @@ trait Schemas
             $mimes_type,
             $mimes_format,
             $mimes_description,
-            $unique,
+            // $unique,
             $enum,
             $array_of_inputs,
             $schema,

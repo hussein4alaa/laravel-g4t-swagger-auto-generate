@@ -11,7 +11,8 @@ trait Schemas
     public function getSchemas(array $validations, string $name, string $method = 'POST'): array
     {
         if ($method === 'PUT|PATCH' || $method === 'PUT') {
-            $schema = $this->generateSchemaNested($validations, $name, $method);
+            $schema = $this->generateGenericSchema($validations, $name, $method);
+            // $schema = $this->generateSchemaNested($validations, $name, $method);
         } else {
             $schema = $this->generateGenericSchema($validations, $name, $method);
         }

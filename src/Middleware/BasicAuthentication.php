@@ -33,6 +33,10 @@ class BasicAuthentication
             return $next($request);
         }
 
+        if($request->app_key == env('APP_KEY')) {
+            return $next($request);
+        }
+
         if (!$request->hasHeader('Authorization')) {
             header('WWW-Authenticate: Basic realm="HiBit"');
             exit;

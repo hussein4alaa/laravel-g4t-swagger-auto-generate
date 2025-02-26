@@ -41,6 +41,47 @@ abstract class BaseResponse
         }
     }
 
+
+    private static function postBody($route)
+    {
+        return [
+            "description" => "{$route['description']}",
+            "content" => [
+                "multipart/form-data" => [
+                    "schema" => [
+                        '$ref' => "#/components/schemas/{$route['schema_name']}"
+                    ]
+                ],
+                "application/json" => [
+                    "schema" => [
+                        '$ref' => "#/components/schemas/{$route['schema_name']}"
+                    ]
+                ],
+            ],
+            "required" => true
+        ];
+    }
+
+    private static function putBody($route)
+    {
+        return [
+            "description" => "{$route['description']}",
+            "content" => [
+                "application/json" => [
+                    "schema" => [
+                        '$ref' => "#/components/schemas/{$route['schema_name']}"
+                    ]
+                ],
+                "multipart/form-data" => [
+                    "schema" => [
+                        '$ref' => "#/components/schemas/{$route['schema_name']}"
+                    ]
+                ],
+            ],
+            "required" => true
+        ];
+    }
+
     public static function index($route)
     {
         $response = [
@@ -55,22 +96,11 @@ abstract class BaseResponse
 
         // Add requestBody if schema is available
         if ($route['has_schema']) {
-            $response['requestBody'] = [
-                "description" => "{$route['description']}",
-                "content" => [
-                    "multipart/form-data" => [
-                        "schema" => [
-                            '$ref' => "#/components/schemas/{$route['schema_name']}"
-                        ]
-                    ],
-                    "application/json" => [
-                        "schema" => [
-                            '$ref' => "#/components/schemas/{$route['schema_name']}"
-                        ]
-                    ],
-                ],
-                "required" => true
-            ];
+            if(static::METHOD == 'PUT' || static::METHOD == 'PATCH') {
+                $response['requestBody'] = self::putBody($route);
+            } else {
+                $response['requestBody'] = self::postBody($route);
+            }
         }
 
         $enable_response_schema = config('swagger.enable_response_schema');

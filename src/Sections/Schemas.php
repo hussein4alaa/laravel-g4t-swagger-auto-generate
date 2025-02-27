@@ -280,7 +280,7 @@ trait Schemas
     public function setEnumColumnAttributes(string $validation_value, string $condition, string $key): array
     {
         $schema = [];
-        if (str_contains($validation_value, "min")) {
+        if (str_contains($validation_value, "min:")) {
             return $schema;
         }
         $data = $this->setCustomColumnAttributes($validation_value, $condition, $key);

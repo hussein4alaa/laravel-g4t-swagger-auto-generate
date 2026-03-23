@@ -30,8 +30,11 @@ trait Helpers
     }
 
 
-    public function getRouteName(string $route, string $prefix): string
+    public function getRouteName(string $route, $prefix = null): string
     {
+        if(!$prefix) {
+            return 'unknown';
+        }
         $escapedPrefix = preg_quote($prefix, '/');
         $regex = "/{$escapedPrefix}\/([^\/]+)/";
         if (preg_match($regex, $route, $matches)) {

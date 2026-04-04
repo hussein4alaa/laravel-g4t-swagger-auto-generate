@@ -22,7 +22,7 @@ class DocumentationController
 
     public function showViewDocumentation()
     {
-        $response = $this->showJsonDocumentation();
+        $payload = $this->resolveSwaggerSpecification();
         $versions = $this->reformatVersions();
         $themes = $this->getThemesList();
         $themes_path = url('g4t/swagger/themes');
@@ -30,7 +30,7 @@ class DocumentationController
         $stylesheet = config('swagger.stylesheet');
         return view('swagger::documentation', [
             'themes_path' => $themes_path,
-            'response' => $response,
+            'response' => $payload,
             'versions' => $versions,
             'stylesheet' => $stylesheet,
             'themes' => $themes
@@ -55,22 +55,65 @@ class DocumentationController
 
     public function showJsonDocumentation()
     {
-        $static_json = config('swagger.load_from_json');
-        if ($static_json) {
-            $filePath = public_path('doc.json');
-            if (!file_exists($filePath)) {
-                return [];
-            }
-            $jsonContent = file_get_contents($filePath);
-            $data = json_decode($jsonContent, true);
-            if (request()->filled('version')) {
-                return $this->filter($data);
-            }
-            return $data;
-        } else {
-            $response = $this->getSwaggerData();
-            return response()->json($response);
+        $data = $this->resolveSwaggerSpecification();
+        if (request()->filled('version')) {
+            $data = $this->filter($data);
         }
+
+        return response()->json($data, 200, [], JSON_UNESCAPED_UNICODE);
+    }
+
+    /**
+     * OpenAPI document: static file when configured / cached file when present, else live from routes.
+     *
+     * @return array<string, mixed>
+     */
+    public function resolveSwaggerSpecification(): array
+    {
+        if (! config('swagger.enable', true)) {
+            abort(Response::HTTP_FORBIDDEN);
+        }
+
+        if (config('swagger.load_from_json')) {
+            $cached = $this->tryReadCachedSwaggerJson();
+
+            return $cached ?? [];
+        }
+
+        if (config('swagger.use_cached_spec_when_present', true)) {
+            $cached = $this->tryReadCachedSwaggerJson();
+            if ($cached !== null) {
+                return $cached;
+            }
+        }
+
+        return $this->getSwaggerData();
+    }
+
+    private function swaggerPublicSpecPath(): string
+    {
+        return public_path(config('swagger.cached_spec_path', 'doc.json'));
+    }
+
+    /**
+     * @return array<string, mixed>|null
+     */
+    private function tryReadCachedSwaggerJson(): ?array
+    {
+        $path = $this->swaggerPublicSpecPath();
+        if (! is_readable($path)) {
+            return null;
+        }
+        $raw = @file_get_contents($path);
+        if ($raw === false || $raw === '') {
+            return null;
+        }
+        $data = json_decode($raw, true);
+        if (json_last_error() !== JSON_ERROR_NONE || ! is_array($data)) {
+            return null;
+        }
+
+        return $data;
     }
 
     public function filter($data)

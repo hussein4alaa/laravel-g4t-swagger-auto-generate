@@ -18,8 +18,10 @@ class GenerateDocsCommand extends Command
         $this->info('Generating API documentation...');
         $doc = new DocumentationController;
         $jsonData = $doc->getSwaggerData();
-        $filePath = public_path('doc.json');
-        file_put_contents($filePath, json_encode($jsonData, JSON_PRETTY_PRINT));
+        $relative = config('swagger.cached_spec_path', 'doc.json');
+        $filePath = public_path($relative);
+        $flags = JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE;
+        file_put_contents($filePath, json_encode($jsonData, $flags));
         $this->info('API documentation generated successfully.');
     }
 

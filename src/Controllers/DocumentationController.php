@@ -119,27 +119,71 @@ class DocumentationController
     public function filter($data)
     {
         $searchTerm = request()->version;
-        if ($searchTerm == 'all') {
+        if ($searchTerm === 'all') {
             return $data;
+        }
+
+        $data = $this->normalizeSpecificationToArray($data);
+
+        $allPaths = $data['components']['paths'] ?? $data['paths'] ?? [];
+        if (! is_array($allPaths)) {
+            $allPaths = [];
         }
 
         $paths = [];
         $tags = [];
-        foreach ($data['components']['paths'] as $key => $path) {
-            if (str_contains($key, $searchTerm)) {
-                $paths[$key] = $data['components']['paths'][$key];
-                foreach ($path as $path_key => $path_value) {
-                    $tags[] = $path_value['tags'][0];
+        foreach ($allPaths as $key => $path) {
+            if (! str_contains((string) $key, (string) $searchTerm)) {
+                continue;
+            }
+
+            $paths[$key] = $allPaths[$key];
+            $path = $this->normalizeSpecificationToArray($path);
+
+            foreach ($path as $pathValue) {
+                $pathValue = $this->normalizeSpecificationToArray($pathValue);
+                if (isset($pathValue['tags'][0])) {
+                    $tags[] = $pathValue['tags'][0];
                 }
             }
         }
 
+        if (! isset($data['components']) || ! is_array($data['components'])) {
+            $data['components'] = [];
+        }
 
         $data['components']['paths'] = $paths;
         $data['components']['tags'] = $tags;
         $data['tags'] = $tags;
         $data['paths'] = $paths;
+
         return $data;
+    }
+
+    /**
+     * Live generation nests stdClass under "components" (see \G4T\Swagger\Swagger::swagger()); cached JSON is arrays.
+     * Normalize so filter() can use array access throughout.
+     *
+     * @param  mixed  $data
+     * @return array<string, mixed>
+     */
+    private function normalizeSpecificationToArray(mixed $data): array
+    {
+        if (! is_array($data) && ! is_object($data)) {
+            return [];
+        }
+
+        $json = json_encode($data);
+        if ($json === false) {
+            return [];
+        }
+
+        $decoded = json_decode($json, true);
+        if (json_last_error() !== JSON_ERROR_NONE || ! is_array($decoded)) {
+            return [];
+        }
+
+        return $decoded;
     }
 
     public function getThemesList()

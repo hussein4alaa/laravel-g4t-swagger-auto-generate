@@ -128,10 +128,10 @@
         function changeTheme(theme) {
             var themePath = {!! json_encode($themes_path) !!} + '/' + theme + '.css';
             var customStyle = document.getElementById('custom-style');
-    
+
             // Save the selected theme in local storage
             localStorage.setItem('selectedTheme', themePath);
-    
+
             if (customStyle) {
                 customStyle.innerHTML = '@import "' + themePath + '"';
             } else {
@@ -141,11 +141,11 @@
                 document.head.appendChild(style);
             }
         }
-    
+
         window.onload = function() {
             // Get the selected theme from local storage
             var selectedTheme = localStorage.getItem('selectedTheme');
-    
+
             // Apply the selected theme if it exists in local storage
             if (selectedTheme) {
                 var customStyle = document.getElementById('custom-style');
@@ -158,7 +158,7 @@
                     document.head.appendChild(style);
                 }
             }
-    
+
             window.ui = SwaggerUIBundle({
                 urls: [
                     @foreach ($versions['versions'] as $version)
@@ -188,7 +188,7 @@
             });
         };
     </script>
-    
+
 </body>
 
 <script src="{{ asset('g4t/swagger/js/popper.min.js') }}"

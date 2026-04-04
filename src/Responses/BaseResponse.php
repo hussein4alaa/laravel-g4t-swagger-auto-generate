@@ -2,6 +2,8 @@
 
 namespace G4T\Swagger\Responses;
 
+use Illuminate\Support\Str;
+
 abstract class BaseResponse
 {
     protected static function getResponses($method, $route)
@@ -81,23 +83,134 @@ abstract class BaseResponse
 
         $errorExamples = $route['error_response_examples'] ?? [];
         if ($errorExamples !== [] && is_array($errorExamples)) {
-            foreach ($errorExamples as $statusCode => $example) {
-                if (! is_array($example)) {
+            foreach ($errorExamples as $statusCode => $raw) {
+                $payloads = self::normalizeInferredErrorPayloads($raw);
+                if ($payloads === []) {
                     continue;
                 }
                 $code = (string) $statusCode;
-                if (isset($response['responses'][$code]['content']['application/json']['example'])) {
+                $json = &$response['responses'][$code]['content']['application/json'];
+                if (isset($json['example']) || isset($json['examples'])) {
                     continue;
                 }
                 $response['responses'][$code]['description'] = $response['responses'][$code]['description'] ?? self::defaultHttpErrorDescription((int) $code);
-                $response['responses'][$code]['content']['application/json']['example'] = $example;
+                if (count($payloads) === 1) {
+                    $json['example'] = $payloads[0];
+                } else {
+                    $json['examples'] = self::buildOpenApiExamplesObject($payloads);
+                }
+                unset($json);
             }
         }
 
-        if (! empty($route['validations']) && is_array($route['validations']) && ! isset($response['responses']['422']['content']['application/json']['example'])) {
-            $response['responses']['422']['description'] = $response['responses']['422']['description'] ?? 'Validation error';
-            $response['responses']['422']['content']['application/json']['example'] = self::buildValidationErrorExample($route['validations']);
+        if (! empty($route['validations']) && is_array($route['validations'])) {
+            self::mergeValidation422Example($response, $route['validations']);
         }
+    }
+
+    /**
+     * @return list<array<string, mixed>>
+     */
+    private static function normalizeInferredErrorPayloads(mixed $raw): array
+    {
+        if (! is_array($raw) || $raw === []) {
+            return [];
+        }
+
+        if (array_is_list($raw)) {
+            return array_values(array_filter($raw, 'is_array'));
+        }
+
+        return [$raw];
+    }
+
+    /**
+     * @param  list<array<string, mixed>>  $payloads
+     * @return array<string, array{summary?: string, value: array<string, mixed>}>
+     */
+    private static function buildOpenApiExamplesObject(array $payloads): array
+    {
+        $out = [];
+        $usedNames = [];
+
+        foreach ($payloads as $i => $payload) {
+            $base = self::guessOpenApiExampleName($payload, $i);
+            $name = $base;
+            $n = 2;
+            while (isset($usedNames[$name])) {
+                $name = $base . '_' . $n;
+                $n++;
+            }
+            $usedNames[$name] = true;
+            $summary = isset($payload['message']) && is_string($payload['message'])
+                ? Str::limit($payload['message'], 80)
+                : 'Error response';
+            $out[$name] = [
+                'summary' => $summary,
+                'value' => $payload,
+            ];
+        }
+
+        return $out;
+    }
+
+    /**
+     * @param  array<string, mixed>  $payload
+     */
+    private static function guessOpenApiExampleName(array $payload, int $index): string
+    {
+        if (isset($payload['message']) && is_string($payload['message'])) {
+            $slug = Str::slug(Str::limit($payload['message'], 60, ''));
+            if ($slug !== '') {
+                return strlen($slug) > 56 ? substr($slug, 0, 56) : $slug;
+            }
+        }
+
+        return 'error_' . ($index + 1);
+    }
+
+    /**
+     * @param  array<string, mixed>  $rules
+     */
+    private static function mergeValidation422Example(array &$response, array $rules): void
+    {
+        $validationExample = self::buildValidationErrorExample($rules);
+        $response['responses']['422']['description'] = $response['responses']['422']['description'] ?? 'Unprocessable entity';
+
+        $json = &$response['responses']['422']['content']['application/json'];
+
+        if (! isset($json['example']) && ! isset($json['examples'])) {
+            $json['example'] = $validationExample;
+
+            return;
+        }
+
+        if (isset($json['examples']) && is_array($json['examples'])) {
+            if (! isset($json['examples']['request_validation'])) {
+                $json['examples']['request_validation'] = [
+                    'summary' => 'Validation error (FormRequest)',
+                    'value' => $validationExample,
+                ];
+            }
+
+            return;
+        }
+
+        $previous = $json['example'];
+        unset($json['example']);
+        $examples = [];
+        if (is_array($previous)) {
+            $examples = self::buildOpenApiExamplesObject([$previous]);
+            $firstKey = array_key_first($examples);
+            if ($firstKey !== null) {
+                $examples[$firstKey]['summary'] = $examples[$firstKey]['summary'] ?? 'Application error';
+            }
+        }
+        $examples['request_validation'] = [
+            'summary' => 'Validation error (FormRequest)',
+            'value' => $validationExample,
+        ];
+        $json['examples'] = $examples;
     }
 
     /**
@@ -143,7 +256,7 @@ abstract class BaseResponse
             $code === 403 => 'Forbidden',
             $code === 404 => 'Not found',
             $code === 409 => 'Conflict',
-            $code === 422 => 'Validation error',
+            $code === 422 => 'Unprocessable entity',
             $code === 429 => 'Too many requests',
             $code >= 500 => 'Server error',
             default => 'Error',
@@ -157,7 +270,10 @@ abstract class BaseResponse
     private static function buildValidationErrorExample(array $rules): array
     {
         $errors = [];
-        foreach (array_keys($rules) as $field) {
+        foreach ($rules as $field => $rule) {
+            if (! self::validationRulesMarkFieldRequired($rule)) {
+                continue;
+            }
             $errors[$field] = ["The {$field} field is required."];
         }
 
@@ -165,6 +281,47 @@ abstract class BaseResponse
             'message' => 'The given data was invalid.',
             'errors' => $errors,
         ];
+    }
+
+    /**
+     * Only fields whose rules include a bare `required` segment get a "field is required" line in the example;
+     * optional / `nullable`-only attributes are omitted.
+     *
+     * @param  mixed  $rule  string pipe-rules or array of rules
+     */
+    private static function validationRulesMarkFieldRequired(mixed $rule): bool
+    {
+        if (is_array($rule)) {
+            foreach ($rule as $segment) {
+                if (is_string($segment) && self::pipeRuleStringContainsBareRequired($segment)) {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        if (is_string($rule)) {
+            return self::pipeRuleStringContainsBareRequired($rule);
+        }
+
+        return false;
+    }
+
+    private static function pipeRuleStringContainsBareRequired(string $pipeRules): bool
+    {
+        foreach (explode('|', $pipeRules) as $part) {
+            $part = trim($part);
+            if ($part === '') {
+                continue;
+            }
+            $name = strtolower(strtok($part, ':'));
+            if ($name === 'required') {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     public static function index($route)

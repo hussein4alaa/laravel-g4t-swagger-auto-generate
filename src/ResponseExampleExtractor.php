@@ -7,11 +7,12 @@ use Illuminate\Database\Eloquent\Attributes\Fillable as FillableAttribute;
 use Illuminate\Http\Resources\Json\JsonResource;
 use ReflectionClass;
 use ReflectionMethod;
+use Symfony\Component\HttpFoundation\Response as SymfonyResponse;
 use Throwable;
 
 /**
- * Derives OpenAPI examples from controller returns: response()->json([...]), plain arrays/strings,
- * and JsonResource::collection / new Resource patterns.
+ * Derives OpenAPI examples from controller returns: response()->json([...]), foreach-built arrays,
+ * plain {@code return [ 'k' => $var ]} shapes, literal arrays/strings, and JsonResource patterns.
  */
 class ResponseExampleExtractor
 {
@@ -49,6 +50,16 @@ class ResponseExampleExtractor
 
             $eagerLoadPaths = $this->extractEagerLoadPathsFromControllerBody($body);
 
+            $fromWrappedJson = $this->extractFromResponseJsonWrappedResource($body, $file, $eagerLoadPaths);
+            if ($fromWrappedJson !== null) {
+                return $fromWrappedJson;
+            }
+
+            $fromForeachBuiltArray = $this->extractFromResponseJsonForeachBuiltArray($body);
+            if ($fromForeachBuiltArray !== null) {
+                return $fromForeachBuiltArray;
+            }
+
             $keyedResources = $this->extractKeyedArrayWithNewResource($body, $file, $eagerLoadPaths);
             if ($keyedResources !== null) {
                 return $keyedResources;
@@ -64,6 +75,11 @@ class ResponseExampleExtractor
                 return $plain;
             }
 
+            $composite = $this->extractFromCompositeSectionArrayReturn($body, $class, $file);
+            if ($composite !== null) {
+                return $composite;
+            }
+
             return $this->extractFromResourceReturn($body, $file, $eagerLoadPaths);
         } catch (Throwable) {
             return null;
@@ -73,7 +89,7 @@ class ResponseExampleExtractor
     /**
      * Extracts error / non-success JSON examples from the controller: response()->json([...], 4xx/5xx) and abort(4xx, '...').
      *
-     * @return array<int, array<string, mixed>> status code => example payload
+     * @return array<int, list<array<string, mixed>>> status code => list of example payloads (multiple per status supported)
      */
     public function extractErrorResponseExamples(string $controllerAction): array
     {
@@ -105,7 +121,7 @@ class ResponseExampleExtractor
             $fromJson = $this->extractResponseJsonErrorPayloadsFromBody($body);
             $fromAbort = $this->extractAbortExamplesFromBody($body);
 
-            return $fromJson + $fromAbort;
+            return $this->mergeErrorExamplesByStatus($fromJson, $fromAbort);
         } catch (Throwable) {
             return [];
         }
@@ -129,16 +145,31 @@ class ResponseExampleExtractor
     }
 
     /**
-     * @return array<int, array<string, mixed>>
+     * Opening "(" for the json() argument list in {@code response()->json( … )}, not {@code response( … )}.
+     */
+    private function locateResponseJsonArgumentListOpenParenFromMatch(string $body, int $responseJsonMatchPos): ?int
+    {
+        $j = stripos($body, '->json(', $responseJsonMatchPos);
+        if ($j === false) {
+            return null;
+        }
+
+        return $j + 6;
+    }
+
+    /**
+     * @return array<int, list<array<string, mixed>>>
      */
     private function extractResponseJsonErrorPayloadsFromBody(string $body): array
     {
         $out = [];
         $offset = 0;
         while (($pos = stripos($body, 'response()->json', $offset)) !== false) {
-            $openParen = strpos($body, '(', $pos);
-            if ($openParen === false) {
-                break;
+            $openParen = $this->locateResponseJsonArgumentListOpenParenFromMatch($body, $pos);
+            if ($openParen === null) {
+                $offset = $pos + 1;
+
+                continue;
             }
             $bracketPos = strpos($body, '[', $openParen);
             if ($bracketPos === false) {
@@ -154,18 +185,14 @@ class ResponseExampleExtractor
             }
             $afterClose = $bracketPos + 1 + strlen($inner) + 1;
             $rest = substr($body, $afterClose);
-            if (! preg_match('/^\s*,\s*(\d{3})\s*\)/', $rest, $m)) {
-                $offset = $afterClose;
-
-                continue;
-            }
-            $status = (int) $m[1];
-            if ($status < 400) {
+            $status = $this->parseErrorResponseStatusAfterJsonArray($rest);
+            if ($status === null || $status < 400) {
                 $offset = $afterClose;
 
                 continue;
             }
             $code = '[' . $inner . ']';
+            $code = $this->substituteTranslatorCallsInArrayLiteral($code);
             if (preg_match('/\$|->/', $code)) {
                 $offset = $afterClose;
 
@@ -174,7 +201,8 @@ class ResponseExampleExtractor
             try {
                 $result = eval('return ' . $code . ';');
                 if (is_array($result)) {
-                    $out[$status] = $result;
+                    $out[$status] ??= [];
+                    $out[$status][] = $result;
                 }
             } catch (Throwable) {
             }
@@ -185,7 +213,7 @@ class ResponseExampleExtractor
     }
 
     /**
-     * @return array<int, array<string, mixed>>
+     * @return array<int, list<array<string, mixed>>>
      */
     private function extractAbortExamplesFromBody(string $body): array
     {
@@ -202,11 +230,170 @@ class ResponseExampleExtractor
                     continue;
                 }
                 $msg = isset($m[3]) && $m[3] !== '' ? $m[3] : 'An error occurred.';
-                $out[$status] = ['message' => $msg];
+                $out[$status] ??= [];
+                $out[$status][] = ['message' => $msg];
             }
         }
 
         return $out;
+    }
+
+    /**
+     * @param  array<int, list<array<string, mixed>>>  $a
+     * @param  array<int, list<array<string, mixed>>>  $b
+     * @return array<int, list<array<string, mixed>>>
+     */
+    private function mergeErrorExamplesByStatus(array $a, array $b): array
+    {
+        $out = $a;
+        foreach ($b as $code => $list) {
+            if (! isset($out[$code])) {
+                $out[$code] = $list;
+
+                continue;
+            }
+            $out[$code] = array_merge($out[$code], $list);
+        }
+
+        return $out;
+    }
+
+    /**
+     * Parses the second argument of response()->json([...], STATUS).
+     */
+    /**
+     * Second argument to {@code response()->json( first, STATUS )}: literal 4xx/5xx or {@code Response::HTTP_*}.
+     */
+    private function parseResponseJsonSecondArgumentAsHttpStatus(string $rest): ?int
+    {
+        $t = ltrim($rest);
+        if ($t === '' || $t[0] === ')') {
+            return null;
+        }
+        if ($t[0] !== ',') {
+            return null;
+        }
+        $t = ltrim(substr($t, 1));
+        $chunk = $this->extractTopLevelCommaSeparatedPhpArg($t);
+        if ($chunk === null) {
+            return null;
+        }
+        $expr = trim($chunk);
+        if (preg_match('/^(\d{3})$/', $expr)) {
+            return (int) $expr;
+        }
+        if (preg_match('/::(HTTP_\w+)\b/', $expr, $cm)) {
+            return $this->symfonyResponseStatusByConstantName($cm[1]);
+        }
+
+        return null;
+    }
+
+    private function responseJsonSecondArgumentIsErrorHttpStatus(string $rest): bool
+    {
+        $s = $this->parseResponseJsonSecondArgumentAsHttpStatus($rest);
+
+        return $s !== null && $s >= 400;
+    }
+
+    /**
+     * One PHP argument starting at beginning of $s, ending at top-level ',' or ')'.
+     */
+    private function extractTopLevelCommaSeparatedPhpArg(string $s): ?string
+    {
+        $len = strlen($s);
+        $dp = 0;
+        $db = 0;
+        $dbr = 0;
+        $inString = false;
+        $q = '';
+        $start = 0;
+        for ($i = 0; $i < $len; $i++) {
+            $c = $s[$i];
+            if ($inString) {
+                if ($c === '\\' && $i + 1 < $len) {
+                    $i++;
+
+                    continue;
+                }
+                if ($c === $q) {
+                    $inString = false;
+                }
+
+                continue;
+            }
+            if ($c === '"' || $c === "'") {
+                $inString = true;
+                $q = $c;
+
+                continue;
+            }
+            if ($c === '(') {
+                $dp++;
+            } elseif ($c === ')') {
+                if ($dp === 0 && $db === 0 && $dbr === 0) {
+                    return substr($s, $start, $i - $start);
+                }
+                $dp--;
+            } elseif ($c === '[') {
+                $db++;
+            } elseif ($c === ']') {
+                $db--;
+            } elseif ($c === '{') {
+                $dbr++;
+            } elseif ($c === '}') {
+                $dbr--;
+            } elseif ($c === ',' && $dp === 0 && $db === 0 && $dbr === 0) {
+                return substr($s, $start, $i - $start);
+            }
+        }
+
+        return null;
+    }
+
+    private function parseErrorResponseStatusAfterJsonArray(string $rest): ?int
+    {
+        return $this->parseResponseJsonSecondArgumentAsHttpStatus($rest);
+    }
+
+    private function symfonyResponseStatusByConstantName(string $name): ?int
+    {
+        try {
+            $ref = new ReflectionClass(SymfonyResponse::class);
+            $constants = $ref->getConstants();
+
+            return isset($constants[$name]) && is_int($constants[$name]) ? $constants[$name] : null;
+        } catch (Throwable) {
+            return null;
+        }
+    }
+
+    /**
+     * Replaces __() / trans() string-literal calls with eval-safe literals so error payloads can be inferred.
+     */
+    private function substituteTranslatorCallsInArrayLiteral(string $code): string
+    {
+        $code = preg_replace_callback(
+            '/\b__\(\s*([\'"])([^\'"]+)\1\s*\)/',
+            function (array $m) {
+                $text = __($m[2]);
+
+                return var_export($text, true);
+            },
+            $code
+        ) ?? $code;
+
+        $code = preg_replace_callback(
+            '/\btrans\(\s*([\'"])([^\'"]+)\1\s*\)/',
+            function (array $m) {
+                $text = trans($m[2]);
+
+                return var_export($text, true);
+            },
+            $code
+        ) ?? $code;
+
+        return $code;
     }
 
     /**
@@ -477,6 +664,11 @@ class ResponseExampleExtractor
                             }
                         } catch (Throwable) {
                         }
+                    } else {
+                        $assoc = $this->associativeArrayLiteralInnerToExampleRow($inner);
+                        if ($assoc !== null && $assoc !== []) {
+                            return $assoc;
+                        }
                     }
                 }
             } elseif ($body[$pos] === '"' || $body[$pos] === "'") {
@@ -501,6 +693,127 @@ class ResponseExampleExtractor
         }
 
         return null;
+    }
+
+    /**
+     * Handles {@code return [ [ 'title' => ..., 'data' => $this->sectionData(), ], ... ]} by inferring each
+     * {@code $this->method()} return from the callee (e.g. JsonResource::collection) and resolving {@code __()}
+     * and {@code $this->getPath('route.name')} at doc-generation time.
+     *
+     * @return list<array<string, mixed>>|null
+     */
+    private function extractFromCompositeSectionArrayReturn(string $body, string $controllerClass, string $controllerFile): ?array
+    {
+        $offset = 0;
+        while (preg_match('/\breturn\s+/s', $body, $m, PREG_OFFSET_CAPTURE, $offset)) {
+            $afterReturn = $m[0][1] + strlen($m[0][0]);
+            $pos = $this->skipWhitespace($body, $afterReturn);
+            if ($pos >= strlen($body) || $body[$pos] !== '[') {
+                $offset = $m[0][1] + 1;
+
+                continue;
+            }
+            $inner = $this->extractBalancedFrom($body, $pos, '[', ']');
+            if ($inner === null) {
+                $offset = $m[0][1] + 1;
+
+                continue;
+            }
+            if (! str_contains($inner, '$this->')) {
+                $offset = $m[0][1] + 1;
+
+                continue;
+            }
+            $code = '[' . $inner . ']';
+            $code = $this->substituteTranslatorCallsInArrayLiteral($code);
+            $code = $this->substituteThisGetPathCallsInPhpArray($code);
+            $replaced = preg_replace_callback(
+                '#\'data\'\s*=>\s*\$this->(\w+)\s*\(\s*\)#',
+                function (array $match) use ($controllerClass, $controllerFile) {
+                    $inferred = $this->inferExampleFromControllerMethod($controllerClass, $match[1], $controllerFile);
+                    if ($inferred === null) {
+                        return '\'data\' => []';
+                    }
+
+                    return '\'data\' => ' . var_export($inferred, true);
+                },
+                $code
+            );
+            if ($replaced === null) {
+                $offset = $m[0][1] + 1;
+
+                continue;
+            }
+            $code = $replaced;
+            if (preg_match('/\$|->/', $code)) {
+                $offset = $m[0][1] + 1;
+
+                continue;
+            }
+            try {
+                $result = eval('return ' . $code . ';');
+                if (is_array($result)) {
+                    return $result;
+                }
+            } catch (Throwable) {
+            }
+            $offset = $m[0][1] + 1;
+        }
+
+        return null;
+    }
+
+    private function inferExampleFromControllerMethod(string $controllerClass, string $methodName, string $controllerFile): ?array
+    {
+        if (! method_exists($controllerClass, $methodName)) {
+            return null;
+        }
+
+        try {
+            $ref = new ReflectionMethod($controllerClass, $methodName);
+            $methodFile = $ref->getFileName();
+            if (! $methodFile || ! is_readable($methodFile)) {
+                return null;
+            }
+            $lines = file($methodFile);
+            if ($lines === false) {
+                return null;
+            }
+            $methodBody = implode('', array_slice($lines, $ref->getStartLine() - 1, $ref->getEndLine() - $ref->getStartLine() + 1));
+            $methodBody = $this->stripFullLineComments($methodBody);
+            $eagerLoadPaths = $this->extractEagerLoadPathsFromControllerBody($methodBody);
+            $result = $this->extractFromResourceReturn($methodBody, $controllerFile, $eagerLoadPaths);
+
+            return is_array($result) ? $result : null;
+        } catch (Throwable) {
+            return null;
+        }
+    }
+
+    /**
+     * Resolves {@code $this->getPath('named.route')} the same way as a typical controller helper (route + path).
+     */
+    private function substituteThisGetPathCallsInPhpArray(string $code): string
+    {
+        $out = preg_replace_callback(
+            '#\$this->getPath\s*\(\s*([\'"])([^\'"]+)\1(?:\s*,\s*\[[^\]]*\])?\s*\)#',
+            function (array $m) {
+                try {
+                    $url = route($m[2]);
+                    $path = parse_url($url, PHP_URL_PATH);
+                    if (! is_string($path) || $path === '') {
+                        return var_export('example/path', true);
+                    }
+
+                    return var_export(ltrim($path, '/'), true);
+                } catch (Throwable) {
+                    return var_export('example/path', true);
+                }
+            },
+            $code
+        );
+
+        return $out ?? $code;
     }
 
     private function skipWhitespace(string $s, int $start): int
@@ -550,9 +863,11 @@ class ResponseExampleExtractor
     {
         $offset = 0;
         while (($pos = stripos($body, 'response()->json', $offset)) !== false) {
-            $openParen = strpos($body, '(', $pos);
-            if ($openParen === false) {
-                break;
+            $openParen = $this->locateResponseJsonArgumentListOpenParenFromMatch($body, $pos);
+            if ($openParen === null) {
+                $offset = $pos + 1;
+
+                continue;
             }
 
             $firstArgStart = $this->skipWhitespace($body, $openParen + 1);
@@ -572,7 +887,7 @@ class ResponseExampleExtractor
 
             $afterBracket = $this->skipWhitespace($body, $closeBracketIdx + 1);
             $rest = substr($body, $afterBracket);
-            if (preg_match('/^\s*,\s*(4\d\d|5\d\d)\s*\)/', $rest)) {
+            if ($this->responseJsonSecondArgumentIsErrorHttpStatus($rest)) {
                 $offset = $pos + 1;
 
                 continue;
@@ -601,6 +916,404 @@ class ResponseExampleExtractor
             }
 
             $offset = $pos + 1;
+        }
+
+        return null;
+    }
+
+    /**
+     * {@code return response()->json(SomeResource::collection($x))} (and {@code ::make} / {@code new Resource}).
+     *
+     * @return array<string, mixed>|list<mixed>|null
+     */
+    private function extractFromResponseJsonWrappedResource(string $body, string $controllerFile, array $eagerLoadPaths): ?array
+    {
+        $offset = 0;
+        while (($pos = stripos($body, 'response()->json', $offset)) !== false) {
+            $openParen = $this->locateResponseJsonArgumentListOpenParenFromMatch($body, $pos);
+            if ($openParen === null) {
+                $offset = $pos + 1;
+
+                continue;
+            }
+            $scanned = $this->scanResponseJsonFirstArgument($body, $openParen);
+            if ($scanned === null) {
+                $offset = $pos + 1;
+
+                continue;
+            }
+            $expr = $scanned['expression'];
+            $afterExpr = $scanned['afterExpression'];
+            $rest = substr($body, $this->skipWhitespace($body, $afterExpr));
+            if ($this->responseJsonSecondArgumentIsErrorHttpStatus($rest)) {
+                $offset = $pos + 1;
+
+                continue;
+            }
+
+            if (preg_match('/^([\w\\\\]+)::collection\s*\(/', $expr, $m)) {
+                $ex = $this->exampleFromResourceClassCollection($m[1], $controllerFile, $eagerLoadPaths, $body);
+                if ($ex !== null) {
+                    return $ex;
+                }
+            }
+            if (preg_match('/^([\w\\\\]+)::make\s*\(/', $expr, $m)) {
+                $fqcn = $this->resolveShortClassInPhpFile($m[1], $controllerFile);
+                if ($fqcn !== null && is_subclass_of($fqcn, JsonResource::class)) {
+                    $example = $this->exampleFromJsonResourceToArray($fqcn, [], $eagerLoadPaths, '');
+                    if ($example !== null) {
+                        return $this->wrapSingleResourceUnwrapped($example);
+                    }
+                }
+            }
+            if (preg_match('/^new\s+([\w\\\\]+)\s*\(/', $expr, $m)) {
+                $fqcn = $this->resolveShortClassInPhpFile($m[1], $controllerFile);
+                if ($fqcn !== null && is_subclass_of($fqcn, JsonResource::class)) {
+                    $example = $this->exampleFromJsonResourceToArray($fqcn, [], $eagerLoadPaths, '');
+                    if ($example !== null) {
+                        return $this->wrapSingleResourceUnwrapped($example);
+                    }
+                }
+            }
+
+            $offset = $pos + 1;
+        }
+
+        return null;
+    }
+
+    /**
+     * {@code $rows = []; foreach (...) { $rows[] = [ 'a' => $m->x, ... ]; } return response()->json($rows); }
+     *
+     * @return list<array<string, mixed>>|null
+     */
+    private function extractFromResponseJsonForeachBuiltArray(string $body): ?array
+    {
+        $offset = 0;
+        while (($pos = stripos($body, 'response()->json', $offset)) !== false) {
+            $openParen = $this->locateResponseJsonArgumentListOpenParenFromMatch($body, $pos);
+            if ($openParen === null) {
+                $offset = $pos + 1;
+
+                continue;
+            }
+            $scanned = $this->scanResponseJsonFirstArgument($body, $openParen);
+            if ($scanned === null) {
+                $offset = $pos + 1;
+
+                continue;
+            }
+            $expr = trim($scanned['expression']);
+            if (! preg_match('/^\$(\w+)$/', $expr, $vm)) {
+                $offset = $pos + 1;
+
+                continue;
+            }
+            $varName = $vm[1];
+            $rest = substr($body, $this->skipWhitespace($body, $scanned['afterExpression']));
+            if ($this->responseJsonSecondArgumentIsErrorHttpStatus($rest)) {
+                $offset = $pos + 1;
+
+                continue;
+            }
+
+            $initPattern = '/\$' . preg_quote($varName, '/') . '\s*=\s*\[\s*\]\s*;/';
+            if (preg_match($initPattern, $body, $im, PREG_OFFSET_CAPTURE) !== 1) {
+                $offset = $pos + 1;
+
+                continue;
+            }
+            $initEnd = $im[0][1] + strlen($im[0][0]);
+
+            $appendPattern = '/\$' . preg_quote($varName, '/') . '\[\]\s*=\s*\[/';
+            if (preg_match($appendPattern, $body, $am, PREG_OFFSET_CAPTURE, $initEnd) !== 1) {
+                $offset = $pos + 1;
+
+                continue;
+            }
+            $bracketStart = $am[0][1] + strlen($am[0][0]) - 1;
+            if ($bracketStart >= strlen($body) || $body[$bracketStart] !== '[') {
+                $offset = $pos + 1;
+
+                continue;
+            }
+
+            $inner = $this->extractBalancedFrom($body, $bracketStart, '[', ']');
+            if ($inner === null) {
+                $offset = $pos + 1;
+
+                continue;
+            }
+
+            $between = substr($body, $initEnd, $am[0][1] - $initEnd);
+            if (stripos($between, 'foreach') === false) {
+                $offset = $pos + 1;
+
+                continue;
+            }
+
+            $row = $this->associativeArrayLiteralInnerToExampleRow($inner);
+            if ($row === null || $row === []) {
+                $offset = $pos + 1;
+
+                continue;
+            }
+
+            return [$row];
+        }
+
+        return null;
+    }
+
+    /**
+     * Parse inner of a PHP array literal {@code 'k' => expr, ...} into example scalars (property access → placeholders).
+     *
+     * @return array<string, mixed>|null
+     */
+    private function associativeArrayLiteralInnerToExampleRow(string $inner): ?array
+    {
+        $inner = trim($inner);
+        if ($inner === '') {
+            return [];
+        }
+        $out = [];
+        $i = 0;
+        $len = strlen($inner);
+        while ($i < $len) {
+            while ($i < $len && (ctype_space($inner[$i]) || $inner[$i] === ',')) {
+                $i++;
+            }
+            if ($i >= $len) {
+                break;
+            }
+            $q = $inner[$i];
+            if ($q !== '"' && $q !== "'") {
+                return null;
+            }
+            $i++;
+            $key = '';
+            while ($i < $len) {
+                if ($inner[$i] === '\\') {
+                    $key .= $inner[$i + 1] ?? '';
+                    $i += 2;
+
+                    continue;
+                }
+                if ($inner[$i] === $q) {
+                    $i++;
+
+                    break;
+                }
+                $key .= $inner[$i];
+                $i++;
+            }
+            while ($i < $len && ctype_space($inner[$i])) {
+                $i++;
+            }
+            if ($i + 1 >= $len || $inner[$i] !== '=' || $inner[$i + 1] !== '>') {
+                return null;
+            }
+            $i += 2;
+            while ($i < $len && ctype_space($inner[$i])) {
+                $i++;
+            }
+            $vStart = $i;
+            $dp = 0;
+            $db = 0;
+            for (; $i < $len; $i++) {
+                $c = $inner[$i];
+                if ($c === '"' || $c === "'") {
+                    $qq = $c;
+                    $i++;
+                    while ($i < $len) {
+                        if ($inner[$i] === '\\') {
+                            $i += 2;
+
+                            continue;
+                        }
+                        if ($inner[$i] === $qq) {
+                            break;
+                        }
+                        $i++;
+                    }
+
+                    continue;
+                }
+                if ($c === '(') {
+                    $dp++;
+                } elseif ($c === ')') {
+                    $dp--;
+                } elseif ($c === '[') {
+                    $db++;
+                } elseif ($c === ']') {
+                    $db--;
+                }
+                if ($c === ',' && $dp === 0 && $db === 0) {
+                    break;
+                }
+            }
+            $valueExpr = trim(substr($inner, $vStart, $i - $vStart));
+            $out[$key] = $this->phpExpressionToExampleValue($valueExpr, $key);
+            if ($i < $len && $inner[$i] === ',') {
+                $i++;
+            }
+        }
+
+        return $out;
+    }
+
+    /**
+     * Keys that usually map to integers in API payloads (counts, pagination, etc.).
+     */
+    private function arrayKeySuggestsNumericExample(string $key): bool
+    {
+        $k = strtolower($key);
+        if (str_ends_with($k, '_count')) {
+            return true;
+        }
+
+        return in_array($k, [
+            'total', 'read', 'unread', 'count', 'size', 'length', 'sum', 'min', 'max',
+            'offset', 'limit', 'page', 'per_page', 'remaining', 'pending', 'failed',
+            'success', 'active', 'inactive',
+        ], true);
+    }
+
+    private function phpExpressionToExampleValue(string $expr, ?string $associativeArrayKey = null): mixed
+    {
+        $expr = trim($expr);
+        if ($expr === '') {
+            return 'Example';
+        }
+        if (preg_match('/^-?\d+$/', $expr)) {
+            return (int) $expr;
+        }
+        if (preg_match('/^-?\d+\.\d+$/', $expr)) {
+            return (float) $expr;
+        }
+        $lower = strtolower($expr);
+        if ($lower === 'true') {
+            return true;
+        }
+        if ($lower === 'false') {
+            return false;
+        }
+        if ($lower === 'null') {
+            return null;
+        }
+        if (($expr[0] ?? '') === '"' || ($expr[0] ?? '') === "'") {
+            $lit = $this->extractStringLiteralExpression($expr, 0);
+            if ($lit !== null) {
+                try {
+                    $v = eval('return ' . $lit . ';');
+                    if (is_string($v)) {
+                        return $v;
+                    }
+                } catch (Throwable) {
+                }
+            }
+        }
+        if (preg_match('/->\s*id\b/', $expr)) {
+            return 1;
+        }
+        if (str_contains($expr, 'getTranslation')) {
+            return 'Example';
+        }
+        if (preg_match('/->/', $expr)) {
+            return 'Example';
+        }
+        if (preg_match('/^\$(\w+)$/', $expr) && $associativeArrayKey !== null && $this->arrayKeySuggestsNumericExample($associativeArrayKey)) {
+            return 0;
+        }
+        if (str_starts_with($expr, '$')) {
+            return 'Example';
+        }
+
+        return 'Example';
+    }
+
+    /**
+     * First argument to {@code response()->json( HERE )}, respecting nested (), [], {}, and strings.
+     *
+     * @return array{expression: string, afterExpression: int}|null
+     */
+    private function scanResponseJsonFirstArgument(string $body, int $openParenOfJsonCall): ?array
+    {
+        $len = strlen($body);
+        $i = $this->skipWhitespace($body, $openParenOfJsonCall + 1);
+        if ($i >= $len) {
+            return null;
+        }
+        $start = $i;
+        $depthParen = 0;
+        $depthSq = 0;
+        $depthBrace = 0;
+        $inString = false;
+        $q = '';
+        for (; $i < $len; $i++) {
+            $c = $body[$i];
+            if ($inString) {
+                if ($c === '\\' && $i + 1 < $len) {
+                    $i++;
+
+                    continue;
+                }
+                if ($c === $q) {
+                    $inString = false;
+                }
+
+                continue;
+            }
+            if ($c === '"' || $c === "'") {
+                $inString = true;
+                $q = $c;
+
+                continue;
+            }
+            if ($c === '[') {
+                $depthSq++;
+
+                continue;
+            }
+            if ($c === ']') {
+                $depthSq = max(0, $depthSq - 1);
+
+                continue;
+            }
+            if ($c === '{') {
+                $depthBrace++;
+
+                continue;
+            }
+            if ($c === '}') {
+                $depthBrace = max(0, $depthBrace - 1);
+
+                continue;
+            }
+            if ($c === '(') {
+                $depthParen++;
+
+                continue;
+            }
+            if ($c === ')') {
+                if ($depthParen > 0) {
+                    $depthParen--;
+
+                    continue;
+                }
+                if ($depthSq === 0 && $depthBrace === 0) {
+                    return [
+                        'expression' => trim(substr($body, $start, $i - $start)),
+                        'afterExpression' => $i + 1,
+                    ];
+                }
+            }
+            if ($c === ',' && $depthParen === 0 && $depthSq === 0 && $depthBrace === 0) {
+                return [
+                    'expression' => trim(substr($body, $start, $i - $start)),
+                    'afterExpression' => $i + 1,
+                ];
+            }
         }
 
         return null;

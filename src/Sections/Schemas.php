@@ -41,18 +41,36 @@ trait Schemas
         }
         [$validation_content, $required] = $this->generateGenericRequiredAndRules($validations, $method);
 
+        $wildcardParents = $this->extractArrayParentsWithWildcardChildren($validation_content);
+        $effectiveWildcardParents = [];
+        foreach (array_keys($wildcardParents) as $parent) {
+            $items = $this->buildOpenApiItemsSchemaForWildcardChildren($validation_content, $parent);
+            if ($items === null) {
+                continue;
+            }
+            $schemas['properties'][$parent] = [
+                'type' => 'array',
+                'items' => $items,
+            ];
+            $effectiveWildcardParents[$parent] = true;
+        }
 
-        $schemas["required"] = $required;
+        $schemas['required'] = $this->normalizeRequiredForArrayWildcardFields($required, array_keys($effectiveWildcardParents));
+
         foreach ($validation_content as $column_name => $validation_value) {
-            if (!str_contains($column_name, "[merge_input]")) {
-                $name = $this->getInputName($column_name);
-                if (str_contains($validation_value, "array")) {
-                    $schemas['properties'][$name . "[]"] = $this->getSwaggerInputSchema($validation_value);
+            if ($this->shouldSkipColumnForArrayWildcardSchema($column_name, $effectiveWildcardParents)) {
+                continue;
+            }
+            if (! str_contains($column_name, '[merge_input]')) {
+                $propName = $this->getInputName($column_name);
+                if (str_contains($validation_value, 'array')) {
+                    $schemas['properties'][$propName . '[]'] = $this->getSwaggerInputSchema($validation_value);
                 } else {
-                    $schemas['properties'][$name] = $this->getSwaggerInputSchema($validation_value);
+                    $schemas['properties'][$propName] = $this->getSwaggerInputSchema($validation_value);
                 }
             }
         }
+
         return $schemas;
     }
 
@@ -387,5 +405,117 @@ trait Schemas
             $required = true;
         }
         return $required;
+    }
+
+    /**
+     * Parents that use Laravel {@code parent.*.child} rules and declare {@code parent} as an array
+     * (e.g. spare_parts + spare_parts.*.id). OpenAPI should nest these instead of flat keys like
+     * {@code spare_parts[merge_input][id]}, which Swagger UI breaks across lines.
+     *
+     * @param  array<string, string>  $validationContent
+     * @return array<string, true>
+     */
+    private function extractArrayParentsWithWildcardChildren(array $validationContent): array
+    {
+        $candidates = [];
+        foreach (array_keys($validationContent) as $key) {
+            if (preg_match('/^([^.]+)\.\*\.\w+$/', $key, $m)) {
+                $candidates[$m[1]] = true;
+            }
+        }
+
+        $confirmed = [];
+        foreach (array_keys($candidates) as $parent) {
+            if (! isset($validationContent[$parent])) {
+                continue;
+            }
+            if (str_contains($validationContent[$parent], 'array')) {
+                $confirmed[$parent] = true;
+            }
+        }
+
+        return $confirmed;
+    }
+
+    /**
+     * @param  array<string, string>  $validationContent
+     * @return array<string, mixed>|null
+     */
+    private function buildOpenApiItemsSchemaForWildcardChildren(array $validationContent, string $parent): ?array
+    {
+        $properties = [];
+        $itemRequired = [];
+        $pattern = '/^' . preg_quote($parent, '/') . '\.\*\.(\w+)$/';
+        foreach ($validationContent as $key => $rules) {
+            if (! preg_match($pattern, $key, $m)) {
+                continue;
+            }
+            $field = $m[1];
+            $properties[$field] = $this->getSwaggerInputSchema($rules);
+            if ($this->isRequiredRule($rules)) {
+                $itemRequired[] = $field;
+            }
+        }
+
+        if ($properties === []) {
+            return null;
+        }
+
+        return [
+            'type' => 'object',
+            'required' => array_values(array_unique($itemRequired)),
+            'properties' => $properties,
+        ];
+    }
+
+    /**
+     * @param  array<string, true>  $wildcardParents
+     */
+    private function shouldSkipColumnForArrayWildcardSchema(string $columnName, array $wildcardParents): bool
+    {
+        foreach (array_keys($wildcardParents) as $parent) {
+            if ($columnName === $parent) {
+                return true;
+            }
+            if (preg_match('/^' . preg_quote($parent, '/') . '\.\*\./', $columnName)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * @param  list<string>  $required
+     * @param  list<string>  $wildcardParents
+     * @return list<string>
+     */
+    private function normalizeRequiredForArrayWildcardFields(array $required, array $wildcardParents): array
+    {
+        if ($wildcardParents === []) {
+            return $required;
+        }
+
+        $out = [];
+        $parentEmitted = [];
+        foreach ($required as $r) {
+            $handled = false;
+            foreach ($wildcardParents as $parent) {
+                if ($r === $parent || $r === $parent . '[]' || preg_match('/^' . preg_quote($parent, '/') . '\.\*\./', $r)) {
+                    $handled = true;
+                    if (! isset($parentEmitted[$parent])) {
+                        $out[] = $parent;
+                        $parentEmitted[$parent] = true;
+                    }
+
+                    break;
+                }
+            }
+            if (! $handled) {
+                $out[] = $r;
+            }
+        }
+
+        return array_values(array_unique($out));
     }
 }

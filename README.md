@@ -17,6 +17,11 @@ The Swagger Laravel Autogenerate Package is a convenient tool that automatically
 - Easy integration and configuration within Laravel projects.
 
 
+<p align="center">
+  <img src="./back.png" alt="background">
+</p>
+
+
 ## Installation
 
 Install the Swagger Laravel Autogenerate Package via Composer:

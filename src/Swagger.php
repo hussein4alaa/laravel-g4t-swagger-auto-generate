@@ -3,6 +3,7 @@
 namespace G4T\Swagger;
 
 use G4T\Swagger\Attributes\SwaggerSection;
+use G4T\Swagger\ResponseExampleExtractor;
 use G4T\Swagger\Sections\Paths;
 use G4T\Swagger\Sections\Schemas;
 use G4T\Swagger\Sections\Tags;
@@ -67,6 +68,9 @@ class Swagger {
         $show_prefix_array = config('swagger.show_prefix');
         $mapping_prefix = config('swagger.mapping_prefix');
         $controllers = [];
+        $inferExamples = config('swagger.infer_response_examples', true);
+        $inferErrorExamples = config('swagger.infer_error_response_examples', true);
+        $exampleExtractor = ($inferExamples || $inferErrorExamples) ? new ResponseExampleExtractor() : null;
 
         $version = $this->getVersion();
         foreach ($routes as $route) {
@@ -139,7 +143,9 @@ class Swagger {
                                     'params' => $params,
                                     'operation_id' => $operationId,
                                     'has_schema' => $hasSchema,
-                                    'need_token' => $needToken
+                                    'need_token' => $needToken,
+                                    'response_example' => $inferExamples && $exampleExtractor ? $exampleExtractor->extract($action) : null,
+                                    'error_response_examples' => $inferErrorExamples && $exampleExtractor ? $exampleExtractor->extractErrorResponseExamples($action) : [],
                                 ];
                             }
                         }

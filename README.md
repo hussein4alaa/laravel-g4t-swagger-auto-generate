@@ -1,109 +1,143 @@
 # Swagger Laravel Autogenerate Package
 
-The Swagger Laravel Autogenerate Package is a convenient tool that automatically generates Swagger documentation for your Laravel APIs based on your route definitions. It eliminates the need for manually documenting your API endpoints, saving you time and effort.
+The Swagger Laravel Autogenerate Package automatically generates OpenAPI (Swagger) documentation for your Laravel APIs from route definitions, validation rules, and optional controller inference—so you spend less time maintaining specs by hand.
 
-
-
-![Swagger Laravel Autogenerate Package](https://www.scottbrady91.com/img/logos/swagger-banner.png)
-
+<p align="center">
+  <img src="./i_stand.png" alt="I Stand with IRAN">
+</p>
 
 ## Features
 
-- Automatically generates Swagger documentation for Laravel APIs.
-- Extracts route information, including URI, HTTP methods, route names, middleware, and more.
-- Supports request validations and parameter definitions.
-- Generates JSON output conforming to the Swagger/OpenAPI specification.
-- Easy integration and configuration within Laravel projects.
+- Generates OpenAPI **3.x** JSON from your registered routes (URI, methods, middleware, tags, etc.).
+- **FormRequest** rules drive request schemas and query/path parameters where applicable.
+- Optional **inferred response examples** from controllers (`infer_response_examples`): literals, `JsonResource::collection` / `::make` / `new Resource`, `response()->json(...)`, and more (see `ResponseExampleExtractor`).
+- Optional **inferred error examples** (`infer_error_response_examples`): `response()->json([...], status)`, `abort()`, validation-style **422** when rules warrant it.
+- **Static export**: `php artisan make:swagger` writes pretty-printed JSON (Unicode preserved) to `public/{cached_spec_path}` (default `doc.json`).
+- **Faster JSON endpoint**: when `load_from_json` is `false`, the package can serve that file if it exists (`use_cached_spec_when_present`, default `true`), otherwise builds from routes on each request.
+- **storage/swagger/…** JSON files can override per-route response examples when enabled in config.
+- Route macros: `->description()`, `->summary()`, `->hiddenDoc()`; controller `#[SwaggerSection('…')]`.
+- Optional **basic auth** for the documentation UI (configurable).
+
+
+<p align="center">
+  <img src="./back.png" alt="I Stand with IRAN">
+</p>
+
 
 
 ## Installation
 
-Install the Swagger Laravel Autogenerate Package via Composer:
-
-```
+```bash
 composer require g4t/swagger
 ```
 
 ## Usage
 
-#### Click here to watch a video on how to use this package
+#### Video walkthrough
+
 [![Explanatory video on how to use](https://img.youtube.com/vi/bI1BY9tAwOw/0.jpg)](https://www.youtube.com/watch?v=bI1BY9tAwOw)
 
+1. Publish the configuration file:
 
-1. After installing the package, publish the configuration file:
+   ```bash
+   php artisan vendor:publish --provider "G4T\Swagger\SwaggerServiceProvider"
+   ```
+
+2. Adjust **`config/swagger.php`** (title, URL prefix, versions, inference flags, cache options, etc.).
+
+3. Open the UI at **`/{swagger.url}`** (default: `/swagger/documentation`), e.g. `https://your-app.test/swagger/documentation`.
+
+4. The **issues** page route is configured via `swagger.issues_url` (default: `/swagger/issues`).
+
+5. Describe a route:
+
+   ```php
+   Route::get('user', [UserController::class, 'index'])->description('Get list of users with pagination.');
+   ```
+
+6. Short summary on the route:
+
+   ```php
+   Route::get('user', [UserController::class, 'index'])->summary('get users.');
+   ```
+
+7. Hide an endpoint from the docs:
+
+   ```php
+   Route::get('user', [UserController::class, 'index'])->hiddenDoc();
+   ```
+
+8. Controller section description:
+
+   ```php
+   <?php
+
+   namespace App\Http\Controllers;
+
+   use G4T\Swagger\Attributes\SwaggerSection;
+
+   #[SwaggerSection('everything about your users')]
+   class UserController extends Controller
+   {
+       // ...
+   }
+   ```
+
+9. Documentation **basic auth** (`config/swagger.php`):
+
+   ```php
+   "enable_auth" => false,
+   "username" => "admin",
+   "password" => "pass",
+   "sesson_ttl" => 100000,
+   ```
+
+## Export OpenAPI JSON (`make:swagger`)
+
+Regenerates the spec from the current application routes and writes:
+
+- **Path:** `public_path(config('swagger.cached_spec_path', 'doc.json'))`
+- **Encoding:** `JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE`
+
+```bash
+php artisan make:swagger
 ```
-php artisan vendor:publish --provider "G4T\Swagger\SwaggerServiceProvider"
-```
 
-2. Configure the package by modifying the `config/swagger.php` file according to your needs. This file allows you to specify various settings for the Swagger documentation generation.
+Run this after changing routes, controllers, FormRequests, or resources when you rely on a cached file for the JSON endpoint.
 
-3. Access the generated Swagger documentation by visiting the `/swagger/documentation` route in your Laravel application. For example, `http://your-app-url/swagger/documentation`.
+## Cached specification (performance)
 
-4. The issues history page is now included in config/swagger.php, and the default route is `http://your-app-url/swagger/issues`.
+The **`/{swagger.url}/json`** response is resolved by `DocumentationController::resolveSwaggerSpecification()`:
 
-5. To add a description in a Swagger route using the ->description() method, you can follow the example you provided and include it in your Laravel application's routes.
-   Here's how you can describe a route using the ->description() method in a Swagger route:
-   ```php
-    Route::get('user', [UserController::class, 'index'])->description('Get list of users with pagination.');
-   ```
-6. To add a summary in a Swagger route using the ->summary() method, you can follow the example you provided and include it in your Laravel application's routes.
-   Here's how you can describe a route using the ->summary() method in a Swagger route:
-   ```php
-    Route::get('user', [UserController::class, 'index'])->summary('get users.');
-   ```
-7. To hide endpoint from Swagger documentation using the ->hiddenDoc() method.
-   Here's how you can hide route using the ->hiddenDoc() method:
-   ```php
-    Route::get('user', [UserController::class, 'index'])->hiddenDoc();
-   ```
-8. To add a Section Description you can use this attribute `#[SwaggerSection('everything about your users')]` in your controller.
-      Here's how you can use this attribute in your controller:
-   ```php
-    <?php
-    
-    namespace App\Http\Controllers;
-    
-    use G4T\Swagger\Attributes\SwaggerSection;
-    
-    #[SwaggerSection('everything about your users')]
-    class UserController extends Controller
-    {
-       // ...
-       // ...
-       // ...
-    }
-   ```
-9. To enable documentation auth, open `config/swagger.php` and edit this
-   ```php
-    "enable_auth" => false,
-    "username" => "admin",
-    "password" => "pass",
-    "sesson_ttl" => 100000,
-   ```
+| `load_from_json` | Behavior |
+|------------------|----------|
+| `true` | Only the file at `public/{cached_spec_path}` is used; missing/invalid file → empty array `[]`. |
+| `false` | If `use_cached_spec_when_present` is `true` (default) **and** the file exists with valid JSON, that file is served; otherwise the spec is built live from routes. |
+
+Useful **config / env** keys (defaults apply even if omitted from an older published config):
+
+- `cached_spec_path` — path segment under `public/` (default `doc.json`; env `SWAGGER_CACHED_SPEC_PATH`).
+- `use_cached_spec_when_present` — default `true`; set env `SWAGGER_USE_CACHED_SPEC=false` in local dev to always build from routes without deleting `doc.json`.
+- `load_from_json` — force static-file-only mode (legacy).
 
 ## Suggestions
 
-If you have any suggestions or feature requests, please feel free to add them on our [Canny board](https://g4t.canny.io/).
-
- 
+Feature requests: [Canny board](https://g4t.canny.io/).
 
 ## Contributing
 
-Contributions to the Swagger Laravel Autogenerate Package are always welcome! If you find any issues or have suggestions for improvements, please feel free to open an issue or submit a pull request.
-
+Issues and pull requests are welcome on [GitHub](https://github.com/hussein4alaa/laravel-g4t-swagger-auto-generate).
 
 ## License
 
-The Swagger Laravel Autogenerate Package is open-source software licensed under the [MIT license](LICENSE.md).
+Open-source under the [MIT license](LICENSE.md).
 
 ## Credits
 
-The Swagger Laravel Autogenerate Package is developed and maintained by [HusseinAlaa](https://www.linkedin.com/in/hussein4alaa/).
+Maintained by [HusseinAlaa](https://www.linkedin.com/in/hussein4alaa/).
 
-## Additional Resources
+## Additional resources
 
-- [Swagger Documentation](https://swagger.io/docs/)
-- [Laravel Documentation](https://laravel.com/docs)
-- [GitHub](https://github.com/hussein4alaa/laravel-g4t-swagger-auto-generate)
-
-
+- [OpenAPI / Swagger](https://swagger.io/docs/)
+- [Laravel documentation](https://laravel.com/docs)
+- [Package repository](https://github.com/hussein4alaa/laravel-g4t-swagger-auto-generate)

@@ -185,7 +185,7 @@ class ResponseExampleExtractor
             }
             $afterClose = $bracketPos + 1 + strlen($inner) + 1;
             $rest = substr($body, $afterClose);
-            $status = $this->parseErrorResponseStatusAfterJsonArray($rest);
+            $status = $this->parseResponseJsonSecondArgumentAsHttpStatus($rest);
             if ($status === null || $status < 400) {
                 $offset = $afterClose;
 
@@ -259,10 +259,10 @@ class ResponseExampleExtractor
     }
 
     /**
-     * Parses the second argument of response()->json([...], STATUS).
-     */
-    /**
      * Second argument to {@code response()->json( first, STATUS )}: literal 4xx/5xx or {@code Response::HTTP_*}.
+     *
+     * {@code $rest} may start with {@code ,} (text after a literal {@code [...]} first arg) or with the status
+     * token (text after {@code scanResponseJsonFirstArgument}, which positions after the comma delimiter).
      */
     private function parseResponseJsonSecondArgumentAsHttpStatus(string $rest): ?int
     {
@@ -270,10 +270,12 @@ class ResponseExampleExtractor
         if ($t === '' || $t[0] === ')') {
             return null;
         }
-        if ($t[0] !== ',') {
+        if ($t[0] === ',') {
+            $t = ltrim(substr($t, 1));
+        }
+        if ($t === '' || $t[0] === ')') {
             return null;
         }
-        $t = ltrim(substr($t, 1));
         $chunk = $this->extractTopLevelCommaSeparatedPhpArg($t);
         if ($chunk === null) {
             return null;
@@ -349,11 +351,6 @@ class ResponseExampleExtractor
         }
 
         return null;
-    }
-
-    private function parseErrorResponseStatusAfterJsonArray(string $rest): ?int
-    {
-        return $this->parseResponseJsonSecondArgumentAsHttpStatus($rest);
     }
 
     private function symfonyResponseStatusByConstantName(string $name): ?int

@@ -53,7 +53,7 @@ return [
     "username" => "admin",
     "password" => "pass",
     "sesson_ttl" => 100000,
-    
+
     /*
     |--------------------------------------------------------------------------
     | Enable Response Schema
@@ -63,6 +63,57 @@ return [
     |
     */
     "enable_response_schema" => true,
+
+    /*
+    |--------------------------------------------------------------------------
+    | Infer response examples from controllers
+    |--------------------------------------------------------------------------
+    |
+    | When true, success response examples are derived from:
+    | - return response()->json([ ... ]) when the payload is a literal array
+    | - return new SomeResource(...) or SomeResource::collection(...) (JsonResource)
+    | Manual JSON files under storage/swagger/... still override when present.
+    |
+    */
+    "infer_response_examples" => true,
+
+    /*
+    |--------------------------------------------------------------------------
+    | Infer error / validation response examples
+    |--------------------------------------------------------------------------
+    |
+    | When true, adds examples for:
+    | - return response()->json([...], 4xx/5xx) with a literal array payload
+    | - abort(4xx, 'message')
+    | - FormRequest rules: 422 with Laravel-style { message, errors } (when rules exist)
+    | storage/swagger/... JSON files still override per status when present.
+    |
+    */
+    "infer_error_response_examples" => true,
+
+    /*
+    |--------------------------------------------------------------------------
+    | Unwrap resource collection examples (non-paginated)
+    |--------------------------------------------------------------------------
+    |
+    | When true, inferred examples for return SomeResource::collection(...) (without paginate)
+    | use a top-level JSON array [ { ... } ] instead of { "data": [ { ... } ] }.
+    | Paginated collections still use data / links / meta.
+    |
+    */
+    "unwrap_resource_collection_examples" => true,
+
+    /*
+    |--------------------------------------------------------------------------
+    | Omit default 404 for show (GET)
+    |--------------------------------------------------------------------------
+    |
+    | When true, GET routes whose controller action is `show` will not list the default
+    | 404 Not Found response unless a real example exists (inferred from the controller
+    | or storage/swagger/.../*.json).
+    |
+    */
+    "omit_default_404_for_show" => true,
 
     "suggestions_select_input" => false,
 
@@ -201,56 +252,16 @@ return [
     | Status
     |--------------------------------------------------------------------------
     |
-    | HTTP response statuses for various methods.
+    | Optional per-method response map. Empty by default. Add codes here or use inferred
+    | examples and storage/swagger/.../*.json.
     |
     */
     "status" => [
-        "GET" => [
-            "200" => [
-                "description" => "Successful Operation",
-            ],
-            "404" => [
-                "description" => "Not Found"
-            ]
-        ],
-        "POST" => [
-            "200" => [
-                "description" => "Successful Operation",
-            ],
-            "422" => [
-                "description" => "Validation Issues"
-            ]
-        ],
-        "PUT" => [
-            "200" => [
-                "description" => "Successful Operation",
-            ],
-            "404" => [
-                "description" => "Not Found"
-            ],
-            "405" => [
-                "description" => "Validation exception"
-            ]
-        ],
-        "PATCH" => [
-            "200" => [
-                "description" => "Successful Operation",
-            ],
-            "404" => [
-                "description" => "Not Found"
-            ],
-            "405" => [
-                "description" => "Validation exception"
-            ]
-        ],
-        "DELETE" => [
-            "200" => [
-                "description" => "successful Operation",
-            ],
-            "404" => [
-                "description" => "page Not Found"
-            ]
-        ],
+        "GET" => [],
+        "POST" => [],
+        "PUT" => [],
+        "PATCH" => [],
+        "DELETE" => [],
     ],
 
 ];

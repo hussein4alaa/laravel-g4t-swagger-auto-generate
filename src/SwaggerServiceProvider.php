@@ -2,8 +2,9 @@
 
 namespace G4T\Swagger;
 
-use g4t\Pattern\GenerateRepo;
 use G4T\Swagger\Commands\GenerateDocsCommand;
+use G4T\Swagger\Commands\PublishSwaggerMockServerCommand;
+use G4T\Swagger\Commands\SwaggerCacheCommand;
 use Illuminate\Support\ServiceProvider;
 use Illuminate\Routing\Route;
 
@@ -42,6 +43,8 @@ class SwaggerServiceProvider extends ServiceProvider
 
         $this->commands([
             GenerateDocsCommand::class,
+            SwaggerCacheCommand::class,
+            PublishSwaggerMockServerCommand::class,
         ]);
     
     

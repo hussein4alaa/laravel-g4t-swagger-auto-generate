@@ -6,6 +6,7 @@ The Swagger Laravel Autogenerate Package automatically generates OpenAPI (Swagge
   <img src="./i_stand.png" alt="I Stand with IRAN">
 </p>
 
+**Documentation:** [https://swagger.g4t.io/](https://swagger.g4t.io/)
 
 
 ## Features
@@ -186,6 +187,7 @@ Maintained by [HusseinAlaa](https://www.linkedin.com/in/hussein4alaa/).
 
 ## Additional resources
 
+- [Package documentation](https://swagger.g4t.io/)
 - [OpenAPI / Swagger](https://swagger.io/docs/)
 - [Laravel documentation](https://laravel.com/docs)
 - [Package repository](https://github.com/hussein4alaa/laravel-g4t-swagger-auto-generate)

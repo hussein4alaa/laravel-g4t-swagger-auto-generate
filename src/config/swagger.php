@@ -121,6 +121,36 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Cached OpenAPI JSON (faster Swagger UI)
+    |--------------------------------------------------------------------------
+    |
+    | When load_from_json is false and use_cached_spec_when_present is true, the JSON
+    | endpoint serves public/{cached_spec_path} if that file exists (e.g. after
+    | `php artisan swagger:cache` or `php artisan make:swagger`). Otherwise it builds
+    | the spec from routes on each request.
+    |
+    | When load_from_json is true, only the file is used (same as before).
+    |
+    */
+    "cached_spec_path" => env("SWAGGER_CACHED_SPEC_PATH", "doc.json"),
+    "use_cached_spec_when_present" => env("SWAGGER_USE_CACHED_SPEC", true),
+
+    /*
+    |--------------------------------------------------------------------------
+    | Mock server (OpenAPI upload)
+    |--------------------------------------------------------------------------
+    |
+    | G4T-hosted mock API (default https://mock.g4t.io). Used by
+    | `php artisan swagger:mock-server` to POST generated mock.json.
+    | Set MOCK_SERVER_APP_ID in .env to always update that app without prompts.
+    | Override MOCK_SERVER_URL only for staging or a private endpoint.
+    |
+    */
+    "mock_server_url" => env("MOCK_SERVER_URL", "https://mock.g4t.io"),
+    "mock_server_app_id" => env("MOCK_SERVER_APP_ID"),
+
+    /*
+    |--------------------------------------------------------------------------
     | Authentication Middlewares
     |--------------------------------------------------------------------------
     |

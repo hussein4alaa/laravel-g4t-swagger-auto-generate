@@ -973,6 +973,37 @@ class ResponseExampleExtractor
                 }
             }
 
+            if (preg_match('/^\$(\w+)$/', $expr, $vm)) {
+                $rhs = $this->resolveVariableToResourceRhs($body, $vm[1], $pos);
+                if ($rhs !== null) {
+                    $rhs = trim($rhs);
+                    if (preg_match('/^([\w\\\\]+)::collection\s*\(/', $rhs, $m)) {
+                        $ex = $this->exampleFromResourceClassCollection($m[1], $controllerFile, $eagerLoadPaths, $body);
+                        if ($ex !== null) {
+                            return $ex;
+                        }
+                    }
+                    if (preg_match('/^([\w\\\\]+)::make\s*\(/', $rhs, $m)) {
+                        $fqcn = $this->resolveShortClassInPhpFile($m[1], $controllerFile);
+                        if ($fqcn !== null && is_subclass_of($fqcn, JsonResource::class)) {
+                            $example = $this->exampleFromJsonResourceToArray($fqcn, [], $eagerLoadPaths, '');
+                            if ($example !== null) {
+                                return $this->wrapSingleResourceUnwrapped($example);
+                            }
+                        }
+                    }
+                    if (preg_match('/^new\s+([\w\\\\]+)\s*\(/', $rhs, $m)) {
+                        $fqcn = $this->resolveShortClassInPhpFile($m[1], $controllerFile);
+                        if ($fqcn !== null && is_subclass_of($fqcn, JsonResource::class)) {
+                            $example = $this->exampleFromJsonResourceToArray($fqcn, [], $eagerLoadPaths, '');
+                            if ($example !== null) {
+                                return $this->wrapSingleResourceUnwrapped($example);
+                            }
+                        }
+                    }
+                }
+            }
+
             $offset = $pos + 1;
         }
 
@@ -1227,6 +1258,108 @@ class ResponseExampleExtractor
         }
 
         return 'Example';
+    }
+
+    /**
+     * {@code $response = new SomeResource(...); return response()->json($response);} — resolve RHS of the last assignment before the json() call.
+     */
+    private function resolveVariableToResourceRhs(string $body, string $varName, int $beforePos): ?string
+    {
+        if ($beforePos <= 0) {
+            return null;
+        }
+
+        $prefix = substr($body, 0, $beforePos);
+        $pattern = '/\$'.preg_quote($varName, '/').'\s*=\s*/';
+
+        if (preg_match_all($pattern, $prefix, $matches, PREG_OFFSET_CAPTURE) < 1) {
+            return null;
+        }
+
+        $last = end($matches[0]);
+        $valueStart = $last[1] + strlen($last[0]);
+
+        return $this->extractAssignmentRhsExpression($body, $valueStart);
+    }
+
+    /**
+     * PHP statement RHS from the first non-whitespace char after "=" until ";" at nesting depth 0.
+     */
+    private function extractAssignmentRhsExpression(string $body, int $start): ?string
+    {
+        $len = strlen($body);
+        $i = $this->skipWhitespace($body, $start);
+        if ($i >= $len) {
+            return null;
+        }
+
+        $startExpr = $i;
+        $depthParen = 0;
+        $depthSq = 0;
+        $depthBrace = 0;
+        $inString = false;
+        $q = '';
+
+        for (; $i < $len; $i++) {
+            $c = $body[$i];
+
+            if ($inString) {
+                if ($c === '\\' && $i + 1 < $len) {
+                    $i++;
+
+                    continue;
+                }
+                if ($c === $q) {
+                    $inString = false;
+                }
+
+                continue;
+            }
+
+            if ($c === '"' || $c === "'") {
+                $inString = true;
+                $q = $c;
+
+                continue;
+            }
+
+            if ($c === '[') {
+                $depthSq++;
+
+                continue;
+            }
+            if ($c === ']') {
+                $depthSq = max(0, $depthSq - 1);
+
+                continue;
+            }
+            if ($c === '{') {
+                $depthBrace++;
+
+                continue;
+            }
+            if ($c === '}') {
+                $depthBrace = max(0, $depthBrace - 1);
+
+                continue;
+            }
+            if ($c === '(') {
+                $depthParen++;
+
+                continue;
+            }
+            if ($c === ')') {
+                $depthParen = max(0, $depthParen - 1);
+
+                continue;
+            }
+
+            if ($c === ';' && $depthParen === 0 && $depthSq === 0 && $depthBrace === 0) {
+                return trim(substr($body, $startExpr, $i - $startExpr));
+            }
+        }
+
+        return null;
     }
 
     /**

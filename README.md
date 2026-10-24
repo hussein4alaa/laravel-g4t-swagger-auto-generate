@@ -35,6 +35,14 @@ The Swagger Laravel Autogenerate Package automatically generates OpenAPI (Swagge
 composer require g4t/swagger
 ```
 
+## Upgrade notes (fix/review-issues)
+
+- **Disabled in production by default:** `swagger.enable` now defaults to `APP_ENV !== production`. Set `SWAGGER_ENABLED=true` to keep the docs online in production.
+- **Cached spec moved out of `public/`:** `swagger:cache` / `make:swagger` now write to `storage/app/swagger/{cached_spec_path}` (served only through the protected JSON endpoint). Set `SWAGGER_CACHED_SPEC_LOCATION=public` for the old location, and delete any old `public/doc.json` (`php artisan swagger:cache --clear` removes both).
+- **Basic auth:** credentials come from `SWAGGER_AUTH_ENABLED`, `SWAGGER_USERNAME`, `SWAGGER_PASSWORD`; an empty password never authenticates. `session_ttl` replaces the misspelled `sesson_ttl` (still read) and applies only when the docs routes have a session (`swagger.middleware`, e.g. `["web"]`).
+- **Valid OpenAPI 3.0 output:** `paths`/`tags` are at the document root, nested rules (`address.city`, `items.*.id`) become nested JSON schemas, optional path parameters (`{year?}`) produce one path per variant, and `auth:sanctum` routes are detected.
+- **Controllers with the same name** in different namespaces get distinct tags/schemas (e.g. `V1/Product`, `V2/Product`).
+
 ## Usage
 
 #### Video walkthrough
@@ -100,8 +108,8 @@ composer require g4t/swagger
 
 | Command | What it does |
 |---------|----------------|
-| `make:swagger` | Writes OpenAPI JSON to **`public/{cached_spec_path}`** (default `doc.json`). Legacy name; same destination as `swagger:cache`. |
-| `swagger:cache` | Regenerates and writes the cached spec to **`public/{cached_spec_path}`**, or **`swagger:cache --clear`** removes that file. Skips generation when `swagger.enable` is false (clear still works). |
+| `make:swagger` | Legacy alias of `swagger:cache`. |
+| `swagger:cache` | Regenerates and writes the cached spec to **`storage/app/swagger/{cached_spec_path}`** (or `public/` when `cached_spec_location` is `public`); **`swagger:cache --clear`** removes it. Skips generation when `swagger.enable` is false (clear still works). |
 | `swagger:mock-server` | Optional G4T mock workflow (experimental). |
 
 ```bash

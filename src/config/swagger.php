@@ -49,10 +49,24 @@ return [
     | This options to enable documentation auth
     |
     */
-    "enable_auth" => false,
-    "username" => "admin",
-    "password" => "pass",
-    "sesson_ttl" => 100000,
+    "enable_auth" => env("SWAGGER_AUTH_ENABLED", false),
+    "username" => env("SWAGGER_USERNAME", "admin"),
+    // Set SWAGGER_PASSWORD when enable_auth is on: an empty password never authenticates.
+    "password" => env("SWAGGER_PASSWORD", ""),
+    // Idle timeout (seconds), only applied when the docs routes have a session (see "middleware").
+    // The old misspelled "sesson_ttl" key is still read when this one is missing.
+    "session_ttl" => env("SWAGGER_SESSION_TTL", 100000),
+
+    /*
+    |--------------------------------------------------------------------------
+    | Documentation Route Middleware
+    |--------------------------------------------------------------------------
+    |
+    | Extra middleware for the documentation routes, e.g. ["web"] for sessions
+    | or your own gate. Basic auth (above) is always appended.
+    |
+    */
+    "middleware" => [],
 
     /*
     |--------------------------------------------------------------------------
@@ -125,7 +139,7 @@ return [
     |--------------------------------------------------------------------------
     |
     | When load_from_json is false and use_cached_spec_when_present is true, the JSON
-    | endpoint serves public/{cached_spec_path} if that file exists (e.g. after
+    | endpoint serves the cached file (see cached_spec_location) if it exists (e.g. after
     | `php artisan swagger:cache` or `php artisan make:swagger`). Otherwise it builds
     | the spec from routes on each request.
     |
@@ -133,6 +147,10 @@ return [
     |
     */
     "cached_spec_path" => env("SWAGGER_CACHED_SPEC_PATH", "doc.json"),
+    // "storage" keeps the cache in storage/app/swagger (served only through the protected
+    // JSON endpoint). "public" restores the legacy public/{cached_spec_path} file, which
+    // anyone can download directly.
+    "cached_spec_location" => env("SWAGGER_CACHED_SPEC_LOCATION", "storage"),
     "use_cached_spec_when_present" => env("SWAGGER_USE_CACHED_SPEC", true),
 
     /*
@@ -160,6 +178,7 @@ return [
     "auth_middlewares" => [
         "auth",
         "auth:api",
+        "auth:sanctum",
     ],
 
     /*
@@ -187,10 +206,11 @@ return [
     | Enable Swagger
     |--------------------------------------------------------------------------
     |
-    | Whether Swagger is enabled or not.
+    | Whether Swagger is enabled or not. Disabled in production unless
+    | SWAGGER_ENABLED=true is set explicitly.
     |
     */
-    "enable" => env('SWAGGER_ENABLED', true),
+    "enable" => env('SWAGGER_ENABLED', env('APP_ENV', 'production') !== 'production'),
 
     /*
     |--------------------------------------------------------------------------
@@ -254,16 +274,10 @@ return [
     |
     */
     "security_schemes" => [
-        "authorization" => [
-            "type" => "apiKey",
-            "name" => "authorization",
-            "in" => "header"
+        "bearerAuth" => [
+            "type" => "http",
+            "scheme" => "bearer",
         ],
-        "apiKey1" => [
-            "type" => "apiKey",
-            "name" => "key1",
-            "in" => "query"
-        ]
     ],
 
     /*

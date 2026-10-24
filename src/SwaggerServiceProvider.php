@@ -5,8 +5,8 @@ namespace G4T\Swagger;
 use G4T\Swagger\Commands\GenerateDocsCommand;
 use G4T\Swagger\Commands\PublishSwaggerMockServerCommand;
 use G4T\Swagger\Commands\SwaggerCacheCommand;
-use Illuminate\Support\ServiceProvider;
 use Illuminate\Routing\Route;
+use Illuminate\Support\ServiceProvider;
 
 
 class SwaggerServiceProvider extends ServiceProvider
@@ -18,6 +18,9 @@ class SwaggerServiceProvider extends ServiceProvider
      */
     public function register()
     {
+        // Defaults for keys missing from an older published config.
+        $this->mergeConfigFrom(__DIR__.'/config/swagger.php', 'swagger');
+
         Route::macro('description', function ($description) {
             $this->action['description'] = $description;
             return $this;
@@ -34,12 +37,12 @@ class SwaggerServiceProvider extends ServiceProvider
         });
 
         $this->publishes([
-            __DIR__ . '/config/swagger.php' => base_path('config/swagger.php'),
-        ]);
+            __DIR__.'/config/swagger.php' => config_path('swagger.php'),
+        ], ['swagger-config', 'config']);
 
         $this->publishes([
             __DIR__.'/custom-assets' => public_path('g4t/swagger'),
-        ], 'public');
+        ], ['swagger-assets', 'public']);
 
         $this->commands([
             GenerateDocsCommand::class,

@@ -2,15 +2,19 @@
 
 namespace G4T\Swagger;
 
-use ReflectionException;
-use ReflectionMethod;
+use G4T\Swagger\Support\Debug;
+use G4T\Swagger\Support\SchemaBuilder;
+use Illuminate\Database\Eloquent\Model;
+use Illuminate\Foundation\Http\FormRequest;
+use Illuminate\Http\Request;
+use Illuminate\Routing\Route as RoutingRoute;
 use Illuminate\Support\Str;
-use ReflectionClass;
+use ReflectionMethod;
 use ReflectionNamedType;
+use Throwable;
 
 trait Helpers
 {
-
     public function getControllerName(string $action): string
     {
         $segments = explode('\\', $action);
@@ -20,8 +24,7 @@ trait Helpers
             $controller = explode('@', $controller)[0];
         }
 
-        $controller = str_replace(['Controller', 'controller'], '', $controller);
-        return $controller;
+        return str_replace(['Controller', 'controller'], '', $controller);
     }
 
     public function isApiRoute(object $route): bool
@@ -29,184 +32,233 @@ trait Helpers
         return in_array('api', $route->middleware());
     }
 
-
     public function getRouteName(string $route, $prefix = null): string
     {
-        if(!$prefix) {
+        if (! $prefix) {
             return 'unknown';
         }
         $escapedPrefix = preg_quote($prefix, '/');
-        $regex = "/{$escapedPrefix}\/([^\/]+)/";
-        if (preg_match($regex, $route, $matches)) {
+        if (preg_match("/{$escapedPrefix}\/([^\/]+)/", $route, $matches)) {
             return $matches[1];
         }
+
         return 'unknown';
     }
 
-
+    /**
+     * A stable, unique, identifier-safe operationId, e.g. `put_api_v1_categories_category`.
+     */
     public function generateOperationId(string $uri, string $method): string
     {
-        $operationId = str_replace(['/', '[', ']'], '_', $uri) . '_' . $method;
-        $operationId = str_replace(['{', '}'], '_', $operationId);
+        $method = strtolower(explode('|', $method)[0]);
+        $path = trim(preg_replace('/[^A-Za-z0-9]+/', '_', $uri), '_');
 
-        return $operationId;
+        return $method.'_'.$path;
     }
 
-
-
+    /**
+     * Rules of the FormRequest type-hinted on the controller action.
+     *
+     * The request is created through the container (without running validation or authorization)
+     * so rules() may use injected services, `$this->route()` or `$this->user()` safely.
+     *
+     * @return array<string, mixed>
+     */
     public function getRequestClassName(string $controllerMethod): array
     {
-        if ($controllerMethod !== 'Closure') {
-            $exploded = explode('@', $controllerMethod);
-
-            if (!isset($exploded[0], $exploded[1])) {
-                return [];
-            }
-            try {
-                $class = $exploded[0];
-                if (isset($exploded[1])) {
-                    $method = $exploded[1];
-                }
-                $reflection = new ReflectionMethod($class, $method);
-                $parameters = $reflection->getParameters() ?? [];
-                foreach ($parameters as $parameter) {
-                    $typeHint = $parameter ? $parameter->getType() : null;
-                    if ($typeHint instanceof ReflectionNamedType && !$typeHint->isBuiltin()) {
-                        try {
-                            $request = $typeHint->getName();
-                            $request = new $request();
-                            $rules = $request->rules();
-                            return $this->confirmedValidation($rules);
-                        } catch (\Throwable $th) {
-                        }
-                    }
-                }
-            } catch (ReflectionException $e) {
-                return [];
-            }
+        if ($controllerMethod === 'Closure' || ! str_contains($controllerMethod, '@')) {
             return [];
         }
-    }
 
+        [$class, $method] = explode('@', $controllerMethod, 2);
 
-    private function confirmedValidation($rules)
-    {
-        if (str_contains(json_encode($rules), 'confirmed')) {
-            foreach ($rules as $key => $rule) {
-                if (str_contains($rule, 'confirmed')) {
-                    $rules["{$key}_confirmation"] = str_replace('confirmed', '', $rule);
-                }
+        try {
+            $reflection = new ReflectionMethod($class, $method);
+        } catch (Throwable $e) {
+            Debug::log("cannot reflect {$controllerMethod}", $e);
+
+            return [];
+        }
+
+        foreach ($reflection->getParameters() as $parameter) {
+            $type = $parameter->getType();
+            if (! $type instanceof ReflectionNamedType || $type->isBuiltin()) {
+                continue;
+            }
+
+            $requestClass = $type->getName();
+            if (! class_exists($requestClass) || ! method_exists($requestClass, 'rules')) {
+                continue;
+            }
+
+            try {
+                return $this->rulesOf($requestClass);
+            } catch (Throwable $e) {
+                Debug::log("rules() of {$requestClass} failed", $e);
+
+                return [];
             }
         }
-        return $rules;
+
+        return [];
     }
 
+    /**
+     * @param  class-string  $requestClass
+     * @return array<string, mixed>
+     */
+    private function rulesOf(string $requestClass): array
+    {
+        if (is_subclass_of($requestClass, Request::class)) {
+            /** @var Request $request */
+            $request = $requestClass::createFrom(app('request'), new $requestClass);
+            $request->setRouteResolver(fn () => null);
+            if ($request instanceof FormRequest) {
+                $request->setContainer(app())->setRedirector(app('redirect'));
+            }
+        } else {
+            $request = app()->make($requestClass);
+        }
+
+        $rules = app()->call([$request, 'rules']);
+
+        return is_array($rules) ? $rules : [];
+    }
 
     public function schemaName(string $action): string
     {
         $className = class_basename($action);
         $className = str_replace('Controller', '', $className);
-        $className = strstr($className, '@', true);
+        $className = strstr($className, '@', true) ?: $className;
         $methodName = Str::afterLast($action, '@');
-        $modifiedClassName = Str::studly(ucfirst($className) . ucfirst($methodName));
-        return $modifiedClassName;
+
+        return Str::studly(ucfirst($className).ucfirst($methodName));
     }
 
-
-    public function checkIfQueryParamRequiredOrNot($params)
-    {
-        $required = false;
-        if (!is_array($params)) {
-            $params = explode('|', $params);
-        }
-        foreach ($params as $param) {
-            if ($param == 'required') {
-                $required = true;
-                break;
-            }
-        }
-        return $required;
-    }
-
-
+    /**
+     * Bracket notation for a dot key (`address.city` → `address[city]`, `tags.*` → `tags[]`).
+     */
     public function getInputName(string $string, int $number = 0): string
     {
-        $name = preg_replace('/\.(\w+)/', '[$1]', $string);
-        if (str_contains($name, '.*')) {
-            return str_replace(".*", "[merge_input]", $name);
-        }
-        return $name;
+        $name = str_replace('.*', '[]', $string);
+
+        return preg_replace('/\.([^.\[\]]+)/', '[$1]', $name);
     }
 
-
+    /**
+     * Query parameters for the given rules plus the route's path parameters.
+     *
+     * @return list<array<string, mixed>>
+     */
     public function formatParams($validations, $route)
     {
-        $method = $route->methods();
-        $params_list = [];
-        if (
-            in_array($method, ['PUT', 'put', 'Put', 'PUT|PATCH']) or
-            is_array($method) && in_array('GET', $method) or
-            in_array('GET|HEAD', $method) or
-            in_array('DELETE', $method) or
-            in_array('DELETE|HEAD', $method)
-        ) {
-            if (!is_null($validations)) {
-                foreach ($validations as $key => $param) {
-                    $params_list[] = [
-                        "name" => $this->getInputName($key),
-                        "in" => "query",
-                        "description" => $this->getInputName($key),
-                        "required" => $this->checkIfQueryParamRequiredOrNot($param),
-                        "schema" => $this->checkSchemaType($param)
+        $methods = array_diff($route->methods(), ['HEAD']);
+        $params = in_array(reset($methods), ['POST', 'PUT', 'PATCH'], true)
+            ? []
+            : (new SchemaBuilder(is_array($validations) ? $validations : []))->queryParameters();
+
+        foreach ($this->pathParameterSchemas($route, (string) $route->getActionName()) as $name => $schema) {
+            $params[] = [
+                'name' => $name,
+                'in' => 'path',
+                'required' => true,
+                'schema' => $schema,
+            ];
+        }
+
+        return $params;
+    }
+
+    /**
+     * Schema of each path parameter, from route constraints (whereNumber, whereUuid, ...) or the
+     * controller signature (int / bound model key type).
+     *
+     * @return array<string, array<string, mixed>>
+     */
+    public function pathParameterSchemas(RoutingRoute $route, string $action): array
+    {
+        $controllerParameters = [];
+        if (str_contains($action, '@')) {
+            try {
+                foreach ((new ReflectionMethod(...explode('@', ltrim($action, '\\'), 2)))->getParameters() as $parameter) {
+                    $controllerParameters[$parameter->getName()] = $parameter->getType();
+                }
+            } catch (Throwable) {
+            }
+        }
+
+        $schemas = [];
+        foreach ($route->parameterNames() as $name) {
+            $schemas[$name] = $this->pathParameterSchema($route, $name, $controllerParameters[$name] ?? null);
+        }
+
+        return $schemas;
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function pathParameterSchema(RoutingRoute $route, string $name, mixed $type): array
+    {
+        $pattern = $route->wheres[$name] ?? null;
+        if (is_string($pattern)) {
+            if (in_array($pattern, ['[0-9]+', '\d+', '[0-9]*'], true)) {
+                return ['type' => 'integer'];
+            }
+            if (str_starts_with($pattern, '[\da-fA-F]{8}-')) {
+                return ['type' => 'string', 'format' => 'uuid'];
+            }
+
+            return ['type' => 'string', 'pattern' => '^'.$pattern.'$'];
+        }
+
+        if ($type instanceof ReflectionNamedType) {
+            if ($type->isBuiltin()) {
+                return ['type' => match ($type->getName()) {
+                    'int' => 'integer',
+                    'float' => 'number',
+                    'bool' => 'boolean',
+                    default => 'string',
+                }];
+            }
+
+            $class = $type->getName();
+            if (is_subclass_of($class, Model::class)) {
+                try {
+                    $model = new $class;
+                    $field = $route->bindingFieldFor($name) ?? $model->getRouteKeyName();
+                    $isIntegerKey = $field === $model->getKeyName() && in_array($model->getKeyType(), ['int', 'integer'], true);
+
+                    return [
+                        'type' => $isIntegerKey ? 'integer' : 'string',
+                        'description' => class_basename($class).' '.$field,
                     ];
+                } catch (Throwable $e) {
+                    Debug::log("cannot inspect bound model {$class}", $e);
                 }
             }
         }
 
-        $required = $this->pathRequired($route);
-
-        $params = $route->parameterNames();
-        foreach ($params as $param) {
-            $params_list[] = [
-                "name" => $param,
-                "in" => "path",
-                "description" => $param,
-                "required" => $required,
-                "schema" => $this->checkSchemaType($param)
-            ];
-        }
-        return $params_list;
+        return ['type' => 'string'];
     }
-
-
-    private function checkSchemaType($param)
-    {
-        if (is_string($param)) {
-            return $this->getSwaggerInputSchema($param);
-        } else {
-            $param = $this->convertValidationToOneLine($param);
-            return $this->getSwaggerInputSchema($param);
-        }
-    }
-
-
 
     public function pathRequired($route)
     {
-        $required = true;
-        if (strpos($route->uri, '?') !== false) {
-            $required = false;
-        }
-        return $required;
+        return true;
     }
 
+    /**
+     * True when the route uses one of the configured auth middlewares (`auth`, `auth:sanctum`, ...).
+     */
     public function checkIfTokenIsRequired($route)
     {
-        $middlewares = $route->gatherMiddleware();
-        $authMiddlewares = config('swagger.auth_middlewares');
+        $authMiddlewares = config('swagger.auth_middlewares') ?? [];
 
-        foreach ($middlewares as $middleware) {
-            if (in_array($middleware, $authMiddlewares)) {
+        foreach ($route->gatherMiddleware() as $middleware) {
+            if (! is_string($middleware)) {
+                continue;
+            }
+            if (in_array($middleware, $authMiddlewares, true) || $middleware === 'auth' || str_starts_with($middleware, 'auth:')) {
                 return true;
             }
         }

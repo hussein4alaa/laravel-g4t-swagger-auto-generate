@@ -18,6 +18,7 @@
         chevSm: '<svg aria-hidden="true" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="m6 9 6 6 6-6"></path></svg>',
         copy: '<svg aria-hidden="true" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="12" height="12" rx="2"></rect><path d="M5 15V5a2 2 0 0 1 2-2h10"></path></svg>',
         term: '<svg aria-hidden="true" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m5 8 4 4-4 4M12 16h7"></path></svg>',
+        upload: '<svg aria-hidden="true" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 15V4M7 9l5-5 5 5M5 20h14"></path></svg>',
         key: '<svg aria-hidden="true" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="15" r="4"></circle><path d="m10.8 12.2 9.2-9.2M17 6l3 3M14 9l2 2"></path></svg>',
         warn: '<svg aria-hidden="true" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3 2 20h20L12 3z"></path><path d="M12 10v4M12 17.5v.01"></path></svg>'
     };
@@ -460,28 +461,82 @@
     function paramValue(op, p) {
         var saved = (state.inputs[op.id] || {})[p.name];
         if (saved != null) { return saved; }
+        if (p.in !== 'path' && !p.required) { return ''; }
         var s = resolve(p.schema || {}).schema;
-        if (p.example !== undefined) { return String(p.example); }
-        if (s.example !== undefined) { return String(s.example); }
-        if (s.default !== undefined) { return String(s.default); }
+        if (p.example !== undefined) { return displayValue(p.example); }
+        if (s.example !== undefined) { return displayValue(s.example); }
+        if (s.default !== undefined) { return displayValue(s.default); }
         if (p.in === 'path') { return schemaType(s) === 'integer' || schemaType(s) === 'number' ? '1' : ''; }
         return '';
+    }
+    /** A value as it goes into a text-like input (lists comma separated, booleans 1/0). */
+    function displayValue(value) {
+        if (value == null) { return ''; }
+        if (Array.isArray(value)) { return value.filter(function (v) { return v === null || typeof v !== 'object'; }).join(', '); }
+        if (typeof value === 'object') { return JSON.stringify(value); }
+        if (typeof value === 'boolean') { return value ? '1' : '0'; }
+        return String(value);
+    }
+    /** Which control a schema gets in the Try it out form. */
+    function controlKind(raw, binary) {
+        var s = resolve(raw).schema, type = schemaType(s);
+        if (binary) { return 'file'; }
+        if (s.enum) { return 'enum'; }
+        if (type === 'boolean') { return 'bool'; }
+        if (type === 'integer' || type === 'number') { return 'number'; }
+        if (type === 'array') { return 'list'; }
+        if (s.format === 'date') { return 'date'; }
+        if (s.format === 'date-time') { return 'datetime'; }
+        if (s.format === 'email') { return 'email'; }
+        return 'text';
+    }
+    /** Example shown as placeholder (never the generic "string"). */
+    function placeholderFor(raw, kind) {
+        if (kind === 'list') { return 'value 1, value 2'; }
+        var ex = displayValue(sample(raw));
+        return ex === 'string' || ex === '' ? typeLabel(raw) : ex;
+    }
+    /** Pre-filled value: required fields get their example, optional ones start empty and are not sent. */
+    function initialValue(raw, required, kind) {
+        if (!required || kind === 'file') { return ''; }
+        var ex = sample(raw);
+        if (kind === 'datetime' && typeof ex === 'string') { return ex.replace(/(:\d{2})?(\.\d+)?(Z|[+-]\d{2}:?\d{2})$/, '').slice(0, 16); }
+        var value = displayValue(ex);
+        return value === 'string' ? '' : value;
     }
     function bodyText(op) {
         if (state.bodies[op.id] != null) { return state.bodies[op.id]; }
         var value = sample(bodySchema(op));
         return pretty(value);
     }
-    /** multipart: one input per top-level property (files get a file input). */
+    /** Required arrays start with their example items; optional ones with one empty item (not sent). */
+    function initialList(raw, required) {
+        if (!required) { return ['']; }
+        var ex = sample(raw);
+        var items = (Array.isArray(ex) ? ex : [ex]).map(displayValue).map(function (v) { return v === 'string' ? '' : v; });
+        return items.length ? items : [''];
+    }
+    /** ".jpg,.png" from "Allowed types: jpg, png" or a bare "jpg,png" description. */
+    function acceptFromDescription(text) {
+        var m = /types?\s*:\s*([a-z0-9][a-z0-9 ,]*)/i.exec(text) || /^\s*([a-z0-9]+(?:\s*,\s*[a-z0-9]+)*)\s*$/i.exec(text);
+        return m ? m[1].split(',').map(function (t) { return t.trim(); }).filter(Boolean).map(function (t) { return '.' + t.toLowerCase(); }).join(',') : '';
+    }
+    /** multipart: one field per top-level property; "a[b]" names are grouped under "a". */
     function formFields(op) {
         var s = resolve(bodySchema(op)).schema, required = s.required || [];
         return Object.keys(s.properties || {}).map(function (name) {
-            var prop = s.properties[name], ps = resolve(prop).schema, value = (state.forms[op.id] || {})[name];
-            if (value == null) {
-                var ex = sample(prop);
-                value = Array.isArray(ex) ? ex.filter(function (v) { return typeof v !== 'object'; }).join(',') : (ex !== null && typeof ex === 'object' ? JSON.stringify(ex) : (typeof ex === 'boolean' ? (ex ? '1' : '0') : String(ex)));
-            }
-            return { name: name, binary: isBinary(prop), multiple: schemaType(ps) === 'array', enumValues: ps.enum || null, value: value, req: required.indexOf(name) !== -1 };
+            var prop = s.properties[name], ps = resolve(prop).schema, binary = isBinary(prop);
+            var kind = controlKind(prop, binary), req = required.indexOf(name) !== -1;
+            var saved = (state.forms[op.id] || {})[name];
+            var grouped = /\[\]$/.test(name) ? null : name.match(/^([^\[\]]+)\[(.+)\]$/);
+            var mimes = binary ? acceptFromDescription(ps.description || (ps.items && resolve(ps.items).schema.description) || '') : '';
+            return {
+                name: name, label: grouped ? grouped[2].replace(/\]\[/g, ' › ') : name.replace(/\[\]$/, ''),
+                group: grouped ? grouped[1] : null, schema: prop, kind: kind, req: req, binary: binary,
+                multiple: schemaType(ps) === 'array', enumValues: ps.enum || null, accept: mimes,
+                value: saved != null ? saved : (kind === 'list' ? initialList(prop, req) : initialValue(prop, req, kind)),
+                type: typeLabel(prop), note: noteFor(prop)
+            };
         });
     }
 
@@ -509,15 +564,15 @@
                 var form = new FormData();
                 formFields(op).forEach(function (f) {
                     if (f.binary) {
-                        var files = (state.files[op.id] || {})[f.name] || [];
-                        Array.prototype.forEach.call(files, function (file) { form.append(f.name, file); req.curlBody.push("-F '" + f.name + '=@' + file.name + "'"); });
-                    } else if (f.value !== '') {
-                        (f.multiple ? f.value.split(',') : [f.value]).forEach(function (v) {
-                            v = f.multiple ? v.trim() : v;
-                            form.append(f.name, v);
-                            req.curlBody.push("-F '" + f.name + '=' + v.replace(/'/g, "'\\''") + "'");
-                        });
+                        var files = f.multiple ? fileSlots(op.id, f.name).filter(Boolean) : Array.prototype.slice.call((state.files[op.id] || {})[f.name] || []);
+                        files.forEach(function (file) { form.append(f.name, file); req.curlBody.push("-F '" + f.name + '=@' + file.name + "'"); });
+                        return;
                     }
+                    var values = f.multiple ? listValues(op, f).map(function (v) { return String(v).trim(); }).filter(function (v) { return v !== ''; }) : (f.value !== '' ? [f.value] : []);
+                    values.forEach(function (v) {
+                        form.append(f.name, v);
+                        req.curlBody.push("-F '" + f.name + '=' + String(v).replace(/'/g, "'\\''") + "'");
+                    });
                 });
                 req.body = form;
             } else {
@@ -559,11 +614,101 @@
             .then(function () { state.busy[op.id] = false; renderOp(op.id); });
     }
 
+    /** Multipart schemas flatten names ("tags[]", "dimensions[width]"); show them like the JSON shape. */
+    function groupBracketRows(rows) {
+        var out = [], groups = {};
+        rows.forEach(function (r) {
+            if (r.level) { out.push(r); return; }
+            if (/\[\]$/.test(r.name)) { out.push(Object.assign({}, r, { name: r.name.slice(0, -2) })); return; }
+            var m = r.name.match(/^([^\[\]]+)\[(.+)\]$/);
+            if (!m) { out.push(r); return; }
+            if (!groups[m[1]]) {
+                groups[m[1]] = true;
+                out.push({ name: m[1], type: 'object', req: false, note: '—', level: 0 });
+            }
+            out.push(Object.assign({}, r, { name: m[2].replace(/\]\[/g, ' › '), level: 1 }));
+        });
+        return out;
+    }
+
     function rowsHtml(rows) {
         return '<div class="g4t-table">' + rows.map(function (r) {
             return '<div class="g4t-row"><div class="g4t-row-name' + (r.level ? ' is-nested' : '') + '"' + (r.level > 1 ? ' style="margin-inline-start:' + ((r.level - 1) * 12) + 'px"' : '') + '><div class="g4t-field"><span class="g4t-field-name">' + esc(r.name) + '</span>' + (r.req ? '<span class="g4t-req">required</span>' : '') + '</div><div class="g4t-type">' + esc(r.type) + (r.in ? ' · ' + esc(r.in) : '') + '</div></div><div class="g4t-note">' + esc(r.note) + '</div></div>';
         }).join('') + '</div>';
     }
+
+    /** Hint under a form control: description and bounds; enum values and "nullable" are left to the control. */
+    function formHint(raw, fallback) {
+        var s = resolve(raw || {}).schema, parts = [];
+        if (s.description) { parts.push(s.description); }
+        var min = s.minLength != null ? s.minLength : s.minimum != null ? s.minimum : s.minItems;
+        var max = s.maxLength != null ? s.maxLength : s.maximum != null ? s.maximum : s.maxItems;
+        if (min != null) { parts.push('min ' + min); }
+        if (max != null) { parts.push('max ' + max); }
+        if (!parts.length && fallback && fallback !== '—' && !s.enum && fallback !== 'nullable') { parts.push(fallback); }
+        return parts.join(' · ');
+    }
+    /** One labelled row of the Try it out form; the control matches the field type. */
+    function formRowHtml(f) {
+        var id = 'g4t-f-' + f.op.id + '-' + f.name, control, hint = '';
+        var attrs = ' data-bind="' + (f.kind === 'file' ? 'file' : f.bind) + '" data-op="' + esc(f.op.id) + '" data-name="' + esc(f.name) + '" id="' + esc(id) + '"';
+        if (f.multiple && f.bind === 'form') {
+            // Arrays: one control per item, like Swagger UI's "Add item" (files: one file per slot).
+            var isFile = f.kind === 'file';
+            var itemSchema = resolve(f.schema).schema.items || {};
+            var itemKind = isFile ? 'file' : controlKind(itemSchema, false);
+            if (itemKind === 'list') { itemKind = 'text'; }
+            var items = isFile ? fileSlots(f.op.id, f.name) : listValues(f.op, f);
+            control = '<div class="g4t-items">' + items.map(function (item, i) {
+                var itemAttrs = ' data-bind="' + (isFile ? 'file-item' : 'form-item') + '" data-op="' + esc(f.op.id) + '" data-name="' + esc(f.name) + '" data-index="' + i + '"' + (i === 0 ? ' id="' + esc(id) + '"' : '') + ' aria-label="' + esc(f.label + ' item ' + (i + 1)) + '"';
+                return '<div class="g4t-item">' + controlHtml(f, itemKind, isFile ? '' : item, itemAttrs, isFile ? (item ? [item] : []) : null, itemSchema, false) +
+                    '<button type="button" class="g4t-item-remove" data-action="remove-item" data-op="' + esc(f.op.id) + '" data-name="' + esc(f.name) + '" data-index="' + i + '" aria-label="Remove ' + esc(f.label) + ' item ' + (i + 1) + '">−</button></div>';
+            }).join('') +
+                '<button type="button" class="g4t-btn g4t-add-item" data-action="add-item" data-op="' + esc(f.op.id) + '" data-name="' + esc(f.name) + '" data-kind="' + (isFile ? 'file' : 'value') + '">+ Add ' + (isFile ? 'file' : 'item') + '</button></div>';
+            if (!items.length) { hint = 'Nothing is sent for an empty list.'; }
+        } else {
+            var files = f.kind === 'file' ? Array.prototype.slice.call((state.files[f.op.id] || {})[f.name] || []) : null;
+            control = controlHtml(f, f.kind, f.value, attrs, files, f.schema, true);
+            if (f.kind === 'list') { hint = 'Separate values with commas.'; }
+        }
+        var note = formHint(f.schema, f.note);
+        hint = [note, hint].filter(Boolean).join(' · ');
+        return '<div class="g4t-form-row' + (f.nested ? ' is-nested' : '') + '"><label class="g4t-form-label" for="' + esc(id) + '"><span class="g4t-field"><span class="g4t-field-name">' + esc(f.label) + '</span>' + (f.req ? '<span class="g4t-req">required</span>' : '') + '</span><span class="g4t-type">' + esc(f.type) + '</span></label>' +
+            '<div class="g4t-form-control">' + control + (hint ? '<div class="g4t-form-hint">' + esc(hint) + '</div>' : '') + '</div></div>';
+    }
+
+    /** A single control: file picker, select (enum / boolean) or a typed input. */
+    function controlHtml(f, kind, value, attrs, files, schema, clearable) {
+        switch (kind) {
+            case 'file':
+                var names = (files || []).map(function (file) { return file.name; }).join(', ');
+                return '<div class="g4t-file"><label class="g4t-btn g4t-file-btn">' + ICON.upload + 'Choose file' +
+                    '<input type="file" class="g4t-sr"' + attrs + (f.accept ? ' accept="' + esc(f.accept) + '"' : '') + '></label>' +
+                    '<span class="g4t-file-name' + (names ? '' : ' is-empty') + '" title="' + esc(names) + '">' + esc(names || 'No file chosen') + '</span>' +
+                    (names && clearable ? '<button type="button" class="g4t-file-clear" data-action="clear-file" data-op="' + esc(f.op.id) + '" data-name="' + esc(f.name) + '" aria-label="Remove ' + esc(f.label) + '">×</button>' : '') + '</div>';
+            case 'enum':
+            case 'bool':
+                var enumValues = kind === 'enum' ? (resolve(schema || {}).schema.enum || f.enumValues || []) : [];
+                var options = kind === 'bool' ? [['1', 'true'], ['0', 'false']] : enumValues.map(function (v) { return [String(v), String(v)]; });
+                return '<select' + attrs + '>' + (f.req && value !== '' ? '' : '<option value="">' + (f.req ? 'Select…' : '— not sent —') + '</option>') +
+                    options.map(function (o) { return '<option value="' + esc(o[0]) + '"' + (o[0] === String(value) ? ' selected' : '') + '>' + esc(o[1]) + '</option>'; }).join('') + '</select>';
+            default:
+                var type = { number: 'number', date: 'date', datetime: 'datetime-local', email: 'email' }[kind] || 'text';
+                return '<input type="' + type + '"' + attrs + ' value="' + esc(value) + '" placeholder="' + esc(placeholderFor(schema || {}, kind)) + '"' + (type === 'number' ? ' step="any" inputmode="decimal"' : '') + ' autocomplete="off" spellcheck="false">';
+        }
+    }
+    /** File slots of an array-of-files field (one File or null per slot). */
+    function fileSlots(opId, name) {
+        var value = (state.files[opId] || {})[name];
+        return Array.isArray(value) ? value : [null];
+    }
+    /** Items of an array field as strings. */
+    function listValues(op, f) {
+        var saved = (state.forms[op.id] || {})[f.name];
+        if (Array.isArray(saved)) { return saved; }
+        return Array.isArray(f.value) ? f.value : String(f.value || '').split(',').map(function (v) { return v.trim(); });
+    }
+    function formField(op, name) { return formFields(op).filter(function (f) { return f.name === name; })[0] || null; }
 
     function tryHtml(op) {
         var server = state.server || location.origin, html = '';
@@ -573,30 +718,32 @@
         }
         var inputs = op.params.filter(function (p) { return ['path', 'query', 'header'].indexOf(p.in) !== -1; });
         if (inputs.length) {
-            html += '<div class="g4t-inputs">' + inputs.map(function (p) {
-                var s = resolve(p.schema || {}).schema, value = paramValue(op, p);
-                var control = s.enum
-                    ? '<select data-bind="param" data-op="' + esc(op.id) + '" data-name="' + esc(p.name) + '"><option value=""></option>' + s.enum.map(function (v) { return '<option' + (String(v) === value ? ' selected' : '') + '>' + esc(v) + '</option>'; }).join('') + '</select>'
-                    : '<input data-bind="param" data-op="' + esc(op.id) + '" data-name="' + esc(p.name) + '" value="' + esc(value) + '"' + (p.in === 'path' ? ' required' : '') + ' placeholder="' + esc(typeLabel(p.schema || {})) + '">';
-                return '<label class="g4t-input"><span>' + esc(p.name) + ' <em>' + esc(p.in) + (p.required ? ' · required' : '') + '</em></span>' + control + '</label>';
-            }).join('') + '</div>';
+            html += '<div class="g4t-try-section"><div class="g4t-try-label">Parameters</div><div class="g4t-form">' + inputs.map(function (p) {
+                var kind = controlKind(p.schema || {}, false);
+                return formRowHtml({
+                    bind: 'param', op: op, name: p.name, label: p.name, kind: kind, schema: p.schema || {},
+                    req: p.in === 'path' || !!p.required, value: paramValue(op, p), enumValues: resolve(p.schema || {}).schema.enum || null,
+                    type: typeLabel(p.schema || {}) + ' · ' + p.in, note: p.description || noteFor(p.schema || {})
+                });
+            }).join('') + '</div></div>';
         }
+        var ctypeTabs = op.ctypes.length > 1 ? '<div class="g4t-ctype" role="tablist" aria-label="Content type">' + op.ctypes.map(function (c) {
+            return '<button type="button" role="tab" aria-selected="' + (c === currentCtype(op)) + '" data-action="ctype" data-op="' + esc(op.id) + '" data-value="' + esc(c) + '">' + esc(c) + '</button>';
+        }).join('') + '</div>' : '<span class="g4t-mono g4t-muted">' + esc(currentCtype(op) || '') + '</span>';
         if (op.body) {
             if (isMultipart(op)) {
-                html += '<div class="g4t-block"><span style="font-size:12px;color:var(--text-2)">Request body <span class="g4t-mono g4t-muted">' + esc(currentCtype(op)) + '</span></span><div class="g4t-inputs">' + formFields(op).map(function (f) {
-                    var control;
-                    if (f.binary) {
-                        control = '<input type="file" data-bind="file" data-op="' + esc(op.id) + '" data-name="' + esc(f.name) + '"' + (f.multiple ? ' multiple' : '') + '>';
-                    } else if (f.enumValues) {
-                        control = '<select data-bind="form" data-op="' + esc(op.id) + '" data-name="' + esc(f.name) + '">' + (f.req ? '' : '<option value=""></option>') + f.enumValues.map(function (v) { return '<option' + (String(v) === f.value ? ' selected' : '') + '>' + esc(v) + '</option>'; }).join('') + '</select>';
-                    } else {
-                        control = '<input data-bind="form" data-op="' + esc(op.id) + '" data-name="' + esc(f.name) + '" value="' + esc(f.value) + '"' + (f.multiple ? ' placeholder="comma,separated"' : '') + '>';
+                var seenGroups = {};
+                html += '<div class="g4t-try-section"><div class="g4t-try-label">Body ' + ctypeTabs + '<span class="g4t-try-note">Empty optional fields are not sent.</span></div><div class="g4t-form">' + formFields(op).map(function (f) {
+                    var head = '';
+                    if (f.group && !seenGroups[f.group]) {
+                        seenGroups[f.group] = true;
+                        head = '<div class="g4t-form-group"><span class="g4t-field-name">' + esc(f.group) + '</span><span class="g4t-type">object</span></div>';
                     }
-                    return '<label class="g4t-input"><span>' + esc(f.name) + (f.req ? ' <em>required</em>' : '') + '</span>' + control + '</label>';
+                    return head + formRowHtml({ bind: 'form', op: op, name: f.name, label: f.label, nested: !!f.group, kind: f.kind, schema: f.schema, req: f.req, value: f.value, enumValues: f.enumValues, multiple: f.multiple, accept: f.accept, type: f.type, note: f.note });
                 }).join('') + '</div></div>';
             } else {
                 var text = bodyText(op);
-                html += '<label class="g4t-block"><span style="font-size:12px;color:var(--text-2)">Request body <span class="g4t-mono g4t-muted">' + esc(currentCtype(op)) + '</span></span><textarea class="g4t-textarea" data-bind="body" data-op="' + esc(op.id) + '" rows="' + Math.min(14, text.split('\n').length + 1) + '" spellcheck="false">' + esc(text) + '</textarea></label>';
+                html += '<div class="g4t-try-section"><div class="g4t-try-label">Body ' + ctypeTabs + '</div><textarea class="g4t-textarea" data-bind="body" data-op="' + esc(op.id) + '" rows="' + Math.min(14, text.split('\n').length + 1) + '" spellcheck="false" aria-label="Request body">' + esc(text) + '</textarea></div>';
             }
         }
         var busy = !!state.busy[op.id], res = state.results[op.id];
@@ -651,18 +798,19 @@
         html += '<div class="g4t-op-body"><div class="g4t-op-intro"><p class="g4t-op-desc">' + esc(op.desc || op.summary || 'No description.') + '</p><div style="display:flex;gap:8px;flex:none">' +
             '<button type="button" class="g4t-btn" data-action="copy-curl" data-op="' + esc(op.id) + '">' + ICON.term + 'Copy as cURL</button>' +
             '<button type="button" class="g4t-try-toggle" data-action="toggle-try" data-op="' + esc(op.id) + '" aria-pressed="' + trying + '">' + (trying ? 'Cancel' : 'Try it out') + '</button></div></div>';
-        if (op.params.length) {
+        // While Try it out is open its form lists the same fields, so the reference tables step aside.
+        if (op.params.length && !trying) {
             html += '<div class="g4t-block"><h3>Parameters</h3>' + rowsHtml(op.params.map(function (p) {
                 return { name: p.name, in: p.in, type: typeLabel(p.schema || {}), req: !!p.required, note: p.description || noteFor(p.schema || {}), level: 0 };
             })) + '</div>';
         }
-        if (op.body) {
-            var ctype = currentCtype(op);
-            html += '<div class="g4t-block"><div class="g4t-block-head"><h3>Request body</h3>' + (op.ctypes.length ? '<div class="g4t-ctype" role="tablist" aria-label="Content type">' + op.ctypes.map(function (c) {
-                return '<button type="button" role="tab" aria-selected="' + (c === ctype) + '" data-action="ctype" data-op="' + esc(op.id) + '" data-value="' + esc(c) + '">' + esc(c) + '</button>';
-            }).join('') + '</div>' : '') + '</div>';
-            var rows = fields(bodySchema(op));
-            html += (rows.length ? rowsHtml(rows) : '<div class="g4t-note">' + esc(typeLabel(bodySchema(op))) + '</div>') + '</div>';
+        if (op.body && !trying) {
+            // The JSON schema nests objects (dimensions › width); the multipart one is flattened (dimensions[width]).
+            var docsType = op.ctypes.indexOf('application/json') !== -1 ? 'application/json' : op.ctypes[0];
+            var docsSchema = docsType ? op.body.content[docsType].schema || {} : {};
+            html += '<div class="g4t-block"><div class="g4t-block-head"><h3>Request body</h3><span class="g4t-mono g4t-muted" style="font-size:12px">' + op.ctypes.map(esc).join(' · ') + '</span></div>';
+            var rows = groupBracketRows(fields(docsSchema));
+            html += (rows.length ? rowsHtml(rows) : '<div class="g4t-note">' + esc(typeLabel(docsSchema)) + '</div>') + '</div>';
         }
         if (trying) { html += tryHtml(op); }
         html += responsesHtml(op);
@@ -805,6 +953,22 @@
             case 'ctype': state.ctype[id] = value; renderOp(id); break;
             case 'execute': if (op) { execute(op); } break;
             case 'clear-result': delete state.results[id]; renderOp(id); break;
+            case 'clear-file': if (state.files[id]) { delete state.files[id][el.getAttribute('data-name')]; } renderOp(id); break;
+            case 'add-item':
+            case 'remove-item':
+                if (op) {
+                    var field = el.getAttribute('data-name'), index = Number(el.getAttribute('data-index'));
+                    var isFileList = action === 'add-item' ? el.getAttribute('data-kind') === 'file' : !!(formField(op, field) || {}).binary;
+                    var list = isFileList ? fileSlots(id, field).slice() : listValues(op, formField(op, field)).slice();
+                    if (action === 'add-item') { list.push(isFileList ? null : ''); } else { list.splice(index, 1); }
+                    if (isFileList) { (state.files[id] = state.files[id] || {})[field] = list; } else { (state.forms[id] = state.forms[id] || {})[field] = list; }
+                    renderOp(id);
+                    if (action === 'add-item') {
+                        var added = document.querySelector('#op-' + CSS.escape(id) + ' [data-name="' + CSS.escape(field) + '"][data-index="' + (list.length - 1) + '"]');
+                        if (added && !isFileList) { added.focus(); }
+                    }
+                }
+                break;
             case 'copy-curl': if (op) { copy(curl(op), 'cURL copied'); } break;
             case 'copy-result': if (state.results[id]) { copy(state.results[id].json != null ? pretty(state.results[id].json) : state.results[id].raw, 'Response copied'); } break;
             case 'resp-tab': state.respTab[id] = isNaN(Number(value)) ? value : Number(value); state.exTab[id] = 0; renderOp(id); break;
@@ -824,12 +988,20 @@
         }
     });
 
+    function setListItem(opId, name, index, value) {
+        var op = opById(opId), field = op ? formField(op, name) : null;
+        var list = field ? listValues(op, field).slice() : [];
+        list[index] = value;
+        (state.forms[opId] = state.forms[opId] || {})[name] = list;
+    }
+
     document.addEventListener('input', function (e) {
         var el = e.target, bind = el.getAttribute && el.getAttribute('data-bind');
         if (el === els.filter) { state.filter = el.value; renderNav(); renderOps(); return; }
         var id = el.getAttribute && el.getAttribute('data-op'), name = el.getAttribute && el.getAttribute('data-name');
         if (bind === 'param') { (state.inputs[id] = state.inputs[id] || {})[name] = el.value; }
         else if (bind === 'form') { (state.forms[id] = state.forms[id] || {})[name] = el.value; }
+        else if (bind === 'form-item') { setListItem(id, name, Number(el.getAttribute('data-index')), el.value); }
         else if (bind === 'body') { state.bodies[id] = el.value; }
         else if (bind === 'login') { state.loginValues[el.name] = el.value; }
     });
@@ -839,7 +1011,14 @@
         var id = el.getAttribute && el.getAttribute('data-op'), name = el.getAttribute && el.getAttribute('data-name');
         if (el === els.version) { state.version = el.value; store.set('version', el.value); state.results = {}; load(); }
         else if (bind === 'server') { state.server = el.value; store.set('server', el.value); toast('Server: ' + el.value); Object.keys(state.trying).forEach(function (k) { if (state.trying[k]) { renderOp(k); } }); }
-        else if (bind === 'file') { (state.files[id] = state.files[id] || {})[name] = el.files; }
+        else if (bind === 'file') { (state.files[id] = state.files[id] || {})[name] = el.files; renderOp(id); }
+        else if (bind === 'file-item') {
+            var slots = fileSlots(id, name).slice();
+            slots[Number(el.getAttribute('data-index'))] = el.files && el.files[0] ? el.files[0] : null;
+            (state.files[id] = state.files[id] || {})[name] = slots;
+            renderOp(id);
+        }
+        else if (bind === 'form-item') { setListItem(id, name, Number(el.getAttribute('data-index')), el.value); }
         else if (bind === 'param') { (state.inputs[id] = state.inputs[id] || {})[name] = el.value; }
         else if (bind === 'form') { (state.forms[id] = state.forms[id] || {})[name] = el.value; }
     });

@@ -106,17 +106,22 @@ composer require g4t/swagger
 
 ## Documentation UI
 
-Two interfaces ship with the package:
+Three interfaces ship with the package:
 
 | `ui` | Interface |
 |------|-----------|
-| `swagger` (default) | Swagger UI, bundled with the package, with the theme picker |
+| `g4t` (default) | The package's own API reference: sidebar with filter (`/`), operation cards, Try it out with file uploads, Copy as cURL, status-code and named-example tabs, Example / Schema views, light / dark / system mode, density and accent themes. Plain HTML + JS, nothing loaded from a CDN |
+| `swagger` | Swagger UI, bundled with the package, with the theme picker |
 | `scalar` | [Scalar API Reference](https://github.com/scalar/scalar), loaded from jsDelivr at a pinned version |
 
 ```php
 // config/swagger.php
-"ui" => env("SWAGGER_UI", "swagger"),
-"theme" => env("SWAGGER_THEME", "default"), // default Swagger UI theme
+"ui" => env("SWAGGER_UI", "g4t"),
+"g4t" => [
+    "mode" => "light",          // light | dark | system (readers can switch; their choice is remembered)
+    "density" => "comfortable", // comfortable | compact
+],
+"theme" => env("SWAGGER_THEME", "default"), // default Swagger UI theme / g4t accent
 
 "scalar" => [
     "version" => "1.73.0",
@@ -128,12 +133,14 @@ Two interfaces ship with the package:
 ],
 ```
 
-Append `?ui=scalar` or `?ui=swagger` to the documentation URL to switch for one visit.
+Append `?ui=g4t`, `?ui=swagger` or `?ui=scalar` to the documentation URL to switch for one visit.
+Operations have deep links (`#op-<operationId>`).
 Each entry of `versions` becomes a definition in Swagger UI and a source in Scalar.
 
 ## Auto login for "Try it out"
 
-Set the login endpoint and a **Login** button appears in both interfaces. It posts the
+Set the login endpoint and a **Login** button appears in every interface (without it, the `g4t`
+UI lets readers paste a token by hand). It posts the
 credentials as JSON, reads the token from the response and authorizes every protected
 endpoint. The token stays in the browser until **Logout**.
 

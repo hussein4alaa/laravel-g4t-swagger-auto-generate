@@ -18,7 +18,45 @@ abstract class BaseResponse
 
     private static function getSummary($route)
     {
-        return ! is_null($route['summary']) ? $route['summary'] : $route['name'];
+        if (! is_null($route['summary'])) {
+            return $route['summary'];
+        }
+
+        return self::summaryFromAction($route) ?? $route['name'];
+    }
+
+    /**
+     * Readable default summary from the controller action and the last static URI segment:
+     * index → "List categories", store → "Create category", show → "Get category",
+     * update → "Update category", destroy → "Delete category", other methods → "Update status".
+     */
+    private static function summaryFromAction(array $route): ?string
+    {
+        $action = $route['action'] ?? '';
+        if (! is_string($action) || ! str_contains($action, '@')) {
+            return null;
+        }
+        $method = Str::afterLast($action, '@');
+
+        $segments = array_values(array_filter(
+            explode('/', trim((string) ($route['uri'] ?? ''), '/')),
+            fn (string $segment) => $segment !== '' && ! str_starts_with($segment, '{') && ! preg_match('/^v\d+$/i', $segment) && $segment !== 'api',
+        ));
+        $resource = str_replace(['-', '_'], ' ', (string) end($segments));
+        if ($resource === '') {
+            return Str::ucfirst(Str::headline($method));
+        }
+        $singular = Str::singular($resource);
+
+        return match ($method) {
+            'index' => 'List '.$resource,
+            'store' => 'Create '.$singular,
+            'show' => 'Get '.$singular,
+            'update' => 'Update '.$singular,
+            'destroy' => 'Delete '.$singular,
+            '__invoke' => Str::ucfirst($resource),
+            default => Str::ucfirst(Str::lower(Str::headline($method))),
+        };
     }
 
     /**

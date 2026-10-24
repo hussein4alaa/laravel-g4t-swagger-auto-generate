@@ -6,12 +6,62 @@ use G4T\Swagger\Tests\TestCase;
 
 class UiTest extends TestCase
 {
-    public function test_swagger_ui_is_the_default(): void
+    public function test_g4t_ui_is_the_default(): void
     {
         $this->get('/swagger/documentation')
             ->assertOk()
-            ->assertSee('swagger-ui-bundle.js', false)
+            ->assertSee('class="g4t-app"', false)
+            ->assertSee('window.G4T_SETTINGS', false)
+            ->assertDontSee('swagger-ui-bundle.js', false)
             ->assertDontSee('@scalar/api-reference', false);
+    }
+
+    public function test_g4t_ui_loads_nothing_from_a_cdn(): void
+    {
+        $content = $this->get('/swagger/documentation?ui=g4t')->getContent();
+
+        $this->assertDoesNotMatchRegularExpression('#<script[^>]+src=#i', $content);
+        $this->assertDoesNotMatchRegularExpression('#<link[^>]+href="https?://#i', $content);
+    }
+
+    public function test_g4t_ui_defaults_to_light_mode(): void
+    {
+        $this->get('/swagger/documentation')
+            ->assertSee('data-mode="light"', false)
+            ->assertSee('"mode":"light"', false)
+            ->assertSee('"density":"comfortable"', false);
+    }
+
+    public function test_g4t_ui_mode_and_density_come_from_config(): void
+    {
+        config(['swagger.g4t.mode' => 'dark', 'swagger.g4t.density' => 'compact']);
+
+        $this->get('/swagger/documentation')
+            ->assertSee('data-mode="dark"', false)
+            ->assertSee('data-density="compact"', false)
+            ->assertSee('"mode":"dark"', false);
+
+        config(['swagger.g4t.mode' => 'neon', 'swagger.g4t.density' => 'huge']);
+
+        $this->get('/swagger/documentation')
+            ->assertSee('"mode":"light"', false)
+            ->assertSee('"density":"comfortable"', false);
+    }
+
+    public function test_g4t_ui_receives_versions_themes_and_json_url(): void
+    {
+        $content = $this->get('/swagger/documentation')->getContent();
+
+        $this->assertStringContainsString('"jsonUrl":"http://localhost/swagger/documentation/json"', $content);
+        $this->assertStringContainsString('"name":"v2","url":"http://localhost/swagger/documentation/json?version=v2"', $content);
+        $this->assertStringContainsString('"defaultTheme":"default"', $content);
+    }
+
+    public function test_swagger_ui_is_still_available(): void
+    {
+        $this->get('/swagger/documentation?ui=swagger')
+            ->assertOk()
+            ->assertSee('swagger-ui-bundle.js', false);
     }
 
     public function test_scalar_ui_is_used_when_configured(): void
@@ -34,6 +84,9 @@ class UiTest extends TestCase
         $this->get('/swagger/documentation?ui=scalar')->assertSee('Scalar.createApiReference', false);
 
         $this->get('/swagger/documentation?ui=unknown')->assertSee('swagger-ui-bundle.js', false);
+
+        config(['swagger.ui' => 'unknown']);
+        $this->get('/swagger/documentation')->assertSee('class="g4t-app"', false);
     }
 
     public function test_scalar_version_must_be_plain_semver(): void
@@ -60,14 +113,25 @@ class UiTest extends TestCase
     {
         config(['swagger.theme' => 'theme-monokai']);
 
-        $this->get('/swagger/documentation')->assertSee('"theme-monokai"', false);
+        $this->get('/swagger/documentation?ui=swagger')->assertSee('"theme-monokai"', false);
+        $this->get('/swagger/documentation?ui=g4t')->assertSee('"defaultTheme":"theme-monokai"', false);
     }
 
     public function test_login_button_is_hidden_without_a_login_url(): void
     {
         config(['swagger.auto_login.url' => null]);
 
-        $this->get('/swagger/documentation')->assertDontSee('g4t-login-toggle', false);
+        $this->get('/swagger/documentation?ui=swagger')->assertDontSee('g4t-login-toggle', false);
+        // The g4t UI still offers a dialog to paste a token by hand.
+        $this->get('/swagger/documentation?ui=g4t')->assertSee('"autoLogin":null', false);
+    }
+
+    public function test_g4t_ui_receives_the_login_settings(): void
+    {
+        config(['swagger.auto_login.url' => '/api/v1/login']);
+
+        $this->get('/swagger/documentation?ui=g4t')
+            ->assertSee('"autoLogin":{"url":"http://localhost/api/v1/login","method":"POST"', false);
     }
 
     public function test_login_button_is_rendered_in_both_uis(): void

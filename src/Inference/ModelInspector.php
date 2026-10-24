@@ -163,6 +163,25 @@ final class ModelInspector
         };
     }
 
+    /**
+     * Allowed values of an attribute cast to an enum (backed value or case name), else null.
+     *
+     * @return list<int|string>|null
+     */
+    public function enumValues(string $class, string $attribute): ?array
+    {
+        $cast = $this->info($class)['casts'][$attribute] ?? null;
+        if (! is_string($cast)) {
+            return null;
+        }
+        $cast = explode(':', $cast, 2)[0];
+        if (! enum_exists($cast)) {
+            return null;
+        }
+
+        return array_map(fn (UnitEnum $case) => $case instanceof BackedEnum ? $case->value : $case->name, $cast::cases());
+    }
+
     private function enumExample(string $enum): mixed
     {
         /** @var list<UnitEnum> $cases */
@@ -198,6 +217,10 @@ final class ModelInspector
             }
             $value = $this->attributeExample($class, $attribute);
             $out[$attribute] = $value instanceof Unresolved ? ExampleGuesser::property($attribute) : $value;
+        }
+        if ($out !== []) {
+            // Lets ResponseSchema turn this object into a #/components/schemas reference.
+            $out[ResponseSchema::MARKER] = $class;
         }
 
         return $this->examples[$class] = $out;

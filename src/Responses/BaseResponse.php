@@ -2,6 +2,7 @@
 
 namespace G4T\Swagger\Responses;
 
+use G4T\Swagger\Inference\ResponseSchema;
 use G4T\Swagger\Support\FieldRules;
 use Illuminate\Support\Str;
 
@@ -79,6 +80,40 @@ abstract class BaseResponse
 
         $response['responses'][$code]['description'] = $response['responses'][$code]['description'] ?? self::defaultSuccessDescription((int) $code);
         $response['responses'][$code]['content']['application/json']['example'] = $route['response_example'];
+        if (! empty($route['response_schema'])) {
+            $response['responses'][$code]['content']['application/json'] = ['schema' => $route['response_schema']]
+                + $response['responses'][$code]['content']['application/json'];
+        }
+    }
+
+    /**
+     * Every JSON response that has examples but no schema gets an inline schema typed from them
+     * (error payloads, storage/swagger examples).
+     */
+    private static function applyExampleSchemas(array &$response): void
+    {
+        if (! config('swagger.response_schemas', true)) {
+            return;
+        }
+
+        foreach ($response['responses'] as $status => $definition) {
+            $json = $definition['content']['application/json'] ?? null;
+            if (! is_array($json) || isset($json['schema'])) {
+                continue;
+            }
+
+            $examples = array_key_exists('example', $json)
+                ? [$json['example']]
+                : array_column(is_array($json['examples'] ?? null) ? $json['examples'] : [], 'value');
+            if ($examples === []) {
+                continue;
+            }
+
+            // Several named examples: one schema covering all of their keys.
+            $objects = array_values(array_filter($examples, fn ($example) => is_array($example) && ! array_is_list($example)));
+            $schema = ResponseSchema::plain(count($objects) > 1 ? array_replace_recursive(...$objects) : $examples[0]);
+            $response['responses'][$status]['content']['application/json'] = ['schema' => $schema] + $json;
+        }
     }
 
     /**
@@ -371,6 +406,7 @@ abstract class BaseResponse
         self::applyInferredErrorExamples($response, $route);
         self::omitDefaultNotFoundForShow($response, $route);
         self::ensureDefaultResponses($response, $route);
+        self::applyExampleSchemas($response);
 
         if ($route['need_token']) {
             $response['security'] = self::getSecurity($route);

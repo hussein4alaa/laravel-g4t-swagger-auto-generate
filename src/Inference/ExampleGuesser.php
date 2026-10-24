@@ -11,6 +11,9 @@ final class ExampleGuesser
 
     public const URL = 'https://example.com';
 
+    /** Example for an array/json value whose keys are unknown. */
+    public const OBJECT_PLACEHOLDER = ['key' => 'value'];
+
     private const LIST_NAMES = [
         'tags', 'gallery', 'images', 'photos', 'files', 'ids', 'roles', 'permissions', 'items', 'list', 'values',
     ];
@@ -91,7 +94,7 @@ final class ExampleGuesser
      */
     public static function collection(string $name): array
     {
-        return self::looksLikeList($name) ? ['string'] : ['key' => 'value'];
+        return self::looksLikeList($name) ? ['string'] : self::OBJECT_PLACEHOLDER;
     }
 
     private static function looksLikeList(string $name): bool

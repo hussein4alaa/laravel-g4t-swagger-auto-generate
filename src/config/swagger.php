@@ -107,6 +107,19 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Response schemas
+    |--------------------------------------------------------------------------
+    |
+    | When true, every documented JSON response gets a schema next to its
+    | example. JsonResources and Eloquent models become reusable components
+    | (#/components/schemas/Product, ...) referenced with $ref, so client
+    | generators (openapi-generator, orval, ...) produce typed models.
+    |
+    */
+    "response_schemas" => env("SWAGGER_RESPONSE_SCHEMAS", true),
+
+    /*
+    |--------------------------------------------------------------------------
     | Unwrap resource collection examples (non-paginated)
     |--------------------------------------------------------------------------
     |

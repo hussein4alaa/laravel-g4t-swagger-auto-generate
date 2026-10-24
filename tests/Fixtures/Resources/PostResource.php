@@ -14,6 +14,8 @@ class PostResource extends JsonResource
             'title' => $this->title,
             'body' => $this->body,
             'is_featured' => $this->is_featured,
+            'status' => $this->status,
+            'category' => new CategoryResource($this->whenLoaded('category')),
             'created_at' => $this->created_at,
         ];
     }

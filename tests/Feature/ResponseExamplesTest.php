@@ -26,7 +26,7 @@ class ResponseExamplesTest extends TestCase
         $example = $this->responseExample($this->operation('/api/v1/posts/{post}', 'get'), 200);
         $item = $example['data'] ?? $example;
 
-        $this->assertEqualsCanonicalizing(['id', 'title', 'body', 'is_featured', 'created_at'], array_keys($item));
+        $this->assertEqualsCanonicalizing(['id', 'title', 'body', 'is_featured', 'status', 'category', 'created_at'], array_keys($item));
     }
 
     public function test_resource_collection_example_is_a_list_of_items(): void

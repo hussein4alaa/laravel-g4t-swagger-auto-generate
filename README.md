@@ -148,6 +148,32 @@ endpoint. The token stays in the browser until **Logout**.
 ],
 ```
 
+## Response schemas
+
+Every JSON response gets a `schema` next to its example (`response_schemas`, default `true`).
+JsonResources and Eloquent models become reusable components referenced with `$ref`, so client
+generators (openapi-generator, orval, Kiota, ...) produce typed models:
+
+```json
+"201": {
+  "content": {
+    "application/json": {
+      "schema": { "$ref": "#/components/schemas/Order" },
+      "example": { "id": 1, "status": "pending", "items": [ ... ] }
+    }
+  }
+}
+```
+
+- Component names come from the class: `ProductResource` → `Product`; clashes get the namespace
+  segment (`V1Product`); request body schema names are never reused.
+- Types come from model casts, so enum casts list their values (`"enum": ["draft", "published"]`).
+- Nested resources are `$ref`s too, and they stay optional because relations are only present when loaded.
+- `Resource::collection()` gives an array of `$ref`; paginated collections give `data` / `links` / `meta`.
+- Returning a model directly (`Post::findOrFail($id)`, `Post::all()`, `Post::paginate()`, `$post`,
+  or a `: Post` return type) is documented too.
+- Error payloads and `storage/swagger` examples get an inline schema typed from the example.
+
 ## Artisan commands
 
 | Command | What it does |

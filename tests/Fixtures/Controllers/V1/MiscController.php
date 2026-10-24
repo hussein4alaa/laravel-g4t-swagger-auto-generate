@@ -3,6 +3,7 @@
 namespace G4T\Swagger\Tests\Fixtures\Controllers\V1;
 
 use G4T\Swagger\Tests\Fixtures\Models\Category;
+use G4T\Swagger\Tests\Fixtures\Models\Post;
 use G4T\Swagger\Tests\Fixtures\Requests\UpdateSettingsRequest;
 use G4T\Swagger\Tests\Fixtures\Resources\CategoryResource;
 
@@ -25,6 +26,11 @@ class MiscController
             'total' => $total,
             'label' => $label,
         ]);
+    }
+
+    public function latestPost(): Post
+    {
+        return Post::query()->latest()->firstOrFail();
     }
 
     public function categories()

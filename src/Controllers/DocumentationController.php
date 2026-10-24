@@ -35,9 +35,17 @@ class DocumentationController
             'autoLogin' => $this->autoLoginSettings(),
         ];
 
-        if ($this->selectedUi() === 'scalar') {
+        $ui = $this->selectedUi();
+        if ($ui === 'scalar') {
             return view('swagger::scalar', $shared + [
                 'scalar' => $this->scalarSettings(),
+            ]);
+        }
+        if ($ui === 'g4t') {
+            return view('swagger::g4t', $shared + [
+                'themes' => $this->getThemesList(),
+                'defaultTheme' => (string) config('swagger.theme', 'default'),
+                'g4t' => $this->g4tSettings(),
             ]);
         }
 
@@ -49,19 +57,34 @@ class DocumentationController
     }
 
     /**
-     * "swagger" or "scalar": the ?ui= query wins over the config for one visit.
+     * "g4t", "swagger" or "scalar": the ?ui= query wins over the config for one visit.
      */
     private function selectedUi(): string
     {
-        $supported = ['swagger', 'scalar'];
+        $supported = ['g4t', 'swagger', 'scalar'];
         $requested = strtolower((string) request()->query('ui', ''));
         if (in_array($requested, $supported, true)) {
             return $requested;
         }
 
-        $configured = strtolower((string) config('swagger.ui', 'swagger'));
+        $configured = strtolower((string) config('swagger.ui', 'g4t'));
 
-        return in_array($configured, $supported, true) ? $configured : 'swagger';
+        return in_array($configured, $supported, true) ? $configured : 'g4t';
+    }
+
+    /**
+     * @return array{mode: string, density: string}
+     */
+    private function g4tSettings(): array
+    {
+        $settings = (array) config('swagger.g4t', []);
+        $mode = (string) ($settings['mode'] ?? 'light');
+        $density = (string) ($settings['density'] ?? 'comfortable');
+
+        return [
+            'mode' => in_array($mode, ['light', 'dark', 'system'], true) ? $mode : 'light',
+            'density' => in_array($density, ['comfortable', 'compact'], true) ? $density : 'comfortable',
+        ];
     }
 
     /**

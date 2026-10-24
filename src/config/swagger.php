@@ -283,16 +283,25 @@ return [
     | Documentation UI
     |--------------------------------------------------------------------------
     |
-    | "swagger" (Swagger UI, bundled) or "scalar" (Scalar API Reference, loaded
-    | from jsDelivr at the pinned "scalar.version"). Append ?ui=scalar or
-    | ?ui=swagger to the documentation URL to switch for a single visit.
+    | "g4t" (the package's own reference UI, bundled, no CDN), "swagger"
+    | (Swagger UI, bundled) or "scalar" (Scalar API Reference, loaded from
+    | jsDelivr at the pinned "scalar.version"). Append ?ui=g4t, ?ui=swagger or
+    | ?ui=scalar to the documentation URL to switch for a single visit.
     |
     | "theme" is the default Swagger UI theme (a file name from
     | public/g4t/swagger/themes without .css). A theme picked in the browser
     | still wins for that browser.
     |
     */
-    "ui" => env("SWAGGER_UI", "swagger"),
+    "ui" => env("SWAGGER_UI", "g4t"),
+
+    // Defaults of the "g4t" UI; readers can still change them from the Appearance menu.
+    "g4t" => [
+        // light | dark | system
+        "mode" => env("SWAGGER_G4T_MODE", "light"),
+        // comfortable | compact
+        "density" => env("SWAGGER_G4T_DENSITY", "comfortable"),
+    ],
 
     "theme" => env("SWAGGER_THEME", "default"),
 

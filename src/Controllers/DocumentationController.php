@@ -30,12 +30,87 @@ class DocumentationController
             abort(Response::HTTP_FORBIDDEN);
         }
 
-        return view('swagger::documentation', [
-            'themes_path' => url('g4t/swagger/themes'),
+        $shared = [
             'versions' => $this->reformatVersions(),
-            'stylesheet' => config('swagger.stylesheet'),
+            'autoLogin' => $this->autoLoginSettings(),
+        ];
+
+        if ($this->selectedUi() === 'scalar') {
+            return view('swagger::scalar', $shared + [
+                'scalar' => $this->scalarSettings(),
+            ]);
+        }
+
+        return view('swagger::documentation', $shared + [
+            'themes_path' => url('g4t/swagger/themes'),
             'themes' => $this->getThemesList(),
+            'defaultTheme' => (string) config('swagger.theme', 'default'),
         ]);
+    }
+
+    /**
+     * "swagger" or "scalar": the ?ui= query wins over the config for one visit.
+     */
+    private function selectedUi(): string
+    {
+        $supported = ['swagger', 'scalar'];
+        $requested = strtolower((string) request()->query('ui', ''));
+        if (in_array($requested, $supported, true)) {
+            return $requested;
+        }
+
+        $configured = strtolower((string) config('swagger.ui', 'swagger'));
+
+        return in_array($configured, $supported, true) ? $configured : 'swagger';
+    }
+
+    /**
+     * @return array{version: string, theme: string, layout: string, darkMode: ?bool, locale: ?string, direction: string, hideModels: bool, defaultOpenAllTags: bool}
+     */
+    private function scalarSettings(): array
+    {
+        $scalar = (array) config('swagger.scalar', []);
+        $version = (string) ($scalar['version'] ?? '1.73.0');
+
+        return [
+            // Only plain semver can reach the CDN URL.
+            'version' => preg_match('/^\d+\.\d+\.\d+$/', $version) ? $version : '1.73.0',
+            'theme' => (string) ($scalar['theme'] ?? 'purple'),
+            'layout' => ($scalar['layout'] ?? 'modern') === 'classic' ? 'classic' : 'modern',
+            'darkMode' => isset($scalar['dark_mode']) ? (bool) $scalar['dark_mode'] : null,
+            'locale' => filled($scalar['locale'] ?? null) ? (string) $scalar['locale'] : null,
+            'direction' => in_array($scalar['direction'] ?? 'auto', ['auto', 'ltr', 'rtl'], true) ? $scalar['direction'] : 'auto',
+            'hideModels' => (bool) ($scalar['hide_models'] ?? false),
+            'defaultOpenAllTags' => (bool) ($scalar['default_open_all_tags'] ?? false),
+        ];
+    }
+
+    /**
+     * Settings for the Login button, or null when no login URL is configured.
+     *
+     * @return array{url: string, method: string, fields: array<string, string>, tokenPath: ?string, scheme: string, prefill: array<string, string>}|null
+     */
+    private function autoLoginSettings(): ?array
+    {
+        $login = (array) config('swagger.auto_login', []);
+        if (blank($login['url'] ?? null)) {
+            return null;
+        }
+
+        $url = (string) $login['url'];
+        $schemes = array_keys((array) config('swagger.security_schemes', []));
+        $scheme = (string) ($login['security_scheme'] ?? '');
+        $fields = array_filter((array) ($login['fields'] ?? []), 'is_string');
+
+        return [
+            'url' => preg_match('#^https?://#i', $url) ? $url : url($url),
+            'method' => strtoupper((string) ($login['method'] ?? 'POST')),
+            'fields' => $fields !== [] ? $fields : ['email' => 'Email', 'password' => 'Password'],
+            'tokenPath' => filled($login['token_path'] ?? null) ? (string) $login['token_path'] : null,
+            'scheme' => in_array($scheme, $schemes, true) ? $scheme : (string) ($schemes[0] ?? 'bearerAuth'),
+            // Never ship pre-filled credentials outside the local environment.
+            'prefill' => app()->isLocal() ? array_filter((array) ($login['prefill'] ?? []), 'is_string') : [],
+        ];
     }
 
     private function reformatVersions()

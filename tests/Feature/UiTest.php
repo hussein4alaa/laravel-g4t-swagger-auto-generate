@@ -1,0 +1,108 @@
+<?php
+
+namespace G4T\Swagger\Tests\Feature;
+
+use G4T\Swagger\Tests\TestCase;
+
+class UiTest extends TestCase
+{
+    public function test_swagger_ui_is_the_default(): void
+    {
+        $this->get('/swagger/documentation')
+            ->assertOk()
+            ->assertSee('swagger-ui-bundle.js', false)
+            ->assertDontSee('@scalar/api-reference', false);
+    }
+
+    public function test_scalar_ui_is_used_when_configured(): void
+    {
+        config(['swagger.ui' => 'scalar']);
+
+        $this->get('/swagger/documentation')
+            ->assertOk()
+            ->assertSee('https://cdn.jsdelivr.net/npm/@scalar/api-reference@1.73.0/dist/browser/standalone.js', false)
+            ->assertSee('Scalar.createApiReference', false)
+            ->assertDontSee('swagger-ui-bundle.js', false);
+    }
+
+    public function test_query_string_overrides_the_configured_ui(): void
+    {
+        config(['swagger.ui' => 'scalar']);
+        $this->get('/swagger/documentation?ui=swagger')->assertSee('swagger-ui-bundle.js', false);
+
+        config(['swagger.ui' => 'swagger']);
+        $this->get('/swagger/documentation?ui=scalar')->assertSee('Scalar.createApiReference', false);
+
+        $this->get('/swagger/documentation?ui=unknown')->assertSee('swagger-ui-bundle.js', false);
+    }
+
+    public function test_scalar_version_must_be_plain_semver(): void
+    {
+        config(['swagger.ui' => 'scalar', 'swagger.scalar.version' => '1.0.0"><script>alert(1)</script>']);
+
+        $this->get('/swagger/documentation')
+            ->assertSee('@scalar/api-reference@1.73.0/', false)
+            ->assertDontSee('alert(1)', false);
+    }
+
+    public function test_scalar_receives_every_version_as_a_source(): void
+    {
+        config(['swagger.ui' => 'scalar']);
+
+        $content = $this->get('/swagger/documentation')->getContent();
+
+        foreach (['all', 'v1', 'v2'] as $version) {
+            $this->assertStringContainsString('json?version='.$version, $content);
+        }
+    }
+
+    public function test_configured_default_theme_is_applied_to_swagger_ui(): void
+    {
+        config(['swagger.theme' => 'theme-monokai']);
+
+        $this->get('/swagger/documentation')->assertSee('"theme-monokai"', false);
+    }
+
+    public function test_login_button_is_hidden_without_a_login_url(): void
+    {
+        config(['swagger.auto_login.url' => null]);
+
+        $this->get('/swagger/documentation')->assertDontSee('g4t-login-toggle', false);
+    }
+
+    public function test_login_button_is_rendered_in_both_uis(): void
+    {
+        config(['swagger.auto_login.url' => '/api/v1/login']);
+
+        foreach (['swagger', 'scalar'] as $ui) {
+            $this->get('/swagger/documentation?ui='.$ui)
+                ->assertSee('g4t-login-toggle', false)
+                ->assertSee('window.G4TAuth', false)
+                ->assertSee('"url":"http://localhost/api/v1/login"', false);
+        }
+    }
+
+    public function test_unknown_security_scheme_falls_back_to_the_first_configured_one(): void
+    {
+        config([
+            'swagger.auto_login.url' => '/api/v1/login',
+            'swagger.auto_login.security_scheme' => 'missing',
+        ]);
+
+        $this->get('/swagger/documentation')->assertSee('"scheme":"bearerAuth"', false);
+    }
+
+    public function test_prefill_is_only_rendered_in_the_local_environment(): void
+    {
+        config([
+            'swagger.auto_login.url' => '/api/v1/login',
+            'swagger.auto_login.prefill' => ['email' => 'dev@example.test'],
+        ]);
+
+        $this->app['env'] = 'testing';
+        $this->get('/swagger/documentation')->assertDontSee('dev@example.test', false);
+
+        $this->app['env'] = 'local';
+        $this->get('/swagger/documentation')->assertSee('dev@example.test', false);
+    }
+}

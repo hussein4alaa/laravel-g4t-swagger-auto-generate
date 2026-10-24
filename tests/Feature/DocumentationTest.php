@@ -34,10 +34,10 @@ class DocumentationTest extends TestCase
         foreach ((array) $spec->paths as $path => $operations) {
             foreach ((array) $operations as $method => $operation) {
                 $this->assertContains($method, ['get', 'post', 'put', 'patch', 'delete', 'head', 'options'], "{$path}: unexpected key {$method}");
-                $this->assertObjectHasProperty('responses', $operation, "{$method} {$path} has no responses");
+                $this->assertTrue(property_exists($operation, 'responses'), "{$method} {$path} has no responses");
                 $this->assertIsObject($operation->responses, "{$method} {$path}: responses must be a JSON object");
                 $this->assertNotEmpty((array) $operation->responses, "{$method} {$path}: responses must not be empty");
-                $this->assertObjectHasProperty('operationId', $operation);
+                $this->assertTrue(property_exists($operation, 'operationId'));
                 $operationIds[] = $operation->operationId;
             }
         }

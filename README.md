@@ -104,6 +104,50 @@ composer require g4t/swagger
    "sesson_ttl" => 100000,
    ```
 
+## Documentation UI
+
+Two interfaces ship with the package:
+
+| `ui` | Interface |
+|------|-----------|
+| `swagger` (default) | Swagger UI, bundled with the package, with the theme picker |
+| `scalar` | [Scalar API Reference](https://github.com/scalar/scalar), loaded from jsDelivr at a pinned version |
+
+```php
+// config/swagger.php
+"ui" => env("SWAGGER_UI", "swagger"),
+"theme" => env("SWAGGER_THEME", "default"), // default Swagger UI theme
+
+"scalar" => [
+    "version" => "1.73.0",
+    "theme" => "purple",        // default, moon, purple, solarized, bluePlanet, deepSpace, saturn, kepler, mars, laserwave, ...
+    "layout" => "modern",       // modern | classic
+    "dark_mode" => null,        // null lets the reader toggle
+    "locale" => null,           // e.g. "ar"
+    "direction" => "auto",      // auto | ltr | rtl
+],
+```
+
+Append `?ui=scalar` or `?ui=swagger` to the documentation URL to switch for one visit.
+Each entry of `versions` becomes a definition in Swagger UI and a source in Scalar.
+
+## Auto login for "Try it out"
+
+Set the login endpoint and a **Login** button appears in both interfaces. It posts the
+credentials as JSON, reads the token from the response and authorizes every protected
+endpoint. The token stays in the browser until **Logout**.
+
+```php
+"auto_login" => [
+    "url" => env("SWAGGER_LOGIN_URL"),   // e.g. "/api/v1/auth/login"; null disables the button
+    "method" => "POST",
+    "fields" => ["email" => "Email", "password" => "Password"],
+    "token_path" => "access_token",      // dot path; token, access_token, data.token, ... are tried when missing
+    "security_scheme" => "bearerAuth",   // key in security_schemes
+    "prefill" => [],                     // pre-filled values, only rendered in the local environment
+],
+```
+
 ## Artisan commands
 
 | Command | What it does |

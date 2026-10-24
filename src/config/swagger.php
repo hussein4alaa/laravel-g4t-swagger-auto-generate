@@ -267,6 +267,71 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Documentation UI
+    |--------------------------------------------------------------------------
+    |
+    | "swagger" (Swagger UI, bundled) or "scalar" (Scalar API Reference, loaded
+    | from jsDelivr at the pinned "scalar.version"). Append ?ui=scalar or
+    | ?ui=swagger to the documentation URL to switch for a single visit.
+    |
+    | "theme" is the default Swagger UI theme (a file name from
+    | public/g4t/swagger/themes without .css). A theme picked in the browser
+    | still wins for that browser.
+    |
+    */
+    "ui" => env("SWAGGER_UI", "swagger"),
+
+    "theme" => env("SWAGGER_THEME", "default"),
+
+    "scalar" => [
+        "version" => env("SWAGGER_SCALAR_VERSION", "1.73.0"),
+        // default, alternate, moon, purple, solarized, bluePlanet, deepSpace,
+        // saturn, kepler, elysiajs, fastify, mars, laserwave, none
+        "theme" => env("SWAGGER_SCALAR_THEME", "purple"),
+        // modern | classic
+        "layout" => env("SWAGGER_SCALAR_LAYOUT", "modern"),
+        // null lets the reader toggle, true/false forces dark/light mode.
+        "dark_mode" => null,
+        // UI language, e.g. "ar" (direction "rtl") or "en".
+        "locale" => env("SWAGGER_SCALAR_LOCALE"),
+        // auto | ltr | rtl
+        "direction" => env("SWAGGER_SCALAR_DIRECTION", "auto"),
+        "hide_models" => false,
+        "default_open_all_tags" => false,
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
+    | Auto Login ("Try it out")
+    |--------------------------------------------------------------------------
+    |
+    | Adds a Login button to the documentation. It sends the credentials to
+    | your login endpoint, reads the token from the JSON response and fills
+    | the security scheme, so protected endpoints work in "Try it out".
+    | The token is kept in the browser (localStorage) until Logout.
+    |
+    | "url": path or absolute URL of the login endpoint. null disables it.
+    | "fields": request field => input label.
+    | "token_path": dot path of the token in the response; when it is missing
+    |   the common paths (token, access_token, data.token, ...) are tried.
+    | "security_scheme": key in "security_schemes" that receives the token.
+    | "prefill": values to pre-fill the form, only used in the local env.
+    |
+    */
+    "auto_login" => [
+        "url" => env("SWAGGER_LOGIN_URL"),
+        "method" => "POST",
+        "fields" => [
+            "email" => "Email",
+            "password" => "Password",
+        ],
+        "token_path" => env("SWAGGER_LOGIN_TOKEN_PATH"),
+        "security_scheme" => "bearerAuth",
+        "prefill" => [],
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
     | Security Schemes
     |--------------------------------------------------------------------------
     |

@@ -126,6 +126,18 @@ class UiTest extends TestCase
         $this->get('/swagger/documentation?ui=g4t')->assertSee('"autoLogin":null', false);
     }
 
+    public function test_g4t_ui_offers_manual_bearer_token_entry(): void
+    {
+        foreach ([null, '/api/v1/login'] as $loginUrl) {
+            config(['swagger.auto_login.url' => $loginUrl]);
+
+            $this->get('/swagger/documentation?ui=g4t')
+                ->assertSee("data-action=\"open-token\"", false)
+                ->assertSee('data-action="paste-token"', false)
+                ->assertSee("'Change token'", false);
+        }
+    }
+
     public function test_g4t_ui_receives_the_login_settings(): void
     {
         config(['swagger.auto_login.url' => '/api/v1/login']);

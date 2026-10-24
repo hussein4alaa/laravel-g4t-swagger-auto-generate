@@ -18,6 +18,10 @@
         chevSm: '<svg aria-hidden="true" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="m6 9 6 6 6-6"></path></svg>',
         copy: '<svg aria-hidden="true" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="12" height="12" rx="2"></rect><path d="M5 15V5a2 2 0 0 1 2-2h10"></path></svg>',
         term: '<svg aria-hidden="true" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m5 8 4 4-4 4M12 16h7"></path></svg>',
+        clock: '<svg aria-hidden="true" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"></circle><path d="M12 7v5l3 2"></path></svg>',
+        reset: '<svg aria-hidden="true" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"></path><path d="M3 3v5h5"></path></svg>',
+        download: '<svg aria-hidden="true" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4v11M7 10l5 5 5-5M5 20h14"></path></svg>',
+        vars: '<svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 4c-2 0-3 1-3 3v2c0 1.5-1 2.5-2 3 1 .5 2 1.5 2 3v2c0 2 1 3 3 3M16 4c2 0 3 1 3 3v2c0 1.5 1 2.5 2 3-1 .5-2 1.5-2 3v2c0 2-1 3-3 3"></path></svg>',
         upload: '<svg aria-hidden="true" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 15V4M7 9l5-5 5 5M5 20h14"></path></svg>',
         key: '<svg aria-hidden="true" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="15" r="4"></circle><path d="m10.8 12.2 9.2-9.2M17 6l3 3M14 9l2 2"></path></svg>',
         warn: '<svg aria-hidden="true" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3 2 20h20L12 3z"></path><path d="M12 10v4M12 17.5v.01"></path></svg>'
@@ -46,11 +50,13 @@
         loginOpen: false, loggingIn: false, loginError: '', loginValues: {}, loginTab: S.autoLogin ? 'credentials' : 'token',
         token: readToken(), server: null, active: null,
         expanded: {}, trying: {}, respTab: {}, exTab: {}, respView: {}, ctype: {},
-        bodies: {}, inputs: {}, forms: {}, files: {}, busy: {}, results: {}
+        bodies: {}, inputs: {}, forms: {}, files: {}, busy: {}, results: {},
+        codeLang: store.get('codeLang', 'curl'), codeOpen: {}, historyOpen: {},
+        envs: [], envId: null, envsOpen: false, envEdit: null, downloadOpen: false
     };
 
     var $ = function (id) { return document.getElementById(id); };
-    var els = { app: document.querySelector('.g4t-app'), version: $('g4t-version'), auth: $('g4t-auth'), appear: $('g4t-appear'), appearBtn: $('g4t-appear-btn'), filter: $('g4t-filter'), nav: $('g4t-nav'), info: $('g4t-info'), ops: $('g4t-ops'), login: $('g4t-login'), toast: $('g4t-toast'), scrim: document.querySelector('.g4t-scrim'), drawerBtn: document.querySelector('.g4t-drawer-btn') };
+    var els = { app: document.querySelector('.g4t-app'), version: $('g4t-version'), auth: $('g4t-auth'), appear: $('g4t-appear'), appearBtn: $('g4t-appear-btn'), filter: $('g4t-filter'), nav: $('g4t-nav'), info: $('g4t-info'), ops: $('g4t-ops'), login: $('g4t-login'), toast: $('g4t-toast'), envBtn: $('g4t-env-btn'), envs: $('g4t-envs'), download: $('g4t-download'), downloadBtn: $('g4t-download-btn'), scrim: document.querySelector('.g4t-scrim'), drawerBtn: document.querySelector('.g4t-drawer-btn') };
 
     /* ---------- helpers ---------- */
 
@@ -403,6 +409,111 @@
             .catch(function (error) { state.loggingIn = false; state.loginError = error.message; renderLogin(); });
     }
 
+    /* ---------- environments UI ---------- */
+
+    function newId() { return 'env-' + Math.random().toString(36).slice(2, 9); }
+    function loadEnvs() {
+        var envs = loadJson('envs', null);
+        state.envs = Array.isArray(envs) && envs.length ? envs.filter(function (e) { return e && e.id; }).map(function (e) {
+            return { id: String(e.id), name: String(e.name || 'Environment'), baseUrl: String(e.baseUrl || ''), vars: Array.isArray(e.vars) ? e.vars.map(function (v) { return { key: String(v.key || ''), value: String(v.value == null ? '' : v.value) }; }) : [] };
+        }) : [];
+        if (!state.envs.length) { state.envs = [{ id: 'default', name: 'Default', baseUrl: '', vars: [] }]; }
+        var saved = store.get('envId', null);
+        state.envId = state.envs.some(function (e) { return e.id === saved; }) ? saved : state.envs[0].id;
+    }
+    function saveEnvs() { saveJson('envs', state.envs); store.set('envId', state.envId); }
+    function editedEnv() { return state.envs.filter(function (e) { return e.id === state.envEdit; })[0] || activeEnv(); }
+    function renderEnvButton() {
+        var env = activeEnv(), count = (env.vars || []).filter(function (v) { return v.key; }).length;
+        els.envBtn.innerHTML = ICON.vars + '<span class="g4t-env-name">' + esc(env.name) + '</span>' + (count ? '<span class="g4t-count">' + count + '</span>' : '');
+        els.envBtn.setAttribute('aria-label', 'Environment: ' + env.name + ' (' + count + ' variables)');
+    }
+    function renderEnvs() {
+        if (!state.envsOpen) { els.envs.innerHTML = ''; return; }
+        var env = editedEnv(), servers = state.model ? state.model.servers : [];
+        var tabs = state.envs.map(function (e) {
+            return '<button type="button" role="tab" class="g4t-env-tab" aria-selected="' + (e.id === env.id) + '" data-action="env-select" data-value="' + esc(e.id) + '">' + (e.id === state.envId ? '<span class="g4t-dot g4t-dot-on" title="Active"></span>' : '') + '<span>' + esc(e.name) + '</span></button>';
+        }).join('') + '<button type="button" class="g4t-env-tab g4t-env-add" data-action="env-new">+ New</button>';
+        var rows = (env.vars || []).map(function (v, i) {
+            return '<div class="g4t-var-row"><input class="g4t-mono" data-bind="env-key" data-index="' + i + '" value="' + esc(v.key) + '" placeholder="name" aria-label="Variable name" spellcheck="false" autocomplete="off">' +
+                '<input class="g4t-mono" data-bind="env-value" data-index="' + i + '" value="' + esc(v.value) + '" placeholder="value" aria-label="Variable value" spellcheck="false" autocomplete="off">' +
+                '<button type="button" class="g4t-item-remove" data-action="env-remove-var" data-index="' + i + '" aria-label="Remove variable ' + esc(v.key) + '">−</button></div>';
+        }).join('');
+        els.envs.innerHTML = '<div class="g4t-modal" data-action="close-envs-backdrop"><div class="g4t-login-dialog g4t-env-dialog" role="dialog" aria-modal="true" aria-labelledby="g4t-env-title"><div class="g4t-env-body">' +
+            '<div class="g4t-env-head"><h2 id="g4t-env-title">Environments</h2><button type="button" class="g4t-file-clear" data-action="close-envs" aria-label="Close">×</button></div>' +
+            '<p>Use <code class="g4t-mono">{{name}}</code> in any parameter, form field, header or JSON body; it is replaced when the request is sent. <code class="g4t-mono">{{token}}</code> is the current bearer token.</p>' +
+            '<div class="g4t-env-tabs" role="tablist" aria-label="Environments">' + tabs + '</div>' +
+            '<label>Name<input data-bind="env-name" value="' + esc(env.name) + '" autocomplete="off"></label>' +
+            '<label>Base URL<input class="g4t-mono" data-bind="env-url" value="' + esc(env.baseUrl) + '" list="g4t-env-servers" placeholder="Same server as the page" autocomplete="off" spellcheck="false"></label>' +
+            '<datalist id="g4t-env-servers">' + servers.map(function (sv) { return '<option value="' + esc(sv.url) + '">' + esc(sv.label) + '</option>'; }).join('') + '</datalist>' +
+            '<div style="display:grid;gap:6px"><span style="font-size:13px;font-weight:500">Variables</span>' + (rows || '<span class="g4t-muted" style="font-size:13px">No variables yet.</span>') +
+            '<button type="button" class="g4t-btn g4t-add-item" data-action="env-add-var" style="justify-self:start">+ Add variable</button></div>' +
+            '<div class="g4t-actions" style="justify-content:space-between"><span class="g4t-actions">' +
+            (state.envs.length > 1 ? '<button type="button" class="g4t-btn g4t-btn-danger" data-action="env-delete">Delete</button>' : '') +
+            '<button type="button" class="g4t-btn" data-action="env-duplicate">Duplicate</button></span><span class="g4t-actions">' +
+            (env.id !== state.envId ? '<button type="button" class="g4t-btn" data-action="env-activate">Use this environment</button>' : '<span class="g4t-muted" style="font-size:12.5px">Active</span>') +
+            '<button type="button" class="g4t-btn g4t-btn-primary" data-action="close-envs">Done</button></span></div>' +
+            '</div></div></div>';
+    }
+    function afterEnvChange() {
+        renderEnvButton(); renderInfo();
+        Object.keys(state.trying).concat(Object.keys(state.codeOpen)).forEach(function (id) { if (state.trying[id] || state.codeOpen[id]) { renderOp(id); } });
+    }
+
+    /* ---------- download ---------- */
+
+    function yamlScalar(value) {
+        if (value === null || value === undefined) { return 'null'; }
+        if (typeof value === 'boolean' || typeof value === 'number') { return String(value); }
+        var text = String(value);
+        var plain = /^[A-Za-z_\/][A-Za-z0-9_ .\/@()-]*$/.test(text) && !/\s$/.test(text) && !/^(true|false|null|yes|no|on|off|y|n|~)$/i.test(text);
+        return plain ? text : JSON.stringify(text);
+    }
+    /** Minimal JSON → YAML (block style; strings quoted when needed, JSON-style escapes are valid YAML). */
+    function toYaml(value, indent) {
+        indent = indent || '';
+        if (Array.isArray(value)) {
+            if (!value.length) { return indent + '[]'; }
+            return value.map(function (item) {
+                if (item !== null && typeof item === 'object' && Object.keys(item).length) {
+                    var inner = toYaml(item, indent + '  ');
+                    return indent + '- ' + inner.slice(indent.length + 2);
+                }
+                return indent + '- ' + (item !== null && typeof item === 'object' ? (Array.isArray(item) ? '[]' : '{}') : yamlScalar(item));
+            }).join('\n');
+        }
+        if (value !== null && typeof value === 'object') {
+            var keys = Object.keys(value);
+            if (!keys.length) { return indent + '{}'; }
+            return keys.map(function (k) {
+                var v = value[k], key = indent + yamlScalar(k) + ':';
+                if (v !== null && typeof v === 'object' && Object.keys(v).length) { return key + '\n' + toYaml(v, indent + '  '); }
+                return key + ' ' + (v !== null && typeof v === 'object' ? (Array.isArray(v) ? '[]' : '{}') : yamlScalar(v));
+            }).join('\n');
+        }
+        return indent + yamlScalar(value);
+    }
+    function renderDownload() {
+        els.download.hidden = !state.downloadOpen;
+        els.downloadBtn.setAttribute('aria-expanded', state.downloadOpen ? 'true' : 'false');
+        if (!state.downloadOpen) { return; }
+        els.download.innerHTML = '<div class="g4t-menu-hint" style="font-size:12px">OpenAPI document · ' + esc(state.version) + '</div>' +
+            '<button type="button" role="menuitem" class="g4t-btn" data-action="download" data-value="json">' + ICON.download + 'Download JSON</button>' +
+            '<button type="button" role="menuitem" class="g4t-btn" data-action="download" data-value="yaml">' + ICON.download + 'Download YAML</button>';
+    }
+    function downloadSpec(format) {
+        if (!state.spec) { toast('The API definition is not loaded yet'); return; }
+        var text = format === 'yaml' ? toYaml(state.spec) + '\n' : JSON.stringify(state.spec, null, 2) + '\n';
+        var blob = new Blob([text], { type: format === 'yaml' ? 'application/yaml' : 'application/json' });
+        var a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = 'openapi-' + slug(state.version) + '.' + format;
+        document.body.appendChild(a); a.click(); a.remove();
+        setTimeout(function () { URL.revokeObjectURL(a.href); }, 1000);
+        state.downloadOpen = false; renderDownload();
+        toast('Downloaded ' + a.download);
+    }
+
     /* ---------- info, nav, states ---------- */
 
     function renderVersions() {
@@ -424,6 +535,7 @@
             '<h1>' + esc(info.title || document.title) + '</h1>' +
             (info.description ? '<p class="g4t-info-desc">' + esc(info.description) + '</p>' : '') +
             (model ? '<div class="g4t-info-meta">' + (serverSelect ? '<span><span class="g4t-muted">Server</span>' + serverSelect + '</span>' : '') +
+                (activeEnv().baseUrl ? '<span class="g4t-muted">→ ' + esc(serverUrl()) + ' (' + esc(activeEnv().name) + ')</span>' : '') +
                 '<span><span class="g4t-muted" style="display:inline-flex">' + ICON.lock.replace('width="14" height="14"', 'width="13" height="13"') + '</span>' + esc(schemeLabel()) + ' · ' + securedCount() + ' of ' + total + ' operations protected</span>' +
                 '<button type="button" class="g4t-btn" style="height:28px" data-action="open-token">' + ICON.key + (state.token ? 'Change token' : 'Authorize') + '</button></div>' : '');
     }
@@ -540,12 +652,44 @@
         });
     }
 
+    /* ---------- environments & variables ---------- */
+
+    function loadJson(key, fallback) { try { var v = localStorage.getItem('g4t-ui:' + key); return v ? JSON.parse(v) : fallback; } catch (e) { return fallback; } }
+    function saveJson(key, value) { try { localStorage.setItem('g4t-ui:' + key, JSON.stringify(value)); } catch (e) { } }
+    var VAR_RE = /\{\{\s*([A-Za-z_][\w.-]*)\s*\}\}/g;
+    function activeEnv() { return state.envs.filter(function (e) { return e.id === state.envId; })[0] || state.envs[0]; }
+    function envVars() {
+        var vars = {};
+        (activeEnv().vars || []).forEach(function (v) { if (v.key) { vars[v.key] = v.value; } });
+        if (state.token && !Object.prototype.hasOwnProperty.call(vars, 'token')) { vars.token = state.token; }
+        return vars;
+    }
+    /** Replaces {{name}} with the active environment's variables; unknown names are collected in `missing`. */
+    function subst(value, missing) {
+        if (typeof value !== 'string' || value.indexOf('{{') === -1) { return value; }
+        var vars = envVars();
+        return value.replace(VAR_RE, function (match, name) {
+            if (Object.prototype.hasOwnProperty.call(vars, name)) { return String(vars[name]); }
+            if (missing && missing.indexOf(name) === -1) { missing.push(name); }
+            return match;
+        });
+    }
+    function serverUrl() {
+        var base = subst(activeEnv().baseUrl || '');
+        return (base || state.server || location.origin).replace(/\/+$/, '');
+    }
+
+    /* ---------- requests ---------- */
+
+    /**
+     * The request as data: url, headers, and either `parts` (multipart fields/files) or `json`.
+     * `body` is what fetch() sends; code samples are generated from the rest.
+     */
     function buildRequest(op) {
-        var server = (state.server || location.origin).replace(/\/+$/, '');
+        var missingVars = [], missing = [];
         var path = op.path, query = [], headers = { 'Accept': 'application/json', 'X-Requested-With': 'XMLHttpRequest' };
-        var missing = [];
         op.params.forEach(function (p) {
-            var value = paramValue(op, p);
+            var value = subst(paramValue(op, p), missingVars);
             if (p.in === 'path') {
                 if (value === '') { missing.push(p.name); }
                 path = path.replace('{' + p.name + '}', encodeURIComponent(value));
@@ -558,47 +702,160 @@
         });
         if (missing.length) { return { error: 'Fill in the path parameter' + (missing.length > 1 ? 's ' : ' ') + missing.join(', ') }; }
         if (op.secured && state.token) { headers['Authorization'] = 'Bearer ' + state.token; }
-        var req = { method: op.method, url: server + path + (query.length ? '?' + query.join('&') : ''), headers: headers, body: undefined, curlBody: [] };
+        var req = { method: op.method, url: serverUrl() + path + (query.length ? '?' + query.join('&') : ''), headers: headers, body: undefined, parts: null, json: undefined, missingVars: missingVars };
         if (op.body && ['GET', 'HEAD'].indexOf(op.method) === -1) {
             if (isMultipart(op)) {
-                var form = new FormData();
+                var form = new FormData(), parts = [];
                 formFields(op).forEach(function (f) {
                     if (f.binary) {
                         var files = f.multiple ? fileSlots(op.id, f.name).filter(Boolean) : Array.prototype.slice.call((state.files[op.id] || {})[f.name] || []);
-                        files.forEach(function (file) { form.append(f.name, file); req.curlBody.push("-F '" + f.name + '=@' + file.name + "'"); });
+                        files.forEach(function (file) { form.append(f.name, file); parts.push({ name: f.name, file: file.name }); });
                         return;
                     }
                     var values = f.multiple ? listValues(op, f).map(function (v) { return String(v).trim(); }).filter(function (v) { return v !== ''; }) : (f.value !== '' ? [f.value] : []);
                     values.forEach(function (v) {
+                        v = subst(String(v), missingVars);
                         form.append(f.name, v);
-                        req.curlBody.push("-F '" + f.name + '=' + String(v).replace(/'/g, "'\\''") + "'");
+                        parts.push({ name: f.name, value: v });
                     });
                 });
                 req.body = form;
+                req.parts = parts;
             } else {
-                var text = bodyText(op);
-                try { text = JSON.stringify(JSON.parse(text)); } catch (e) { return { error: 'Request body isn’t valid JSON' }; }
+                var json;
+                try { json = JSON.parse(subst(bodyText(op), missingVars)); } catch (e) { return { error: 'Request body isn’t valid JSON' }; }
                 headers['Content-Type'] = currentCtype(op) || 'application/json';
-                req.body = text;
-                req.curlBody.push("-H 'Content-Type: " + headers['Content-Type'] + "'", "-d '" + text.replace(/'/g, "'\\''") + "'");
+                req.json = json;
+                req.body = JSON.stringify(json);
             }
         }
         return req;
     }
-    function curl(op) {
+    /** Same as buildRequest, but never fails: a missing path parameter keeps its {placeholder}. */
+    function sampleRequest(op) {
         var req = buildRequest(op);
-        if (req.error) {
-            req = { method: op.method, url: (state.server || location.origin) + op.path, headers: { 'Accept': 'application/json' }, curlBody: [] };
-        }
-        var lines = ["curl -X " + req.method + " '" + req.url + "'"];
-        Object.keys(req.headers).forEach(function (h) { if (h !== 'X-Requested-With' && h !== 'Content-Type') { lines.push("  -H '" + h + ': ' + req.headers[h] + "'"); } });
-        req.curlBody.forEach(function (l) { lines.push('  ' + l); });
-        return lines.join(' \\\n');
+        return req.error ? { method: op.method, url: serverUrl() + op.path, headers: { 'Accept': 'application/json' }, parts: null, json: undefined } : req;
     }
+    function shownHeaders(req) {
+        return Object.keys(req.headers).filter(function (h) { return h !== 'X-Requested-With'; }).filter(function (h) { return h !== 'Content-Type' || req.json !== undefined; });
+    }
+
+    /* ---------- code samples ---------- */
+
+    var CODE_LANGS = [['curl', 'cURL'], ['js', 'JavaScript'], ['dart', 'Dart (Dio)'], ['php', 'PHP (Laravel)']];
+    function codeFor(op, lang) {
+        var req = sampleRequest(op);
+        return ({ curl: codeCurl, js: codeJs, dart: codeDart, php: codePhp }[lang] || codeCurl)(req);
+    }
+    function sq(text) { return "'" + String(text).replace(/'/g, "'\\''") + "'"; }
+    function codeCurl(req) {
+        var lines = ['curl -X ' + req.method + ' ' + sq(req.url)];
+        shownHeaders(req).forEach(function (h) { lines.push('-H ' + sq(h + ': ' + req.headers[h])); });
+        (req.parts || []).forEach(function (part) { lines.push('-F ' + sq(part.name + '=' + (part.file !== undefined ? '@' + part.file : part.value))); });
+        if (req.json !== undefined) { lines.push('-d ' + sq(JSON.stringify(req.json))); }
+        return lines.join(' \\\n  ');
+    }
+    /** value → source literal; `lang` picks the syntax for maps / strings. */
+    function literal(value, lang, indent) {
+        indent = indent || '';
+        var next = indent + (lang === 'php' ? '    ' : '  ');
+        var str = function (v) {
+            if (lang === 'php') { return "'" + String(v).replace(/\\/g, '\\\\').replace(/'/g, "\\'") + "'"; }
+            if (lang === 'dart') { return "'" + String(v).replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/\$/g, '\\$').replace(/\n/g, '\\n') + "'"; }
+            return JSON.stringify(String(v));
+        };
+        if (value === null || value === undefined) { return 'null'; }
+        if (typeof value === 'string') { return str(value); }
+        if (typeof value === 'number' || typeof value === 'boolean') { return String(value); }
+        var open = lang === 'php' ? '[' : (Array.isArray(value) ? '[' : '{'), close = lang === 'php' ? ']' : (Array.isArray(value) ? ']' : '}');
+        var entries = Array.isArray(value)
+            ? value.map(function (v) { return next + literal(v, lang, next); })
+            : Object.keys(value).map(function (k) {
+                var key = lang === 'js' && /^[A-Za-z_$][\w$]*$/.test(k) ? k : str(k);
+                return next + key + (lang === 'php' ? ' => ' : ': ') + literal(value[k], lang, next);
+            });
+        return entries.length ? open + '\n' + entries.join(',\n') + ',\n' + indent + close : open + close;
+    }
+    function codeJs(req) {
+        var headers = {};
+        shownHeaders(req).forEach(function (h) { headers[h] = req.headers[h]; });
+        var out = [];
+        if (req.parts) {
+            out.push('const form = new FormData();');
+            req.parts.forEach(function (part) {
+                out.push(part.file !== undefined
+                    ? 'form.append(' + JSON.stringify(part.name) + ', fileInput.files[0]); // ' + part.file
+                    : 'form.append(' + JSON.stringify(part.name) + ', ' + JSON.stringify(part.value) + ');');
+            });
+            out.push('');
+        }
+        out.push('const response = await fetch(' + JSON.stringify(req.url) + ', {');
+        out.push('  method: ' + JSON.stringify(req.method) + ',');
+        out.push('  headers: ' + literal(headers, 'js', '  ') + ',');
+        if (req.parts) { out.push('  body: form,'); }
+        if (req.json !== undefined) { out.push('  body: JSON.stringify(' + literal(req.json, 'js', '  ') + '),'); }
+        out.push('});');
+        out.push('const data = await response.json();');
+        return out.join('\n');
+    }
+    function codeDart(req) {
+        var headers = {};
+        shownHeaders(req).forEach(function (h) { headers[h] = req.headers[h]; });
+        var out = ["import 'package:dio/dio.dart';", '', 'final dio = Dio();'];
+        var data = null;
+        if (req.parts) {
+            out.push('final formData = FormData();');
+            req.parts.forEach(function (part) {
+                out.push(part.file !== undefined
+                    ? 'formData.files.add(MapEntry(' + literal(part.name, 'dart') + ', await MultipartFile.fromFile(' + literal(part.file, 'dart') + ')));'
+                    : 'formData.fields.add(const MapEntry(' + literal(part.name, 'dart') + ', ' + literal(part.value, 'dart') + '));');
+            });
+            data = 'formData';
+        } else if (req.json !== undefined) {
+            data = literal(req.json, 'dart', '  ');
+        }
+        out.push('', 'final response = await dio.request(', '  ' + literal(req.url, 'dart') + ',');
+        if (data) { out.push('  data: ' + data + ','); }
+        out.push('  options: Options(', '    method: ' + literal(req.method, 'dart') + ',', '    headers: ' + literal(headers, 'dart', '    ') + ',', '  ),', ');', 'print(response.data);');
+        return out.join('\n');
+    }
+    function codePhp(req) {
+        var out = ['use Illuminate\\Support\\Facades\\Http;', '', '$response = Http::acceptJson()'];
+        var bearer = /^Bearer\s+(.+)$/.exec(req.headers['Authorization'] || '');
+        if (bearer) { out.push('    ->withToken(' + literal(bearer[1], 'php') + ')'); }
+        var extra = {};
+        shownHeaders(req).forEach(function (h) { if (['Accept', 'Authorization', 'Content-Type'].indexOf(h) === -1) { extra[h] = req.headers[h]; } });
+        if (Object.keys(extra).length) { out.push('    ->withHeaders(' + literal(extra, 'php', '    ') + ')'); }
+        var method = req.method.toLowerCase(), args = '';
+        if (req.parts) {
+            out.push('    ->asMultipart()');
+            req.parts.filter(function (p) { return p.file !== undefined; }).forEach(function (part) {
+                out.push('    ->attach(' + literal(part.name, 'php') + ', file_get_contents(' + literal(part.file, 'php') + '), ' + literal(part.file, 'php') + ')');
+            });
+            var fields = req.parts.filter(function (p) { return p.file === undefined; }).map(function (p) { return { name: p.name, contents: p.value }; });
+            if (fields.length) { args = ', ' + literal(fields, 'php', '    '); }
+        } else if (req.json !== undefined) {
+            args = ', ' + literal(req.json, 'php', '    ');
+        }
+        out.push('    ->' + (['get', 'post', 'put', 'patch', 'delete', 'head'].indexOf(method) !== -1 ? method : 'send') + '(' + (['get', 'post', 'put', 'patch', 'delete', 'head'].indexOf(method) === -1 ? literal(req.method, 'php') + ', ' : '') + literal(req.url, 'php') + args + ');', '', '$data = $response->json();');
+        return out.join('\n');
+    }
+    function codePanelHtml(op) {
+        var lang = state.codeLang;
+        return '<div class="g4t-code-panel"><div class="g4t-ex-tabs" role="tablist" aria-label="Code sample">' + CODE_LANGS.map(function (l) {
+            return '<button type="button" role="tab" aria-selected="' + (l[0] === lang) + '" data-action="code-lang" data-op="' + esc(op.id) + '" data-value="' + l[0] + '">' + esc(l[1]) + '</button>';
+        }).join('') + '</div><div class="g4t-code-wrap"><pre class="g4t-code is-muted">' + esc(codeFor(op, lang)) + '</pre><button type="button" class="g4t-copy" aria-label="Copy code" data-action="copy-code" data-op="' + esc(op.id) + '">' + ICON.copy + '</button></div></div>';
+    }
+    function curl(op) { return codeFor(op, 'curl'); }
 
     function execute(op) {
         var req = buildRequest(op);
         if (req.error) { toast(req.error); return; }
+        if (req.missingVars.length) {
+            // Sending "{{name}}" literally only produces a confusing 404 / 422.
+            toast('Unknown variable' + (req.missingVars.length > 1 ? 's' : '') + ': ' + req.missingVars.map(function (n) { return '{{' + n + '}}'; }).join(', ') + ' · define it in Environments');
+            return;
+        }
         state.busy[op.id] = true; renderOp(op.id);
         var started = performance.now();
         fetch(req.url, { method: req.method, headers: req.headers, body: req.body })
@@ -611,7 +868,69 @@
             .catch(function (error) {
                 state.results[op.id] = { code: 0, text: 'Network error', ms: Math.round(performance.now() - started), json: undefined, raw: error.message + '\n\nThe request did not reach the server. Check the server URL above and CORS.', ctype: '' };
             })
-            .then(function () { state.busy[op.id] = false; renderOp(op.id); });
+            .then(function () {
+                var res = state.results[op.id];
+                addHistory(op, { at: Date.now(), code: res.code, text: res.text, ms: res.ms, method: req.method, url: req.url, env: activeEnv().name, input: snapshot(op.id), files: (req.parts || []).filter(function (p) { return p.file !== undefined; }).map(function (p) { return p.file; }) });
+                state.busy[op.id] = false; renderOp(op.id);
+            });
+    }
+
+    /* ---------- saved inputs & history ---------- */
+
+    function snapshot(id) {
+        return JSON.parse(JSON.stringify({ inputs: state.inputs[id] || null, forms: state.forms[id] || null, body: state.bodies[id] != null ? state.bodies[id] : null, ctype: state.ctype[id] || null }));
+    }
+    function applySnapshot(id, snap) {
+        snap = snap || {};
+        if (snap.inputs) { state.inputs[id] = snap.inputs; } else { delete state.inputs[id]; }
+        if (snap.forms) { state.forms[id] = snap.forms; } else { delete state.forms[id]; }
+        if (snap.body != null) { state.bodies[id] = snap.body; } else { delete state.bodies[id]; }
+        if (snap.ctype) { state.ctype[id] = snap.ctype; } else { delete state.ctype[id]; }
+    }
+    var persistTimer = null;
+    /** Try it out values survive reloads (files cannot be stored by the browser). */
+    function persistInputs() {
+        clearTimeout(persistTimer);
+        persistTimer = setTimeout(function () {
+            var saved = {};
+            Object.keys(state.inputs).concat(Object.keys(state.forms), Object.keys(state.bodies), Object.keys(state.ctype)).forEach(function (id) { saved[id] = snapshot(id); });
+            saveJson('inputs', saved);
+        }, 250);
+    }
+    function restoreInputs() {
+        var saved = loadJson('inputs', {});
+        Object.keys(saved || {}).forEach(function (id) { applySnapshot(id, saved[id]); });
+    }
+    function resetInputs(id) {
+        applySnapshot(id, null);
+        delete state.files[id];
+        persistInputs();
+    }
+    var HISTORY_LIMIT = 10;
+    function historyOf(id) { var all = loadJson('history', {}); return (all && all[id]) || []; }
+    function addHistory(op, entry) {
+        var all = loadJson('history', {}) || {};
+        all[op.id] = [entry].concat(all[op.id] || []).slice(0, HISTORY_LIMIT);
+        saveJson('history', all);
+    }
+    function clearHistory(id) { var all = loadJson('history', {}) || {}; delete all[id]; saveJson('history', all); }
+    function ago(ts) {
+        var sec = Math.max(0, Math.round((Date.now() - ts) / 1000));
+        if (sec < 60) { return sec + 's ago'; }
+        if (sec < 3600) { return Math.round(sec / 60) + 'm ago'; }
+        if (sec < 86400) { return Math.round(sec / 3600) + 'h ago'; }
+        return new Date(ts).toLocaleDateString();
+    }
+    function historyHtml(op) {
+        var list = historyOf(op.id);
+        if (!list.length) { return '<div class="g4t-history-empty">No requests yet. Executed requests show up here.</div>'; }
+        return '<div class="g4t-history">' + list.map(function (h, i) {
+            var shortUrl = h.url.replace(/^https?:\/\/[^/]+/, '');
+            return '<div class="g4t-history-row"><span class="g4t-status ' + statusClass(h.code) + '">' + (h.code || '—') + '</span>' +
+                '<span class="g4t-history-url g4t-mono" title="' + esc(h.url) + '">' + esc(shortUrl) + '</span>' +
+                '<span class="g4t-muted g4t-history-meta">' + h.ms + ' ms · ' + esc(ago(h.at)) + (h.env ? ' · ' + esc(h.env) : '') + (h.files && h.files.length ? ' · ' + h.files.length + ' file' + (h.files.length > 1 ? 's' : '') : '') + '</span>' +
+                '<span class="g4t-history-actions"><button type="button" class="g4t-btn" data-action="history-restore" data-op="' + esc(op.id) + '" data-value="' + i + '">Restore</button><button type="button" class="g4t-btn" data-action="history-run" data-op="' + esc(op.id) + '" data-value="' + i + '">Re-run</button></span></div>';
+        }).join('') + '<div class="g4t-actions" style="justify-content:flex-end"><button type="button" class="g4t-link-btn" style="font-size:12px;font-weight:500" data-action="history-clear" data-op="' + esc(op.id) + '">Clear history</button></div></div>';
     }
 
     /** Multipart schemas flatten names ("tags[]", "dimensions[width]"); show them like the JSON shape. */
@@ -693,8 +1012,9 @@
                 return '<select' + attrs + '>' + (f.req && value !== '' ? '' : '<option value="">' + (f.req ? 'Select…' : '— not sent —') + '</option>') +
                     options.map(function (o) { return '<option value="' + esc(o[0]) + '"' + (o[0] === String(value) ? ' selected' : '') + '>' + esc(o[1]) + '</option>'; }).join('') + '</select>';
             default:
-                var type = { number: 'number', date: 'date', datetime: 'datetime-local', email: 'email' }[kind] || 'text';
-                return '<input type="' + type + '"' + attrs + ' value="' + esc(value) + '" placeholder="' + esc(placeholderFor(schema || {}, kind)) + '"' + (type === 'number' ? ' step="any" inputmode="decimal"' : '') + ' autocomplete="off" spellcheck="false">';
+                // Numbers stay type="text" (numeric keyboard via inputmode) so {{variables}} can be typed in.
+                var type = { date: 'date', datetime: 'datetime-local', email: 'email' }[kind] || 'text';
+                return '<input type="' + type + '"' + attrs + ' value="' + esc(value) + '" placeholder="' + esc(placeholderFor(schema || {}, kind)) + '"' + (kind === 'number' ? ' inputmode="decimal"' : '') + ' autocomplete="off" spellcheck="false">';
         }
     }
     /** File slots of an array-of-files field (one File or null per slot). */
@@ -711,8 +1031,12 @@
     function formField(op, name) { return formFields(op).filter(function (f) { return f.name === name; })[0] || null; }
 
     function tryHtml(op) {
-        var server = state.server || location.origin, html = '';
-        html += '<div class="g4t-try"><div class="g4t-try-title"><h3 style="margin:0;font-size:13px;font-weight:600">Try it out</h3><span>→ ' + esc(server) + '</span></div>';
+        var server = serverUrl(), html = '', historyCount = historyOf(op.id).length, histOpen = !!state.historyOpen[op.id];
+        var env = activeEnv();
+        html += '<div class="g4t-try"><div class="g4t-try-title"><h3 style="margin:0;font-size:13px;font-weight:600">Try it out</h3><span>→ ' + esc(server) + (env.id !== 'default' || state.envs.length > 1 ? ' · ' + esc(env.name) : '') + '</span>' +
+            '<span class="g4t-try-tools"><button type="button" class="g4t-btn" data-action="toggle-history" data-op="' + esc(op.id) + '" aria-pressed="' + histOpen + '">' + ICON.clock + 'History' + (historyCount ? ' <span class="g4t-count">' + historyCount + '</span>' : '') + '</button>' +
+            '<button type="button" class="g4t-btn" data-action="reset-inputs" data-op="' + esc(op.id) + '" title="Forget the values saved for this endpoint">' + ICON.reset + 'Reset</button></span></div>';
+        if (histOpen) { html += historyHtml(op); }
         if (op.secured && !state.token) {
             html += '<div class="g4t-hint">' + ICON.lock + '<span>Needs a token. Requests will return 401 until you log in.</span><button type="button" data-action="open-login">Log in</button></div>';
         }
@@ -755,7 +1079,7 @@
             html += '<div class="g4t-result" aria-live="polite"><div class="g4t-actions"><span style="font-size:13px;font-weight:600">Response</span><span class="g4t-status ' + statusClass(res.code) + '">' + (res.code || '—') + ' ' + esc(res.text) + '</span><span class="g4t-muted" style="font-size:12px">' + res.ms + ' ms' + (res.ctype ? ' · ' + esc(res.ctype) : '') + '</span></div>' +
                 (res.unauth ? '<div style="font-size:13px;color:var(--text-2)">The request went out without a token. <button type="button" class="g4t-link-btn" data-action="open-login">Log in</button> and execute again.</div>' : '') +
                 '<div class="g4t-code-wrap"><pre class="g4t-code">' + bodyHtml + '</pre>' + (res.raw ? '<button type="button" class="g4t-copy" aria-label="Copy response" data-action="copy-result" data-op="' + esc(op.id) + '">' + ICON.copy + '</button>' : '') + '</div>' +
-                '<div style="display:grid;gap:6px;min-width:0"><div style="display:flex;align-items:center;justify-content:space-between;gap:8px"><span class="g4t-muted" style="font-size:12px">Request as cURL</span><button type="button" class="g4t-link-btn" style="font-size:12px;font-weight:500" data-action="copy-curl" data-op="' + esc(op.id) + '">Copy</button></div><pre class="g4t-code is-muted">' + esc(curl(op)) + '</pre></div></div>';
+                '<div style="display:grid;gap:6px;min-width:0"><span class="g4t-muted" style="font-size:12px">Request as code</span>' + codePanelHtml(op) + '</div></div>';
         }
         return html + '</div>';
     }
@@ -796,8 +1120,9 @@
         if (!open) { return html + '</article>'; }
 
         html += '<div class="g4t-op-body"><div class="g4t-op-intro"><p class="g4t-op-desc">' + esc(op.desc || op.summary || 'No description.') + '</p><div style="display:flex;gap:8px;flex:none">' +
-            '<button type="button" class="g4t-btn" data-action="copy-curl" data-op="' + esc(op.id) + '">' + ICON.term + 'Copy as cURL</button>' +
+            '<button type="button" class="g4t-btn" data-action="toggle-code" data-op="' + esc(op.id) + '" aria-pressed="' + !!state.codeOpen[op.id] + '">' + ICON.term + 'Code</button>' +
             '<button type="button" class="g4t-try-toggle" data-action="toggle-try" data-op="' + esc(op.id) + '" aria-pressed="' + trying + '">' + (trying ? 'Cancel' : 'Try it out') + '</button></div></div>';
+        if (state.codeOpen[op.id]) { html += codePanelHtml(op); }
         // While Try it out is open its form lists the same fields, so the reference tables step aside.
         if (op.params.length && !trying) {
             html += '<div class="g4t-block"><h3>Parameters</h3>' + rowsHtml(op.params.map(function (p) {
@@ -950,7 +1275,7 @@
                 if (state.expanded[id]) { try { history.replaceState(null, '', '#op-' + id); } catch (err) { } }
                 break;
             case 'toggle-try': state.trying[id] = !state.trying[id]; renderOp(id); break;
-            case 'ctype': state.ctype[id] = value; renderOp(id); break;
+            case 'ctype': state.ctype[id] = value; persistInputs(); renderOp(id); break;
             case 'execute': if (op) { execute(op); } break;
             case 'clear-result': delete state.results[id]; renderOp(id); break;
             case 'clear-file': if (state.files[id]) { delete state.files[id][el.getAttribute('data-name')]; } renderOp(id); break;
@@ -961,7 +1286,7 @@
                     var isFileList = action === 'add-item' ? el.getAttribute('data-kind') === 'file' : !!(formField(op, field) || {}).binary;
                     var list = isFileList ? fileSlots(id, field).slice() : listValues(op, formField(op, field)).slice();
                     if (action === 'add-item') { list.push(isFileList ? null : ''); } else { list.splice(index, 1); }
-                    if (isFileList) { (state.files[id] = state.files[id] || {})[field] = list; } else { (state.forms[id] = state.forms[id] || {})[field] = list; }
+                    if (isFileList) { (state.files[id] = state.files[id] || {})[field] = list; } else { (state.forms[id] = state.forms[id] || {})[field] = list; persistInputs(); }
                     renderOp(id);
                     if (action === 'add-item') {
                         var added = document.querySelector('#op-' + CSS.escape(id) + ' [data-name="' + CSS.escape(field) + '"][data-index="' + (list.length - 1) + '"]');
@@ -983,6 +1308,55 @@
                 }
                 break;
             case 'retry': load(); break;
+            case 'toggle-code': state.codeOpen[id] = !state.codeOpen[id]; renderOp(id); break;
+            case 'code-lang':
+                state.codeLang = value; store.set('codeLang', value);
+                Object.keys(state.codeOpen).concat(Object.keys(state.results)).forEach(function (k) { if (opById(k) && document.getElementById('op-' + k)) { renderOp(k); } });
+                break;
+            case 'copy-code': if (op) { copy(codeFor(op, state.codeLang), (CODE_LANGS.filter(function (l) { return l[0] === state.codeLang; })[0] || ['', 'Code'])[1] + ' copied'); } break;
+            case 'toggle-history': state.historyOpen[id] = !state.historyOpen[id]; renderOp(id); break;
+            case 'history-clear': clearHistory(id); renderOp(id); toast('History cleared'); break;
+            case 'history-restore':
+            case 'history-run':
+                var entry = historyOf(id)[Number(value)];
+                if (entry && op) {
+                    applySnapshot(id, entry.input); persistInputs();
+                    state.trying[id] = true; renderOp(id);
+                    if (action === 'history-run') { execute(op); } else { toast('Values restored' + (entry.files && entry.files.length ? ' · pick the files again' : '')); }
+                }
+                break;
+            case 'reset-inputs': resetInputs(id); renderOp(id); toast('Saved values cleared'); break;
+            case 'toggle-download': state.downloadOpen = !state.downloadOpen; state.appearOpen = false; state.authMenuOpen = false; renderDownload(); renderAppear(); renderAuth(); break;
+            case 'download': downloadSpec(value); break;
+            case 'open-envs':
+                state.envsOpen = true; state.envEdit = state.envId; renderEnvs();
+                setTimeout(function () { var f = els.envs.querySelector('[data-bind="env-name"]'); if (f) { f.focus(); } }, 20);
+                break;
+            case 'close-envs': state.envsOpen = false; saveEnvs(); renderEnvs(); afterEnvChange(); break;
+            case 'close-envs-backdrop': if (e.target === el) { state.envsOpen = false; saveEnvs(); renderEnvs(); afterEnvChange(); } break;
+            case 'env-select': state.envEdit = value; renderEnvs(); break;
+            case 'env-activate': state.envId = editedEnv().id; saveEnvs(); renderEnvs(); afterEnvChange(); toast('Environment: ' + activeEnv().name); break;
+            case 'env-new':
+            case 'env-duplicate':
+                var base = action === 'env-duplicate' ? editedEnv() : null;
+                var created = { id: newId(), name: base ? base.name + ' copy' : 'Environment ' + (state.envs.length + 1), baseUrl: base ? base.baseUrl : '', vars: base ? base.vars.map(function (v) { return { key: v.key, value: v.value }; }) : [] };
+                state.envs.push(created); state.envEdit = created.id; saveEnvs(); renderEnvs();
+                setTimeout(function () { var f = els.envs.querySelector('[data-bind="env-name"]'); if (f) { f.focus(); f.select(); } }, 20);
+                break;
+            case 'env-delete':
+                if (state.envs.length > 1) {
+                    var gone = editedEnv();
+                    state.envs = state.envs.filter(function (en) { return en.id !== gone.id; });
+                    if (state.envId === gone.id) { state.envId = state.envs[0].id; }
+                    state.envEdit = state.envId; saveEnvs(); renderEnvs(); afterEnvChange(); toast('Deleted ' + gone.name);
+                }
+                break;
+            case 'env-add-var':
+                editedEnv().vars.push({ key: '', value: '' }); saveEnvs(); renderEnvs();
+                var keyInputs = els.envs.querySelectorAll('[data-bind="env-key"]');
+                if (keyInputs.length) { keyInputs[keyInputs.length - 1].focus(); }
+                break;
+            case 'env-remove-var': editedEnv().vars.splice(Number(el.getAttribute('data-index')), 1); saveEnvs(); renderEnvs(); renderEnvButton(); break;
             case 'show-all': state.version = 'all'; store.set('version', 'all'); renderVersions(); load(); break;
             case 'clear-filter': state.filter = ''; els.filter.value = ''; renderNav(); renderOps(); break;
         }
@@ -1004,13 +1378,23 @@
         else if (bind === 'form-item') { setListItem(id, name, Number(el.getAttribute('data-index')), el.value); }
         else if (bind === 'body') { state.bodies[id] = el.value; }
         else if (bind === 'login') { state.loginValues[el.name] = el.value; }
+        else if (bind && bind.indexOf('env-') === 0) { editEnvField(el, bind); }
+        if (['param', 'form', 'form-item', 'body'].indexOf(bind) !== -1) { persistInputs(); }
     });
+    function editEnvField(el, bind) {
+        var env = editedEnv(), index = Number(el.getAttribute('data-index'));
+        if (bind === 'env-name') { env.name = el.value || 'Environment'; var tab = els.envs.querySelector('.g4t-env-tab[aria-selected="true"]'); if (tab) { tab.lastChild.textContent = env.name; } }
+        else if (bind === 'env-url') { env.baseUrl = el.value.trim(); }
+        else if (bind === 'env-key') { env.vars[index].key = el.value.trim(); }
+        else if (bind === 'env-value') { env.vars[index].value = el.value; }
+        saveEnvs(); renderEnvButton();
+    }
 
     document.addEventListener('change', function (e) {
         var el = e.target, bind = el.getAttribute && el.getAttribute('data-bind');
         var id = el.getAttribute && el.getAttribute('data-op'), name = el.getAttribute && el.getAttribute('data-name');
         if (el === els.version) { state.version = el.value; store.set('version', el.value); state.results = {}; load(); }
-        else if (bind === 'server') { state.server = el.value; store.set('server', el.value); toast('Server: ' + el.value); Object.keys(state.trying).forEach(function (k) { if (state.trying[k]) { renderOp(k); } }); }
+        else if (bind === 'server') { state.server = el.value; store.set('server', el.value); toast('Server: ' + el.value); renderInfo(); Object.keys(state.trying).concat(Object.keys(state.codeOpen)).forEach(function (k) { if (state.trying[k] || state.codeOpen[k]) { renderOp(k); } }); }
         else if (bind === 'file') { (state.files[id] = state.files[id] || {})[name] = el.files; renderOp(id); }
         else if (bind === 'file-item') {
             var slots = fileSlots(id, name).slice();
@@ -1021,6 +1405,7 @@
         else if (bind === 'form-item') { setListItem(id, name, Number(el.getAttribute('data-index')), el.value); }
         else if (bind === 'param') { (state.inputs[id] = state.inputs[id] || {})[name] = el.value; }
         else if (bind === 'form') { (state.forms[id] = state.forms[id] || {})[name] = el.value; }
+        if (['param', 'form', 'form-item'].indexOf(bind) !== -1) { persistInputs(); }
     });
 
     document.addEventListener('submit', function (e) {
@@ -1033,9 +1418,11 @@
             e.preventDefault(); setDrawer(window.innerWidth < 900 ? true : state.drawer); els.filter.focus();
         }
         if (e.key === 'Escape') {
-            var changed = state.appearOpen || state.authMenuOpen || state.loginOpen || state.drawer;
-            state.appearOpen = false; state.authMenuOpen = false; state.loginOpen = false;
-            if (changed) { setDrawer(false); renderAppear(); renderAuth(); renderLogin(); }
+            var changed = state.appearOpen || state.authMenuOpen || state.loginOpen || state.drawer || state.downloadOpen || state.envsOpen;
+            var envsWereOpen = state.envsOpen;
+            state.appearOpen = false; state.authMenuOpen = false; state.loginOpen = false; state.downloadOpen = false; state.envsOpen = false;
+            if (changed) { setDrawer(false); renderAppear(); renderAuth(); renderLogin(); renderDownload(); renderEnvs(); }
+            if (envsWereOpen) { saveEnvs(); afterEnvChange(); }
             if (e.target === els.filter && els.filter.value) { state.filter = ''; els.filter.value = ''; renderNav(); renderOps(); }
         }
     });
@@ -1044,6 +1431,7 @@
         var t = e.target;
         if (state.appearOpen && !(t.closest && t.closest('[data-g4t-pop="appear"]'))) { state.appearOpen = false; renderAppear(); }
         if (state.authMenuOpen && !(t.closest && t.closest('[data-g4t-pop="auth"]'))) { state.authMenuOpen = false; renderAuth(); }
+        if (state.downloadOpen && !(t.closest && t.closest('[data-g4t-pop="download"]'))) { state.downloadOpen = false; renderDownload(); }
     });
 
     if (window.matchMedia) {
@@ -1059,7 +1447,10 @@
         if (e.key === tokenKey) { state.token = e.newValue; renderAuth(); renderInfo(); renderOps(); }
     });
 
+    loadEnvs();
+    restoreInputs();
     applyRoot();
+    renderEnvButton();
     renderVersions();
     renderAppear();
     load();

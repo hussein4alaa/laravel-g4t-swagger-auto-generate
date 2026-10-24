@@ -138,6 +138,39 @@ class UiTest extends TestCase
         }
     }
 
+    public function test_g4t_ui_script_is_valid_javascript(): void
+    {
+        $node = trim((string) shell_exec('command -v node 2>/dev/null'));
+        if ($node === '') {
+            $this->markTestSkipped('node is not installed.');
+        }
+
+        foreach ([null, '/api/v1/login'] as $loginUrl) {
+            config(['swagger.auto_login.url' => $loginUrl]);
+            preg_match_all('#<script>(.*?)</script>#s', $this->get('/swagger/documentation?ui=g4t')->getContent(), $scripts);
+            $this->assertNotEmpty($scripts[1]);
+
+            $file = tempnam(sys_get_temp_dir(), 'g4t').'.js';
+            file_put_contents($file, implode("\n;\n", $scripts[1]));
+            exec(escapeshellarg($node).' --check '.escapeshellarg($file).' 2>&1', $output, $exitCode);
+            @unlink($file);
+
+            $this->assertSame(0, $exitCode, "The g4t UI script does not parse:\n".implode("\n", $output));
+        }
+    }
+
+    public function test_g4t_ui_ships_code_samples_environments_history_and_download(): void
+    {
+        $this->get('/swagger/documentation?ui=g4t')
+            ->assertSee('id="g4t-env-btn"', false)
+            ->assertSee('data-action="toggle-download"', false)
+            ->assertSee("['dart', 'Dart (Dio)']", false)
+            ->assertSee("['php', 'PHP (Laravel)']", false)
+            ->assertSee('data-action="toggle-history"', false)
+            ->assertSee('data-action="reset-inputs"', false)
+            ->assertSee('function toYaml(', false);
+    }
+
     public function test_g4t_ui_receives_the_login_settings(): void
     {
         config(['swagger.auto_login.url' => '/api/v1/login']);

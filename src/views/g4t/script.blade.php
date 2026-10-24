@@ -18,6 +18,7 @@
         chevSm: '<svg aria-hidden="true" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="m6 9 6 6 6-6"></path></svg>',
         copy: '<svg aria-hidden="true" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="12" height="12" rx="2"></rect><path d="M5 15V5a2 2 0 0 1 2-2h10"></path></svg>',
         term: '<svg aria-hidden="true" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m5 8 4 4-4 4M12 16h7"></path></svg>',
+        key: '<svg aria-hidden="true" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="15" r="4"></circle><path d="m10.8 12.2 9.2-9.2M17 6l3 3M14 9l2 2"></path></svg>',
         warn: '<svg aria-hidden="true" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3 2 20h20L12 3z"></path><path d="M12 10v4M12 17.5v.01"></path></svg>'
     };
 
@@ -41,7 +42,7 @@
         density: store.get('density', S.density || 'comfortable'),
         theme: store.get('theme', S.defaultTheme || 'default'),
         drawer: false, appearOpen: false, authMenuOpen: false,
-        loginOpen: false, loggingIn: false, loginError: '', loginValues: {},
+        loginOpen: false, loggingIn: false, loginError: '', loginValues: {}, loginTab: S.autoLogin ? 'credentials' : 'token',
         token: readToken(), server: null, active: null,
         expanded: {}, trying: {}, respTab: {}, exTab: {}, respView: {}, ctype: {},
         bodies: {}, inputs: {}, forms: {}, files: {}, busy: {}, results: {}
@@ -314,28 +315,41 @@
         }
         var t = state.token, preview = t.length > 20 ? t.slice(0, 10) + '…' + t.slice(-6) : t;
         els.auth.innerHTML = '<button type="button" id="g4t-login-toggle" class="g4t-auth-btn g4t-login-toggle is-authenticated" data-action="toggle-auth-menu" aria-haspopup="menu" aria-expanded="' + state.authMenuOpen + '"><span class="g4t-dot" aria-hidden="true"></span><span class="g4t-auth-text">Authenticated</span>' + ICON.chevSm + '</button>' +
-            (state.authMenuOpen ? '<div class="g4t-menu" role="menu"><div style="display:grid;gap:4px"><div class="g4t-menu-hint" style="font-size:12px">Bearer token · ' + esc(schemeName()) + '</div><div class="g4t-token-box">' + esc(preview) + '</div><div style="font-size:12px;color:var(--text-2)">Sent with ' + securedCount() + ' protected operations</div></div><div style="display:flex;gap:8px"><button type="button" role="menuitem" class="g4t-btn" style="flex:1" data-action="copy-token">' + ICON.copy + 'Copy token</button><button type="button" role="menuitem" class="g4t-btn g4t-btn-danger" style="flex:1" data-action="logout">Log out</button></div></div>' : '');
+            (state.authMenuOpen ? '<div class="g4t-menu" role="menu"><div style="display:grid;gap:4px"><div class="g4t-menu-hint" style="font-size:12px">Bearer token · ' + esc(schemeName()) + '</div><div class="g4t-token-box">' + esc(preview) + '</div><div style="font-size:12px;color:var(--text-2)">Sent with ' + securedCount() + ' protected operations</div></div><div style="display:grid;grid-template-columns:1fr 1fr;gap:8px"><button type="button" role="menuitem" class="g4t-btn" data-action="copy-token">' + ICON.copy + 'Copy token</button><button type="button" role="menuitem" class="g4t-btn" data-action="open-token">' + ICON.key + 'Change token</button><button type="button" role="menuitem" class="g4t-btn g4t-btn-danger" style="grid-column:1 / -1" data-action="logout">Log out</button></div></div>' : '');
     }
 
     function renderLogin() {
         if (!state.loginOpen) { els.login.innerHTML = ''; return; }
-        var auto = S.autoLogin, fieldsHtml = '';
-        if (auto) {
+        var auto = S.autoLogin, tokenTab = !auto || state.loginTab === 'token', fieldsHtml = '', intro, submitLabel;
+        if (tokenTab) {
+            var current = state.loginValues.token != null ? state.loginValues.token : (state.token || '');
+            fieldsHtml = '<label>Bearer token<div class="g4t-token-field"><input name="token" data-bind="login" type="text" class="g4t-mono" autocomplete="off" spellcheck="false" required placeholder="1|aBcDeF…" value="' + esc(current) + '" data-autofocus>' +
+                '<button type="button" class="g4t-btn" data-action="paste-token" title="Paste from clipboard">' + ICON.copy + 'Paste</button></div></label>';
+            intro = 'Sent as <code class="g4t-mono">Authorization: Bearer &lt;token&gt;</code> with protected requests and stored in this browser. A leading “Bearer ” is removed.';
+            submitLabel = state.token ? 'Save token' : 'Authorize';
+        } else {
             Object.keys(auto.fields || {}).forEach(function (name, i) {
                 var isPassword = /password/i.test(name), isEmail = /email/i.test(name);
                 var value = state.loginValues[name] != null ? state.loginValues[name] : ((auto.prefill || {})[name] || '');
                 fieldsHtml += '<label>' + esc(auto.fields[name]) + '<input name="' + esc(name) + '" data-bind="login" type="' + (isPassword ? 'password' : isEmail ? 'email' : 'text') + '" autocomplete="' + (isPassword ? 'current-password' : 'username') + '" required value="' + esc(value) + '"' + (i === 0 ? ' data-autofocus' : '') + '></label>';
             });
-        } else {
-            fieldsHtml = '<label>Bearer token<input name="token" data-bind="login" type="text" autocomplete="off" required value="' + esc(state.loginValues.token || '') + '" data-autofocus></label>';
+            intro = esc(auto.method + ' ' + auto.url.replace(location.origin, '')) + ' — the token is stored in this browser and sent with protected requests.';
+            submitLabel = 'Log in';
         }
-        var endpoint = auto ? esc(auto.method + ' ' + auto.url.replace(location.origin, '')) + ' — the token is stored in this browser and sent with protected requests.' : 'Paste a token; it is stored in this browser and sent with protected requests.';
+        var tabs = auto ? '<div class="g4t-seg" role="tablist" aria-label="Sign-in method" style="grid-template-columns:repeat(2,1fr)">' +
+            '<button type="button" role="tab" aria-selected="' + !tokenTab + '" data-action="login-tab" data-value="credentials">Log in</button>' +
+            '<button type="button" role="tab" aria-selected="' + tokenTab + '" data-action="login-tab" data-value="token">Bearer token</button></div>' : '';
         els.login.innerHTML = '<div class="g4t-modal" data-action="close-login-backdrop"><div id="g4t-login-dialog" class="g4t-login-dialog" role="dialog" aria-modal="true" aria-labelledby="g4t-login-title"><form id="g4t-login-form" novalidate>' +
-            '<div style="display:grid;gap:4px"><h2 id="g4t-login-title">Log in</h2><p>' + endpoint + '</p></div>' + fieldsHtml +
+            '<div style="display:grid;gap:4px"><h2 id="g4t-login-title">' + (tokenTab ? 'Authorize' : 'Log in') + '</h2><p>' + intro + '</p></div>' + tabs + fieldsHtml +
             (state.loginError ? '<p id="g4t-login-error" class="g4t-login-error" role="alert">' + esc(state.loginError) + '</p>' : '') +
-            '<div class="g4t-actions"><button type="button" id="g4t-login-cancel" class="g4t-btn" data-action="close-login">Cancel</button><button type="submit" id="g4t-login-submit" class="g4t-btn g4t-btn-primary"' + (state.loggingIn ? ' disabled' : '') + '>' + (state.loggingIn ? spinner() + 'Logging in…' : 'Log in') + '</button></div></form></div></div>';
+            '<div class="g4t-actions"><button type="button" id="g4t-login-cancel" class="g4t-btn" data-action="close-login">Cancel</button><button type="submit" id="g4t-login-submit" class="g4t-btn g4t-btn-primary"' + (state.loggingIn ? ' disabled' : '') + '>' + (state.loggingIn ? spinner() + 'Logging in…' : submitLabel) + '</button></div></form></div></div>';
         var focus = els.login.querySelector('[data-autofocus]');
         if (focus && !state.loggingIn) { setTimeout(function () { focus.focus(); }, 20); }
+    }
+    function openLogin(tab) {
+        state.loginOpen = true; state.loginError = ''; state.authMenuOpen = false; state.loginValues = {};
+        state.loginTab = S.autoLogin ? (tab || 'credentials') : 'token';
+        renderAuth(); renderLogin();
     }
 
     function findToken(payload) {
@@ -361,9 +375,10 @@
         if (message) { toast(message); }
     }
     function submitLogin() {
-        if (!S.autoLogin) {
-            var pasted = String(state.loginValues.token || '').trim().replace(/^Bearer\s+/i, '');
-            if (!pasted) { state.loginError = 'Paste a token first.'; renderLogin(); return; }
+        if (!S.autoLogin || state.loginTab === 'token') {
+            var raw = state.loginValues.token != null ? state.loginValues.token : (state.token || '');
+            var pasted = String(raw).trim().replace(/^Bearer\s+/i, '');
+            if (!pasted) { state.loginError = 'Enter a token first.'; renderLogin(); return; }
             state.loginOpen = false; state.loginValues = {}; renderLogin();
             setToken(pasted, 'Token saved · sent with protected requests');
             return;
@@ -408,7 +423,8 @@
             '<h1>' + esc(info.title || document.title) + '</h1>' +
             (info.description ? '<p class="g4t-info-desc">' + esc(info.description) + '</p>' : '') +
             (model ? '<div class="g4t-info-meta">' + (serverSelect ? '<span><span class="g4t-muted">Server</span>' + serverSelect + '</span>' : '') +
-                '<span><span class="g4t-muted" style="display:inline-flex">' + ICON.lock.replace('width="14" height="14"', 'width="13" height="13"') + '</span>' + esc(schemeLabel()) + ' · ' + securedCount() + ' of ' + total + ' operations protected</span></div>' : '');
+                '<span><span class="g4t-muted" style="display:inline-flex">' + ICON.lock.replace('width="14" height="14"', 'width="13" height="13"') + '</span>' + esc(schemeLabel()) + ' · ' + securedCount() + ' of ' + total + ' operations protected</span>' +
+                '<button type="button" class="g4t-btn" style="height:28px" data-action="open-token">' + ICON.key + (state.token ? 'Change token' : 'Authorize') + '</button></div>' : '');
     }
 
     function filteredTags() {
@@ -762,7 +778,20 @@
             case 'toggle-auth-menu': state.authMenuOpen = !state.authMenuOpen; state.appearOpen = false; renderAuth(); renderAppear(); break;
             case 'copy-token': if (state.token) { copy(state.token, 'Token copied'); } state.authMenuOpen = false; renderAuth(); break;
             case 'logout': setToken(null, 'Logged out'); break;
-            case 'open-login': state.loginOpen = true; state.loginError = ''; state.authMenuOpen = false; renderAuth(); renderLogin(); break;
+            case 'open-login': openLogin('credentials'); break;
+            case 'open-token': openLogin('token'); break;
+            case 'login-tab': state.loginTab = value; state.loginError = ''; renderLogin(); break;
+            case 'paste-token':
+                if (navigator.clipboard && navigator.clipboard.readText) {
+                    navigator.clipboard.readText().then(function (text) {
+                        var input = els.login.querySelector('input[name="token"]');
+                        state.loginValues.token = String(text || '').trim();
+                        if (input) { input.value = state.loginValues.token; input.focus(); }
+                    }, function () { toast('Clipboard access was blocked — paste with ⌘V / Ctrl+V'); });
+                } else {
+                    toast('Paste with ⌘V / Ctrl+V');
+                }
+                break;
             case 'close-login': state.loginOpen = false; renderLogin(); break;
             case 'close-login-backdrop': if (e.target === el) { state.loginOpen = false; renderLogin(); } break;
             case 'goto': if (op) { gotoOp(op.id); } break;

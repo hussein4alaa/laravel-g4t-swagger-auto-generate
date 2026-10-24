@@ -245,6 +245,10 @@
     .g4t-login-dialog p { margin: 0; font-size: 13px; color: var(--text-2); }
     .g4t-login-dialog label { display: grid; gap: 5px; font-size: 13px; font-weight: 500; }
     .g4t-login-dialog input { height: 36px; padding-inline: 10px; border: 1px solid var(--border-strong); border-radius: 8px; background: var(--surface); color: var(--text); font-size: 14px; }
+    .g4t-login-dialog code { font-size: 12px; padding: 1px 4px; border-radius: 4px; background: var(--surface-2); }
+    .g4t-token-field { display: flex; gap: 8px; }
+    .g4t-token-field input { flex: 1; min-width: 0; font-size: 13px; }
+    .g4t-token-field .g4t-btn { height: 36px; }
     .g4t-login-error { padding: 9px 11px; border-radius: 8px; background: var(--err-bg); color: var(--err-fg) !important; white-space: pre-line; }
     .g4t-login-dialog .g4t-actions { justify-content: flex-end; margin-top: 4px; }
     .g4t-login-dialog .g4t-btn, .g4t-login-dialog .g4t-btn-primary { height: 36px; font-size: 13.5px; padding-inline: 14px; }

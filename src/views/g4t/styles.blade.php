@@ -188,6 +188,34 @@
     .g4t-hint { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; padding: 10px 12px; border-radius: 8px; background: var(--warn-bg); color: var(--warn-fg); font-size: 13px; }
     .g4t-hint span { flex: 1; min-width: 160px; }
     .g4t-hint button { height: 28px; padding-inline: 10px; border: 1px solid currentColor; border-radius: 7px; background: transparent; color: inherit; font-size: 12.5px; font-weight: 600; cursor: pointer; }
+    .g4t-try-section { display: grid; gap: 8px; min-width: 0; }
+    .g4t-try-label { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; font-size: 12px; font-weight: 600; color: var(--text-2); }
+    .g4t-try-label .g4t-mono { font-weight: 400; }
+    .g4t-try-note { margin-inline-start: auto; font-weight: 400; color: var(--text-3); }
+    .g4t-form { display: grid; gap: 1px; background: var(--border); border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
+    .g4t-form-row { display: grid; grid-template-columns: minmax(140px, 220px) minmax(0, 1fr); gap: 12px; align-items: start; padding: 8px 12px; background: var(--surface); }
+    .g4t-form-label { display: grid; gap: 1px; min-width: 0; padding-top: 6px; cursor: default; }
+    .g4t-form-row.is-nested .g4t-form-label { padding-inline-start: 12px; border-inline-start: 2px solid var(--border); }
+    .g4t-form-group { display: flex; align-items: baseline; gap: 8px; padding: 9px 12px 3px; background: var(--surface); }
+    .g4t-form-control { display: grid; gap: 4px; min-width: 0; }
+    .g4t-form-control input:not([type="file"]), .g4t-form-control select { width: 100%; min-width: 0; height: 34px; padding-inline: 10px; border: 1px solid var(--border); border-radius: 7px; background: var(--surface); color: var(--text); font: 13px/1 var(--mono); }
+    .g4t-form-control input:focus, .g4t-form-control select:focus { border-color: var(--accent); outline: none; box-shadow: 0 0 0 3px color-mix(in oklab, var(--accent) 18%, transparent); }
+    .g4t-form-control select { appearance: auto; }
+    .g4t-form-hint { font-size: 12px; color: var(--text-3); }
+    .g4t-file { display: flex; align-items: center; gap: 10px; min-width: 0; min-height: 34px; }
+    .g4t-file-btn { flex: none; position: relative; }
+    .g4t-file-btn:focus-within { outline: 2px solid var(--accent); outline-offset: 2px; }
+    .g4t-file-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 12.5px/1.3 var(--mono); color: var(--text); }
+    .g4t-file-name.is-empty { color: var(--text-3); font-family: inherit; }
+    .g4t-file-clear { flex: none; width: 26px; height: 26px; display: grid; place-items: center; border: 1px solid var(--border); border-radius: 6px; background: var(--surface); color: var(--text-2); font-size: 15px; line-height: 1; cursor: pointer; }
+    .g4t-file-clear:hover { color: var(--err-fg); border-color: color-mix(in oklab, var(--err-fg) 40%, var(--border)); }
+    .g4t-items { display: grid; gap: 6px; justify-items: start; }
+    .g4t-item { display: flex; align-items: center; gap: 8px; width: 100%; min-width: 0; }
+    .g4t-item > input, .g4t-item > select { flex: 1; }
+    .g4t-item > .g4t-file { flex: 1; }
+    .g4t-item-remove { flex: none; width: 34px; height: 34px; display: grid; place-items: center; border: 1px solid var(--border); border-radius: 7px; background: var(--surface); color: var(--text-2); font-size: 16px; line-height: 1; cursor: pointer; }
+    .g4t-item-remove:hover { color: var(--err-fg); border-color: color-mix(in oklab, var(--err-fg) 40%, var(--border)); }
+    .g4t-add-item { height: 30px; font-size: 12.5px; }
     .g4t-inputs { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 10px; }
     .g4t-input { display: grid; gap: 4px; min-width: 0; }
     .g4t-input > span { font: 12px/1.3 var(--mono); color: var(--text-2); word-break: break-all; }
@@ -271,7 +299,9 @@
         .g4t-brand-name { max-width: 28vw; }
         .g4t-divider { display: none; }
         .g4t-main { padding: 24px 16px 48px; }
-        .g4t-row { grid-template-columns: minmax(0, 1fr); gap: 4px; }
+        .g4t-row, .g4t-form-row { grid-template-columns: minmax(0, 1fr); gap: 4px; }
+        .g4t-form-label { padding-top: 0; }
+        .g4t-try-note { margin-inline-start: 0; width: 100%; }
         .g4t-info h1 { font-size: 23px; }
     }
 </style>

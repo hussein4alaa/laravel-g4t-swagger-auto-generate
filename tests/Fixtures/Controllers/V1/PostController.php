@@ -30,7 +30,7 @@ class PostController
 
     public function show(Post $post)
     {
-        return new PostResource($post);
+        return new PostResource($post->load('category'));
     }
 
     public function update(UpdatePostRequest $request, Post $post)

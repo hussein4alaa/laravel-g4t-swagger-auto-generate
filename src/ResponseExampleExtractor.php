@@ -7,6 +7,7 @@ use G4T\Swagger\Inference\ExampleGuesser;
 use G4T\Swagger\Inference\LiteralEvaluator;
 use G4T\Swagger\Inference\ModelInspector;
 use G4T\Swagger\Inference\PhpSource;
+use G4T\Swagger\Inference\ResponseSchema;
 use G4T\Swagger\Inference\Unresolved;
 use Illuminate\Http\Resources\Json\JsonResource;
 use Illuminate\Http\Resources\Json\ResourceCollection;
@@ -58,6 +59,11 @@ class ResponseExampleExtractor
 
     private ?string $currentAction = null;
 
+    private ?ResponseSchema $responseSchema = null;
+
+    /** @var array<string, string> resource class => model its example was built from */
+    private array $resourceModelsUsed = [];
+
     public function __construct()
     {
         $this->source = new PhpSource();
@@ -67,6 +73,62 @@ class ResponseExampleExtractor
     }
 
     public function extract(string $controllerAction): array|string|null
+    {
+        return ResponseSchema::strip($this->markedSuccessExample($controllerAction));
+    }
+
+    /**
+     * Success example plus its schema; resources and models in it become $ref to shared components
+     * (collected in {@see responseComponents()}).
+     *
+     * @return array{example: array<mixed>|string, schema: array<string, mixed>}|null
+     */
+    public function extractWithSchema(string $controllerAction): ?array
+    {
+        $example = $this->markedSuccessExample($controllerAction);
+        if ($example === null) {
+            return null;
+        }
+
+        return [
+            'example' => ResponseSchema::strip($example),
+            'schema' => $this->schemas()->schemaFor($example),
+        ];
+    }
+
+    /**
+     * Component schemas of every resource/model met by {@see extractWithSchema()} so far.
+     *
+     * @return array<string, array<string, mixed>>
+     */
+    public function responseComponents(): array
+    {
+        return $this->schemas()->components();
+    }
+
+    /**
+     * Names that response components must not use; call before the first {@see extractWithSchema()}.
+     *
+     * @param  list<string>  $names
+     */
+    public function reserveSchemaNames(array $names): void
+    {
+        $this->schemas()->reserve($names);
+    }
+
+    private function schemas(): ResponseSchema
+    {
+        return $this->responseSchema ??= new ResponseSchema(function (string $class, string $property): ?array {
+            $model = $this->models->isModel($class) ? $class : ($this->resourceModelsUsed[$class] ?? $this->modelForResource($class));
+
+            return $model !== null ? $this->models->enumValues($model, $property) : null;
+        });
+    }
+
+    /**
+     * @return array<mixed>|string|null example that still carries ResponseSchema markers
+     */
+    private function markedSuccessExample(string $controllerAction): array|string|null
     {
         $ctx = $this->actionContext($controllerAction);
         if ($ctx === null) {
@@ -102,7 +164,7 @@ class ResponseExampleExtractor
                 if ($status === null || $status < 400 || $call['data'] === null) {
                     continue;
                 }
-                $payload = $this->payloadExample($ctx, $call['data']['orig'], $call['data']['masked'], $call['offset']);
+                $payload = ResponseSchema::strip($this->payloadExample($ctx, $call['data']['orig'], $call['data']['masked'], $call['offset']));
                 if (is_array($payload) && $payload !== []) {
                     $out[$status][] = $payload;
                 }
@@ -325,15 +387,108 @@ class ResponseExampleExtractor
             if (preg_match('/^\$(\w+)$/', $return['masked'], $vm) && $vm[1] !== 'this') {
                 $rhs = $this->assignmentRhs($ctx, $vm[1], $return['offset']);
                 if ($rhs !== null && ! preg_match('/^\$\w+$/', $rhs['masked'])) {
-                    $example = $this->payloadExample($ctx, $rhs['orig'], $rhs['masked'], $rhs['offset']);
+                    $example = $this->payloadExample($ctx, $rhs['orig'], $rhs['masked'], $rhs['offset'])
+                        ?? $this->modelReturnExample($ctx, $rhs['masked']);
                     if ($example !== null) {
                         return $example;
                     }
                 }
             }
+            $example = $this->modelReturnExample($ctx, $return['masked']);
+            if ($example !== null) {
+                return $example;
+            }
         }
 
-        return null;
+        return $this->modelReturnTypeExample($ctx);
+    }
+
+    /**
+     * A model (or models) returned directly: {@code Post::findOrFail($id)}, {@code Post::query()->latest()->first()},
+     * {@code Post::all()}, {@code Post::paginate()}, {@code $post} / {@code $post->fresh()} for a model variable.
+     *
+     * @param  array<string, mixed>  $ctx
+     * @return array<mixed>|null
+     */
+    private function modelReturnExample(array $ctx, string $masked): ?array
+    {
+        $masked = trim($masked);
+        $model = null;
+        if (preg_match('/^\\\\?([A-Z]\w*(?:\\\\\w+)*)\s*::\s*\w+\s*\(/', $masked, $m)) {
+            $class = $this->resolveClass($ctx, $m[1]);
+            $model = $class !== null && $this->models->isModel($class) ? $class : null;
+        } elseif (preg_match('/^\$(\w+)\b/', $masked, $m) && $m[1] !== 'this') {
+            $model = $this->modelForVariable($ctx, $m[1]);
+        }
+        if ($model === null) {
+            return null;
+        }
+
+        $row = $this->models->modelExample($model);
+        if ($row === null) {
+            return null;
+        }
+
+        $terminal = preg_match_all('/(?:->|::)\s*(\w+)\s*\(/', $masked, $calls) ? strtolower((string) end($calls[1])) : '';
+
+        return match ($terminal) {
+            'get', 'all' => [$row],
+            'paginate' => $this->modelPaginatorExample($row, 'length'),
+            'simplepaginate' => $this->modelPaginatorExample($row, 'simple'),
+            'cursorpaginate' => $this->modelPaginatorExample($row, 'cursor'),
+            default => $row,
+        };
+    }
+
+    /**
+     * Last resort: the action declares an Eloquent model as its return type.
+     *
+     * @param  array<string, mixed>  $ctx
+     * @return array<mixed>|null
+     */
+    private function modelReturnTypeExample(array $ctx): ?array
+    {
+        try {
+            $type = (new ReflectionMethod($ctx['class'], $ctx['method']))->getReturnType();
+        } catch (Throwable) {
+            return null;
+        }
+        if (! $type instanceof ReflectionNamedType || $type->isBuiltin() || ! $this->models->isModel($type->getName())) {
+            return null;
+        }
+
+        return $this->models->modelExample($type->getName());
+    }
+
+    /**
+     * Laravel's JSON for a paginator of models (not wrapped in a resource).
+     *
+     * @param  array<mixed>  $row
+     * @return array<string, mixed>
+     */
+    private function modelPaginatorExample(array $row, string $type): array
+    {
+        $path = 'http://example.com/api';
+        if ($type === 'cursor') {
+            return ['data' => [$row], 'path' => $path, 'per_page' => 15, 'next_cursor' => null, 'next_page_url' => null, 'prev_cursor' => null, 'prev_page_url' => null];
+        }
+
+        $page = ['current_page' => 1, 'data' => [$row], 'first_page_url' => $path . '?page=1', 'from' => 1];
+        if ($type === 'simple') {
+            return $page + ['next_page_url' => null, 'path' => $path, 'per_page' => 15, 'prev_page_url' => null, 'to' => 1];
+        }
+
+        return $page + [
+            'last_page' => 1,
+            'last_page_url' => $path . '?page=1',
+            'links' => [['url' => null, 'label' => '&laquo; Previous', 'active' => false], ['url' => $path . '?page=1', 'label' => '1', 'active' => true], ['url' => null, 'label' => 'Next &raquo;', 'active' => false]],
+            'next_page_url' => null,
+            'path' => $path,
+            'per_page' => 15,
+            'prev_page_url' => null,
+            'to' => 1,
+            'total' => 1,
+        ];
     }
 
     /**
@@ -1102,6 +1257,10 @@ class ResponseExampleExtractor
             $this->debug('could not infer resource example for ' . $resourceClass, $e);
             $result = null;
         }
+        if (is_array($result) && $result !== [] && ! array_is_list($result)) {
+            // Lets ResponseSchema turn this object into a #/components/schemas reference.
+            $result[ResponseSchema::MARKER] = $resourceClass;
+        }
 
         return $this->resourceExamples[$key] = $result;
     }
@@ -1115,6 +1274,9 @@ class ResponseExampleExtractor
     private function buildResourceExample(string $resourceClass, string $toArrayClass, array $eagerLoadPaths, array $counts, string $relationPrefix, array $stack, ?string $modelHint): ?array
     {
         $model = $this->modelForResource($resourceClass) ?? ($this->models->isModel($modelHint) ? $modelHint : null);
+        if ($model !== null) {
+            $this->resourceModelsUsed[$resourceClass] ??= $model;
+        }
 
         $method = new ReflectionMethod($toArrayClass, 'toArray');
         $declaring = $method->getDeclaringClass()->getName();

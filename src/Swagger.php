@@ -76,6 +76,17 @@ class Swagger
             $allRoutes,
         ));
 
+        $responseSchemas = $inferExamples && $exampleExtractor !== null && config('swagger.response_schemas', true);
+        if ($responseSchemas) {
+            // Request body schemas own their names; response components must pick others.
+            $requestSchemaNames = [];
+            foreach ($allRoutes as $route) {
+                $name = ($schemaPrefixes[$this->getControllerPath($route->getAction('controller'))] ?? '').$this->schemaName(ltrim($route->getActionName(), '\\'));
+                array_push($requestSchemaNames, $name, $name.'Form');
+            }
+            $exampleExtractor->reserveSchemaNames($requestSchemaNames);
+        }
+
         $mappingPrefix = config('swagger.mapping_prefix') ?? [];
         $apiRoutes = [];
         $schemas = [];
@@ -146,7 +157,7 @@ class Swagger
                 'request_body' => $requestBody,
                 'need_token' => $this->checkIfTokenIsRequired($route),
                 'success_status' => $this->inferSuccessStatus($exampleExtractor, $action, $method),
-                'response_example' => $inferExamples && $exampleExtractor ? $this->safely(fn () => $exampleExtractor->extract($action), $action) : null,
+                ...$this->successResponse($exampleExtractor, $action, $inferExamples, $responseSchemas),
                 'error_response_examples' => $inferErrorExamples && $exampleExtractor ? ($this->safely(fn () => $exampleExtractor->extractErrorResponseExamples($action), $action) ?? []) : [],
             ];
         }
@@ -154,7 +165,7 @@ class Swagger
         $swaggerJson = new stdClass;
         $swaggerJson->tags = $this->getTags($controllers);
         $swaggerJson->paths = $this->formatPaths($apiRoutes);
-        $swaggerJson->schemas = $schemas;
+        $swaggerJson->schemas = $responseSchemas ? $schemas + $exampleExtractor->responseComponents() : $schemas;
         $swaggerJson->securitySchemes = config('swagger.security_schemes');
 
         return $swaggerJson;
@@ -239,6 +250,26 @@ class Swagger
         }
 
         return [$tags, $prefixes];
+    }
+
+    /**
+     * Inferred success example and, when response schemas are on, its schema ($ref to resource/model components).
+     *
+     * @return array{response_example: mixed, response_schema: array<string, mixed>|null}
+     */
+    private function successResponse(?ResponseExampleExtractor $extractor, string $action, bool $inferExamples, bool $withSchema): array
+    {
+        if (! $inferExamples || $extractor === null) {
+            return ['response_example' => null, 'response_schema' => null];
+        }
+
+        if ($withSchema) {
+            $inferred = $this->safely(fn () => $extractor->extractWithSchema($action), $action);
+
+            return ['response_example' => $inferred['example'] ?? null, 'response_schema' => $inferred['schema'] ?? null];
+        }
+
+        return ['response_example' => $this->safely(fn () => $extractor->extract($action), $action), 'response_schema' => null];
     }
 
     /**

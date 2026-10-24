@@ -56,6 +56,7 @@ abstract class TestCase extends Orchestra
                 $router->get('ping', [MiscController::class, 'ping']);
                 $router->get('stats', [MiscController::class, 'stats']);
                 $router->get('categories', [MiscController::class, 'categories']);
+                $router->get('posts-latest', [MiscController::class, 'latestPost']);
                 $router->get('records/{id?}', [MiscController::class, 'find']);
                 $router->post('conflict', [MiscController::class, 'conflict']);
                 $router->patch('settings', [MiscController::class, 'settings']);

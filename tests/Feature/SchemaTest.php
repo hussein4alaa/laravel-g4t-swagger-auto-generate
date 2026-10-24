@@ -184,4 +184,40 @@ class SchemaTest extends TestCase
         $this->assertArrayNotHasKey('requestBody', $this->operation('/api/v1/ping', 'get'));
         $this->assertArrayNotHasKey('requestBody', $this->operation('/api/v1/posts/{post}', 'delete'));
     }
+
+    public function test_global_headers_are_added_to_every_operation(): void
+    {
+        config(['swagger.global_headers' => [
+            ['name' => 'Accept-Language', 'description' => 'Response language', 'enum' => ['en', 'ar'], 'default' => 'en'],
+            'X-Request-Id',
+            'X-Tenant' => ['required' => true, 'example' => 'acme'],
+        ]]);
+
+        foreach ($this->spec()['paths'] as $path => $operations) {
+            foreach ($operations as $method => $operation) {
+                $headers = [];
+                foreach ($operation['parameters'] ?? [] as $parameter) {
+                    if ($parameter['in'] === 'header') {
+                        $headers[$parameter['name']] = $parameter;
+                    }
+                }
+                $this->assertSame(['Accept-Language', 'X-Request-Id', 'X-Tenant'], array_keys($headers), "{$method} {$path}");
+                $this->assertSame(['en', 'ar'], $headers['Accept-Language']['schema']['enum']);
+                $this->assertSame('en', $headers['Accept-Language']['schema']['default']);
+                $this->assertSame('Response language', $headers['Accept-Language']['description']);
+                $this->assertFalse($headers['X-Request-Id']['required']);
+                $this->assertTrue($headers['X-Tenant']['required']);
+                $this->assertSame('acme', $headers['X-Tenant']['schema']['example']);
+            }
+        }
+    }
+
+    public function test_no_global_headers_by_default(): void
+    {
+        foreach ($this->spec()['paths'] as $operations) {
+            foreach ($operations as $operation) {
+                $this->assertSame([], array_values(array_filter($operation['parameters'] ?? [], fn (array $p) => $p['in'] === 'header')));
+            }
+        }
+    }
 }

@@ -196,7 +196,8 @@ What the `g4t` UI gives you:
 - **Navigation:** sidebar grouped by controller with a filter (press <kbd>/</kbd>), version switcher, deep links (`#op-<operationId>`), mobile drawer.
 - **Try it out:** a typed form for parameters and multipart bodies (selects for enums and booleans, date pickers, file pickers, one row per array item) or a JSON editor; real requests with status, timing and highlighted responses.
 - **Code samples:** cURL, JavaScript (`fetch`), Dart (`Dio`) and PHP (Laravel `Http`) for every request.
-- **Environments:** named environments with their own base URL and `{{variables}}` usable in any parameter, field, header or JSON body; `{{token}}` is the current bearer token.
+- **Environments:** named environments with their own base URL, headers and `{{variables}}` usable in any parameter, field, header or JSON body; `{{token}}` is the current bearer token.
+- **Authorize:** one field per security scheme (bearer token, API key in a header or query, username and password for Basic).
 - **Memory:** inputs survive reloads (Reset per endpoint) and the last 10 requests per endpoint can be restored or re-run.
 - **Responses:** status-code tabs, named examples, an Example / Schema switch.
 - **Download** the OpenAPI document as JSON or YAML.
@@ -237,6 +238,33 @@ Point `auto_login` at your login endpoint and a **Log in** button appears in eve
 ],
 ```
 
+## Security schemes and headers
+
+Every scheme in `security_schemes` is documented and works in **Try it out**: the Authorize dialog shows one field per scheme and each request carries the credential where its scheme expects it.
+
+```php
+"security_schemes" => [
+    "bearerAuth" => ["type" => "http", "scheme" => "bearer"],                 // Authorization: Bearer …
+    "apiKey"     => ["type" => "apiKey", "in" => "header", "name" => "X-API-Key"], // X-API-Key: …
+    "queryKey"   => ["type" => "apiKey", "in" => "query", "name" => "api_key"],    // ?api_key=…
+    "basicAuth"  => ["type" => "http", "scheme" => "basic"],                  // Authorization: Basic …
+],
+```
+
+Protected routes accept any one of the schemes. (API keys in a cookie are documented, but a browser page cannot set them; use the code samples.)
+
+To document a header on **every** operation (a language, a tenant, a request id…), list it in `global_headers`. Each UI then shows an input for it:
+
+```php
+"global_headers" => [
+    ["name" => "Accept-Language", "description" => "Response language", "enum" => ["en", "ar"], "default" => "en"],
+    ["name" => "X-Tenant", "required" => true, "example" => "acme"],
+    "X-Request-Id",
+],
+```
+
+In the `g4t` UI, each environment can also send its own headers with every request (Environments → Headers), with `{{variables}}` in their values, e.g. `X-Tenant: {{tenant}}`.
+
 ## Configuration
 
 All keys live in `config/swagger.php`. The most useful ones:
@@ -251,7 +279,8 @@ All keys live in `config/swagger.php`. The most useful ones:
 | `show_prefix` | | `[]` | Only document routes with these prefixes |
 | `include_web_routes` | `SWAGGER_INCLUDE_WEB_ROUTES` | `false` | Also document web routes using your controllers |
 | `auth_middlewares` | | `auth`, `auth:api`, `auth:sanctum` | Extra middleware names that mark a route as protected |
-| `security_schemes` | | HTTP bearer | OpenAPI security schemes |
+| `security_schemes` | | HTTP bearer | OpenAPI security schemes (bearer, basic, API key in a header or query) |
+| `global_headers` | | `[]` | Header parameters added to every operation |
 | `infer_response_examples` | | `true` | Success examples from controllers |
 | `infer_error_response_examples` | | `true` | Error examples (`abort`, `json(…, 4xx)`, `422`) |
 | `response_schemas` | `SWAGGER_RESPONSE_SCHEMAS` | `true` | Response schemas and `$ref` components |

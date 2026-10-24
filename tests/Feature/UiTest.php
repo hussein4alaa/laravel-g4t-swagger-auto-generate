@@ -171,6 +171,15 @@ class UiTest extends TestCase
             ->assertSee('function toYaml(', false);
     }
 
+    public function test_g4t_ui_supports_api_key_basic_and_environment_headers(): void
+    {
+        $this->get('/swagger/documentation?ui=g4t')
+            ->assertSee('function applyAuth(', false)
+            ->assertSee("kind === 'apiKey' && scheme.in === 'query'", false)
+            ->assertSee("'Basic ' + base64Utf8(", false)
+            ->assertSee('data-action="env-add-header"', false);
+    }
+
     public function test_g4t_ui_receives_the_login_settings(): void
     {
         config(['swagger.auto_login.url' => '/api/v1/login']);

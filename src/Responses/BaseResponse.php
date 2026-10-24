@@ -424,6 +424,54 @@ abstract class BaseResponse
         return FieldRules::parse($rule)->isRequired();
     }
 
+    /**
+     * Adds swagger.global_headers (e.g. Accept-Language, X-Tenant) as header parameters,
+     * unless the operation already documents a header with that name.
+     *
+     * @param  list<array<string, mixed>>  $parameters
+     * @return list<array<string, mixed>>
+     */
+    private static function withGlobalHeaders(array $parameters): array
+    {
+        $taken = [];
+        foreach ($parameters as $parameter) {
+            if (($parameter['in'] ?? null) === 'header') {
+                $taken[strtolower((string) ($parameter['name'] ?? ''))] = true;
+            }
+        }
+
+        foreach ((array) config('swagger.global_headers', []) as $key => $header) {
+            if (is_string($header)) {
+                $header = ['name' => $header];
+            } elseif (is_array($header) && is_string($key) && ! isset($header['name'])) {
+                $header['name'] = $key;
+            }
+            $name = is_array($header) ? trim((string) ($header['name'] ?? '')) : '';
+            if ($name === '' || isset($taken[strtolower($name)])) {
+                continue;
+            }
+
+            $schema = ['type' => 'string'];
+            if (! empty($header['enum']) && is_array($header['enum'])) {
+                $schema['enum'] = array_values($header['enum']);
+            }
+            foreach (['default', 'example'] as $field) {
+                if (array_key_exists($field, $header)) {
+                    $schema[$field] = $header[$field];
+                }
+            }
+
+            $parameter = ['name' => $name, 'in' => 'header', 'required' => (bool) ($header['required'] ?? false)];
+            if (! empty($header['description'])) {
+                $parameter['description'] = (string) $header['description'];
+            }
+            $parameters[] = $parameter + ['schema' => $schema];
+            $taken[strtolower($name)] = true;
+        }
+
+        return $parameters;
+    }
+
     public static function index($route)
     {
         $response = [
@@ -431,7 +479,7 @@ abstract class BaseResponse
             'summary' => self::getSummary($route),
             'description' => (string) $route['description'],
             'operationId' => $route['operation_id'],
-            'parameters' => array_values($route['params']),
+            'parameters' => self::withGlobalHeaders(array_values($route['params'])),
             'responses' => self::getResponses(static::METHOD, $route),
         ];
 

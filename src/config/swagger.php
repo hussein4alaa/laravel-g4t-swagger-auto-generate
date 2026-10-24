@@ -365,6 +365,32 @@ return [
             "type" => "http",
             "scheme" => "bearer",
         ],
+        // A key sent in a header (use "in" => "query" for ?api_key=...):
+        // "apiKey" => [
+        //     "type" => "apiKey",
+        //     "name" => "X-API-Key",
+        //     "in" => "header",
+        // ],
+        // HTTP Basic (username + password):
+        // "basicAuth" => [
+        //     "type" => "http",
+        //     "scheme" => "basic",
+        // ],
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
+    | Global headers
+    |--------------------------------------------------------------------------
+    |
+    | Header parameters added to every documented operation, so every UI shows
+    | an input for them in "Try it out". Each entry: name, description,
+    | required (bool), example, default, enum. A plain string is just a name.
+    |
+    */
+    "global_headers" => [
+        // ["name" => "Accept-Language", "description" => "Response language", "enum" => ["en", "ar"], "default" => "en"],
+        // ["name" => "X-Tenant", "required" => true, "example" => "acme"],
     ],
 
     /*

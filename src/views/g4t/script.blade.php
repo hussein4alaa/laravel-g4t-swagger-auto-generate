@@ -52,7 +52,8 @@
         expanded: {}, trying: {}, respTab: {}, exTab: {}, respView: {}, ctype: {},
         bodies: {}, inputs: {}, forms: {}, files: {}, busy: {}, results: {},
         codeLang: store.get('codeLang', 'curl'), codeOpen: {}, historyOpen: {},
-        envs: [], envId: null, envsOpen: false, envEdit: null, downloadOpen: false
+        envs: [], envId: null, envsOpen: false, envEdit: null, downloadOpen: false,
+        creds: {}, credDraft: {}
     };
 
     var $ = function (id) { return document.getElementById(id); };
@@ -214,7 +215,7 @@
     function buildModel(spec) {
         var ops = [], byTag = {}, tagOrder = [], tagDesc = {};
         (spec.tags || []).forEach(function (t) { if (t && t.name) { tagOrder.push(t.name); tagDesc[t.name] = t.description || ''; } });
-        var globalSecurity = Array.isArray(spec.security) && spec.security.length > 0;
+        var globalSecurity = Array.isArray(spec.security) ? spec.security : [];
         var used = {};
         Object.keys(spec.paths || {}).forEach(function (path) {
             var item = spec.paths[path] || {};
@@ -229,9 +230,10 @@
                 var op = {
                     id: id, method: m.toUpperCase(), path: path, tag: (o.tags && o.tags[0]) || 'default',
                     summary: o.summary || '', desc: o.description || '', deprecated: !!o.deprecated,
-                    secured: Array.isArray(o.security) ? o.security.length > 0 : globalSecurity,
+                    security: Array.isArray(o.security) ? o.security : globalSecurity,
                     params: params, body: body && body.content ? body : null, responses: buildResponses(o.responses || {})
                 };
+                op.secured = op.security.some(function (requirement) { return requirement && Object.keys(requirement).length > 0; });
                 op.ctypes = op.body ? Object.keys(op.body.content) : [];
                 if (op.body && op.ctypes.length > 1) {
                     // Uploads read best as multipart; everything else as JSON.
@@ -304,36 +306,164 @@
     /* ---------- auth ---------- */
 
     function securedCount() { return state.model ? state.model.ops.filter(function (o) { return o.secured; }).length : 0; }
-    function schemeLabel() {
+
+    /**
+     * Security schemes of the document as [name, scheme] pairs. Without any, a bearer scheme is
+     * assumed so a pasted token still works.
+     */
+    function schemeEntries() {
         var schemes = state.model ? state.model.schemes : {};
-        var first = schemes[Object.keys(schemes)[0]];
-        if (!first) { return 'Auth'; }
-        if (first.type === 'http' && /bearer/i.test(first.scheme || '')) { return 'Bearer auth'; }
-        if (first.type === 'http') { return (first.scheme || 'HTTP') + ' auth'; }
-        if (first.type === 'apiKey') { return 'API key (' + (first.in || 'header') + ')'; }
-        return first.type || 'Auth';
+        var names = Object.keys(schemes || {});
+        if (!names.length) { return [['bearerAuth', { type: 'http', scheme: 'bearer' }]]; }
+        return names.map(function (name) { return [name, schemes[name] || {}]; });
     }
-    function schemeName() { return (S.autoLogin && S.autoLogin.scheme) || (state.model && Object.keys(state.model.schemes)[0]) || 'bearerAuth'; }
+    function schemeOf(name) { var found = schemeEntries().filter(function (e) { return e[0] === name; })[0]; return found ? found[1] : null; }
+    /** bearer | basic | apiKey | unsupported (cookie API keys and other HTTP schemes cannot be set from the page). */
+    function schemeKind(scheme) {
+        scheme = scheme || {};
+        if (scheme.type === 'http' && /^basic$/i.test(scheme.scheme || '')) { return 'basic'; }
+        if (scheme.type === 'http' && /^bearer$/i.test(scheme.scheme || '')) { return 'bearer'; }
+        if (scheme.type === 'oauth2' || scheme.type === 'openIdConnect') { return 'bearer'; }
+        if (scheme.type === 'apiKey' && scheme.in !== 'cookie' && scheme.name) { return 'apiKey'; }
+        return 'unsupported';
+    }
+    function schemeDescription(scheme) {
+        switch (schemeKind(scheme)) {
+            case 'bearer': return (scheme.type === 'http' ? 'Bearer token' : 'Access token') + ' · Authorization header';
+            case 'basic': return 'Username and password · Authorization: Basic';
+            case 'apiKey': return 'API key · ' + (scheme.in === 'query' ? 'query ?' + scheme.name + '=' : 'header ' + scheme.name);
+            default: return scheme.type === 'apiKey' ? 'API key in a cookie' : (scheme.type || 'unknown') + (scheme.scheme ? ' ' + scheme.scheme : '');
+        }
+    }
+    /** The bearer scheme that auto_login and the shared token fill. */
+    function primaryBearer() {
+        var preferred = S.autoLogin && S.autoLogin.scheme;
+        if (preferred && schemeKind(schemeOf(preferred)) === 'bearer') { return preferred; }
+        var first = schemeEntries().filter(function (e) { return schemeKind(e[1]) === 'bearer'; })[0];
+        return first ? first[0] : (preferred || 'bearerAuth');
+    }
+    /** Stored credential of a scheme: { value } or { username, password }; null when empty. */
+    function credOf(name) {
+        if (name === primaryBearer()) { return state.token ? { value: state.token } : null; }
+        var cred = state.creds[name];
+        if (!cred) { return null; }
+        if (cred.username || cred.password) { return cred; }
+        return cred.value ? cred : null;
+    }
+    function setCred(name, cred) {
+        if (name === primaryBearer()) { state.token = cred && cred.value ? cred.value : null; writeToken(state.token); return; }
+        if (cred) { state.creds[name] = cred; } else { delete state.creds[name]; }
+        saveJson('creds', state.creds);
+    }
+    function hasAnyCred() { return schemeEntries().some(function (e) { return credOf(e[0]); }); }
+    /** First security requirement of the operation whose schemes all have credentials ({} = optional). */
+    function satisfiedRequirement(op) {
+        var list = op.security || [];
+        for (var i = 0; i < list.length; i++) {
+            var names = Object.keys(list[i] || {});
+            if (names.every(function (n) { return credOf(n) && schemeKind(schemeOf(n)) !== 'unsupported'; })) { return list[i] || {}; }
+        }
+        return null;
+    }
+    function opAuthReady(op) { return !op.secured || satisfiedRequirement(op) !== null; }
+    function requirementLabel(op) {
+        var first = (op.security || []).filter(function (r) { return r && Object.keys(r).length; })[0] || {};
+        var labels = Object.keys(first).map(function (n) {
+            var scheme = schemeOf(n) || {}, k = schemeKind(scheme);
+            if (k === 'apiKey') { return 'an API key (' + n + ')'; }
+            if (k === 'basic') { return 'a username and password'; }
+            if (k === 'unsupported') { return scheme.type === 'apiKey' ? 'a "' + scheme.name + '" cookie the page cannot set' : 'a ' + (scheme.scheme || scheme.type || n) + ' credential the page cannot send'; }
+            return 'a token';
+        });
+        return labels.join(' and ') || 'a token';
+    }
+    function base64Utf8(text) { return btoa(unescape(encodeURIComponent(text))); }
+    /** Puts the operation's credentials where each scheme expects them (header or query). */
+    function applyAuth(op, headers, query) {
+        if (!op.secured) { return; }
+        var requirement = satisfiedRequirement(op);
+        if (!requirement) { return; }
+        Object.keys(requirement).forEach(function (name) {
+            var scheme = schemeOf(name) || {}, cred = credOf(name), kind = schemeKind(scheme);
+            if (kind === 'bearer') { headers['Authorization'] = 'Bearer ' + subst(cred.value); }
+            else if (kind === 'basic') { headers['Authorization'] = 'Basic ' + base64Utf8(subst(cred.username || '') + ':' + subst(cred.password || '')); }
+            else if (kind === 'apiKey' && scheme.in === 'query') { query.push(encodeURIComponent(scheme.name) + '=' + encodeURIComponent(subst(cred.value))); }
+            else if (kind === 'apiKey') { headers[scheme.name] = subst(cred.value); }
+        });
+    }
+    /** Commits the Authorize form; false when nothing at all is set afterwards. */
+    function saveCredDraft() {
+        Object.keys(state.credDraft || {}).forEach(function (name) {
+            var draft = state.credDraft[name], kind = schemeKind(schemeOf(name)), current = credOf(name) || {};
+            if (kind === 'basic') {
+                var username = draft.username != null ? draft.username : (current.username || '');
+                var password = draft.password != null ? draft.password : (current.password || '');
+                setCred(name, username || password ? { username: username, password: password } : null);
+            } else if (kind === 'bearer' || kind === 'apiKey') {
+                var value = String(draft.value != null ? draft.value : (current.value || '')).trim();
+                if (kind === 'bearer') { value = value.replace(/^Bearer\s+/i, ''); }
+                setCred(name, value ? { value: value } : null);
+            }
+        });
+        return hasAnyCred();
+    }
+    function schemeLabel() {
+        var labels = schemeEntries().map(function (e) {
+            var kind = schemeKind(e[1]);
+            return kind === 'bearer' ? 'Bearer auth' : kind === 'basic' ? 'Basic auth' : kind === 'apiKey' ? 'API key (' + e[1].name + ')' : e[0];
+        });
+        return labels.filter(function (l, i) { return labels.indexOf(l) === i; }).join(' / ');
+    }
+    function onlyBearer() { return schemeEntries().every(function (e) { return schemeKind(e[1]) === 'bearer'; }); }
+    function previewSecret(text) { text = String(text || ''); return text.length > 20 ? text.slice(0, 10) + '…' + text.slice(-6) : text; }
 
     function renderAuth() {
-        if (!state.token) {
-            els.auth.innerHTML = '<button type="button" id="g4t-login-toggle" class="g4t-auth-btn g4t-login-toggle" data-action="open-login" aria-label="Log in"><span class="g4t-dot" aria-hidden="true"></span><span class="g4t-auth-text g4t-auth-text-out"><span style="color:var(--text-2)">Not signed in</span><span class="g4t-auth-sep" aria-hidden="true"></span></span><span class="g4t-auth-cta">' + ICON.lock.replace('width="14" height="14"', 'width="13" height="13"') + 'Log in</span></button>';
+        if (!hasAnyCred()) {
+            els.auth.innerHTML = '<button type="button" id="g4t-login-toggle" class="g4t-auth-btn g4t-login-toggle" data-action="' + (S.autoLogin ? 'open-login' : 'open-token') + '" aria-label="Log in"><span class="g4t-dot" aria-hidden="true"></span><span class="g4t-auth-text g4t-auth-text-out"><span style="color:var(--text-2)">Not signed in</span><span class="g4t-auth-sep" aria-hidden="true"></span></span><span class="g4t-auth-cta">' + ICON.lock.replace('width="14" height="14"', 'width="13" height="13"') + (S.autoLogin ? 'Log in' : 'Authorize') + '</span></button>';
             return;
         }
-        var t = state.token, preview = t.length > 20 ? t.slice(0, 10) + '…' + t.slice(-6) : t;
+        var lines = schemeEntries().map(function (e) {
+            var cred = credOf(e[0]);
+            if (!cred) { return ''; }
+            var shown = schemeKind(e[1]) === 'basic' ? (cred.username || '') + ':••••••' : previewSecret(cred.value);
+            return '<div class="g4t-menu-hint" style="font-size:12px">' + esc(e[0]) + ' · ' + esc(schemeDescription(e[1])) + '</div><div class="g4t-token-box">' + esc(shown) + '</div>';
+        }).join('');
         els.auth.innerHTML = '<button type="button" id="g4t-login-toggle" class="g4t-auth-btn g4t-login-toggle is-authenticated" data-action="toggle-auth-menu" aria-haspopup="menu" aria-expanded="' + state.authMenuOpen + '"><span class="g4t-dot" aria-hidden="true"></span><span class="g4t-auth-text">Authenticated</span>' + ICON.chevSm + '</button>' +
-            (state.authMenuOpen ? '<div class="g4t-menu" role="menu"><div style="display:grid;gap:4px"><div class="g4t-menu-hint" style="font-size:12px">Bearer token · ' + esc(schemeName()) + '</div><div class="g4t-token-box">' + esc(preview) + '</div><div style="font-size:12px;color:var(--text-2)">Sent with ' + securedCount() + ' protected operations</div></div><div style="display:grid;grid-template-columns:1fr 1fr;gap:8px"><button type="button" role="menuitem" class="g4t-btn" data-action="copy-token">' + ICON.copy + 'Copy token</button><button type="button" role="menuitem" class="g4t-btn" data-action="open-token">' + ICON.key + 'Change token</button><button type="button" role="menuitem" class="g4t-btn g4t-btn-danger" style="grid-column:1 / -1" data-action="logout">Log out</button></div></div>' : '');
+            (state.authMenuOpen ? '<div class="g4t-menu" role="menu"><div style="display:grid;gap:4px">' + lines + '<div style="font-size:12px;color:var(--text-2)">Sent with ' + securedCount() + ' protected operations</div></div>' +
+                '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">' + (state.token ? '<button type="button" role="menuitem" class="g4t-btn" data-action="copy-token">' + ICON.copy + 'Copy token</button>' : '') +
+                '<button type="button" role="menuitem" class="g4t-btn" data-action="open-token"' + (state.token ? '' : ' style="grid-column:1 / -1"') + '>' + ICON.key + (onlyBearer() ? 'Change token' : 'Change credentials') + '</button>' +
+                '<button type="button" role="menuitem" class="g4t-btn g4t-btn-danger" style="grid-column:1 / -1" data-action="logout">Log out</button></div></div>' : '');
+    }
+
+    /** One block per security scheme in the Authorize tab. */
+    function credFieldsHtml() {
+        return schemeEntries().map(function (entry, index) {
+            var name = entry[0], scheme = entry[1], kind = schemeKind(scheme), current = credOf(name) || {}, draft = state.credDraft[name] || {};
+            var val = function (field) { return draft[field] != null ? draft[field] : (current[field] || ''); };
+            var attrs = function (field) { return ' data-bind="cred" data-scheme="' + esc(name) + '" data-field="' + field + '"' + (index === 0 && field !== 'password' ? ' data-autofocus' : ''); };
+            var body;
+            if (kind === 'bearer') {
+                body = '<div class="g4t-token-field"><input name="token" type="text" class="g4t-mono" autocomplete="off" spellcheck="false" placeholder="1|aBcDeF…" value="' + esc(val('value')) + '"' + attrs('value') + ' aria-label="' + esc(name) + ' token">' +
+                    '<button type="button" class="g4t-btn" data-action="paste-token" data-scheme="' + esc(name) + '" title="Paste from clipboard">' + ICON.copy + 'Paste</button></div>';
+            } else if (kind === 'basic') {
+                body = '<div class="g4t-var-row" style="grid-template-columns:1fr 1fr"><input type="text" autocomplete="username" placeholder="username" value="' + esc(val('username')) + '"' + attrs('username') + ' aria-label="' + esc(name) + ' username">' +
+                    '<input type="password" autocomplete="current-password" placeholder="password" value="' + esc(val('password')) + '"' + attrs('password') + ' aria-label="' + esc(name) + ' password"></div>';
+            } else if (kind === 'apiKey') {
+                body = '<input type="text" class="g4t-mono" autocomplete="off" spellcheck="false" placeholder="key" value="' + esc(val('value')) + '"' + attrs('value') + ' aria-label="' + esc(name) + ' key">';
+            } else {
+                body = '<p class="g4t-muted" style="margin:0;font-size:12.5px">The browser cannot set this one from the page. Use the code samples instead.</p>';
+            }
+            return '<div class="g4t-cred"><div class="g4t-cred-head"><span class="g4t-mono">' + esc(name) + '</span><span class="g4t-muted">' + esc(schemeDescription(scheme)) + '</span></div>' + body + '</div>';
+        }).join('');
     }
 
     function renderLogin() {
         if (!state.loginOpen) { els.login.innerHTML = ''; return; }
         var auto = S.autoLogin, tokenTab = !auto || state.loginTab === 'token', fieldsHtml = '', intro, submitLabel;
         if (tokenTab) {
-            var current = state.loginValues.token != null ? state.loginValues.token : (state.token || '');
-            fieldsHtml = '<label>Bearer token<div class="g4t-token-field"><input name="token" data-bind="login" type="text" class="g4t-mono" autocomplete="off" spellcheck="false" required placeholder="1|aBcDeF…" value="' + esc(current) + '" data-autofocus>' +
-                '<button type="button" class="g4t-btn" data-action="paste-token" title="Paste from clipboard">' + ICON.copy + 'Paste</button></div></label>';
-            intro = 'Sent as <code class="g4t-mono">Authorization: Bearer &lt;token&gt;</code> with protected requests and stored in this browser. A leading “Bearer ” is removed.';
-            submitLabel = state.token ? 'Save token' : 'Authorize';
+            fieldsHtml = credFieldsHtml();
+            intro = 'Stored in this browser and sent with protected requests, the way each scheme expects. A leading “Bearer ” is removed from tokens; leave a field empty to remove it.';
+            submitLabel = hasAnyCred() ? 'Save' : 'Authorize';
         } else {
             Object.keys(auto.fields || {}).forEach(function (name, i) {
                 var isPassword = /password/i.test(name), isEmail = /email/i.test(name);
@@ -345,7 +475,7 @@
         }
         var tabs = auto ? '<div class="g4t-seg" role="tablist" aria-label="Sign-in method" style="grid-template-columns:repeat(2,1fr)">' +
             '<button type="button" role="tab" aria-selected="' + !tokenTab + '" data-action="login-tab" data-value="credentials">Log in</button>' +
-            '<button type="button" role="tab" aria-selected="' + tokenTab + '" data-action="login-tab" data-value="token">Bearer token</button></div>' : '';
+            '<button type="button" role="tab" aria-selected="' + tokenTab + '" data-action="login-tab" data-value="token">' + (onlyBearer() ? 'Bearer token' : 'Keys & tokens') + '</button></div>' : '';
         els.login.innerHTML = '<div class="g4t-modal" data-action="close-login-backdrop"><div id="g4t-login-dialog" class="g4t-login-dialog" role="dialog" aria-modal="true" aria-labelledby="g4t-login-title"><form id="g4t-login-form" novalidate>' +
             '<div style="display:grid;gap:4px"><h2 id="g4t-login-title">' + (tokenTab ? 'Authorize' : 'Log in') + '</h2><p>' + intro + '</p></div>' + tabs + fieldsHtml +
             (state.loginError ? '<p id="g4t-login-error" class="g4t-login-error" role="alert">' + esc(state.loginError) + '</p>' : '') +
@@ -354,7 +484,7 @@
         if (focus && !state.loggingIn) { setTimeout(function () { focus.focus(); }, 20); }
     }
     function openLogin(tab) {
-        state.loginOpen = true; state.loginError = ''; state.authMenuOpen = false; state.loginValues = {};
+        state.loginOpen = true; state.loginError = ''; state.authMenuOpen = false; state.loginValues = {}; state.credDraft = {};
         state.loginTab = S.autoLogin ? (tab || 'credentials') : 'token';
         renderAuth(); renderLogin();
     }
@@ -383,11 +513,10 @@
     }
     function submitLogin() {
         if (!S.autoLogin || state.loginTab === 'token') {
-            var raw = state.loginValues.token != null ? state.loginValues.token : (state.token || '');
-            var pasted = String(raw).trim().replace(/^Bearer\s+/i, '');
-            if (!pasted) { state.loginError = 'Enter a token first.'; renderLogin(); return; }
-            state.loginOpen = false; state.loginValues = {}; renderLogin();
-            setToken(pasted, 'Token saved · sent with protected requests');
+            if (!saveCredDraft()) { state.loginError = 'Enter a token or key first.'; renderLogin(); return; }
+            state.loginOpen = false; state.loginValues = {}; state.credDraft = {}; renderLogin();
+            state.authMenuOpen = false; renderAuth(); renderInfo(); renderOps();
+            toast('Authorization saved · sent with protected requests');
             return;
         }
         var body = {};
@@ -415,9 +544,10 @@
     function loadEnvs() {
         var envs = loadJson('envs', null);
         state.envs = Array.isArray(envs) && envs.length ? envs.filter(function (e) { return e && e.id; }).map(function (e) {
-            return { id: String(e.id), name: String(e.name || 'Environment'), baseUrl: String(e.baseUrl || ''), vars: Array.isArray(e.vars) ? e.vars.map(function (v) { return { key: String(v.key || ''), value: String(v.value == null ? '' : v.value) }; }) : [] };
+            var pairs = function (list) { return Array.isArray(list) ? list.map(function (v) { return { key: String(v.key || ''), value: String(v.value == null ? '' : v.value) }; }) : []; };
+            return { id: String(e.id), name: String(e.name || 'Environment'), baseUrl: String(e.baseUrl || ''), vars: pairs(e.vars), headers: pairs(e.headers) };
         }) : [];
-        if (!state.envs.length) { state.envs = [{ id: 'default', name: 'Default', baseUrl: '', vars: [] }]; }
+        if (!state.envs.length) { state.envs = [{ id: 'default', name: 'Default', baseUrl: '', vars: [], headers: [] }]; }
         var saved = store.get('envId', null);
         state.envId = state.envs.some(function (e) { return e.id === saved; }) ? saved : state.envs[0].id;
     }
@@ -448,6 +578,13 @@
             '<datalist id="g4t-env-servers">' + servers.map(function (sv) { return '<option value="' + esc(sv.url) + '">' + esc(sv.label) + '</option>'; }).join('') + '</datalist>' +
             '<div style="display:grid;gap:6px"><span style="font-size:13px;font-weight:500">Variables</span>' + (rows || '<span class="g4t-muted" style="font-size:13px">No variables yet.</span>') +
             '<button type="button" class="g4t-btn g4t-add-item" data-action="env-add-var" style="justify-self:start">+ Add variable</button></div>' +
+            '<div style="display:grid;gap:6px"><span style="font-size:13px;font-weight:500">Headers <span class="g4t-muted" style="font-weight:400">sent with every request (values may use {{variables}})</span></span>' +
+            ((env.headers || []).map(function (h, i) {
+                return '<div class="g4t-var-row"><input class="g4t-mono" data-bind="env-hkey" data-index="' + i + '" value="' + esc(h.key) + '" placeholder="X-Tenant" aria-label="Header name" spellcheck="false" autocomplete="off">' +
+                    '<input class="g4t-mono" data-bind="env-hvalue" data-index="' + i + '" value="' + esc(h.value) + '" placeholder="value" aria-label="Header value" spellcheck="false" autocomplete="off">' +
+                    '<button type="button" class="g4t-item-remove" data-action="env-remove-header" data-index="' + i + '" aria-label="Remove header ' + esc(h.key) + '">−</button></div>';
+            }).join('') || '<span class="g4t-muted" style="font-size:13px">No headers yet.</span>') +
+            '<button type="button" class="g4t-btn g4t-add-item" data-action="env-add-header" style="justify-self:start">+ Add header</button></div>' +
             '<div class="g4t-actions" style="justify-content:space-between"><span class="g4t-actions">' +
             (state.envs.length > 1 ? '<button type="button" class="g4t-btn g4t-btn-danger" data-action="env-delete">Delete</button>' : '') +
             '<button type="button" class="g4t-btn" data-action="env-duplicate">Duplicate</button></span><span class="g4t-actions">' +
@@ -537,7 +674,7 @@
             (model ? '<div class="g4t-info-meta">' + (serverSelect ? '<span><span class="g4t-muted">Server</span>' + serverSelect + '</span>' : '') +
                 (activeEnv().baseUrl ? '<span class="g4t-muted">→ ' + esc(serverUrl()) + ' (' + esc(activeEnv().name) + ')</span>' : '') +
                 '<span><span class="g4t-muted" style="display:inline-flex">' + ICON.lock.replace('width="14" height="14"', 'width="13" height="13"') + '</span>' + esc(schemeLabel()) + ' · ' + securedCount() + ' of ' + total + ' operations protected</span>' +
-                '<button type="button" class="g4t-btn" style="height:28px" data-action="open-token">' + ICON.key + (state.token ? 'Change token' : 'Authorize') + '</button></div>' : '');
+                '<button type="button" class="g4t-btn" style="height:28px" data-action="open-token">' + ICON.key + (hasAnyCred() ? (onlyBearer() ? 'Change token' : 'Change credentials') : 'Authorize') + '</button></div>' : '');
     }
 
     function filteredTags() {
@@ -688,6 +825,8 @@
     function buildRequest(op) {
         var missingVars = [], missing = [];
         var path = op.path, query = [], headers = { 'Accept': 'application/json', 'X-Requested-With': 'XMLHttpRequest' };
+        // Environment headers first, so documented header parameters and credentials can override them.
+        (activeEnv().headers || []).forEach(function (h) { if (h.key) { headers[h.key] = subst(h.value, missingVars); } });
         op.params.forEach(function (p) {
             var value = subst(paramValue(op, p), missingVars);
             if (p.in === 'path') {
@@ -701,7 +840,7 @@
             }
         });
         if (missing.length) { return { error: 'Fill in the path parameter' + (missing.length > 1 ? 's ' : ' ') + missing.join(', ') }; }
-        if (op.secured && state.token) { headers['Authorization'] = 'Bearer ' + state.token; }
+        applyAuth(op, headers, query);
         var req = { method: op.method, url: serverUrl() + path + (query.length ? '?' + query.join('&') : ''), headers: headers, body: undefined, parts: null, json: undefined, missingVars: missingVars };
         if (op.body && ['GET', 'HEAD'].indexOf(op.method) === -1) {
             if (isMultipart(op)) {
@@ -824,7 +963,7 @@
         var bearer = /^Bearer\s+(.+)$/.exec(req.headers['Authorization'] || '');
         if (bearer) { out.push('    ->withToken(' + literal(bearer[1], 'php') + ')'); }
         var extra = {};
-        shownHeaders(req).forEach(function (h) { if (['Accept', 'Authorization', 'Content-Type'].indexOf(h) === -1) { extra[h] = req.headers[h]; } });
+        shownHeaders(req).forEach(function (h) { if (['Accept', 'Content-Type'].indexOf(h) === -1 && !(h === 'Authorization' && bearer)) { extra[h] = req.headers[h]; } });
         if (Object.keys(extra).length) { out.push('    ->withHeaders(' + literal(extra, 'php', '    ') + ')'); }
         var method = req.method.toLowerCase(), args = '';
         if (req.parts) {
@@ -862,7 +1001,7 @@
             .then(function (response) {
                 return response.text().then(function (text) {
                     var json; try { json = text ? JSON.parse(text) : null; } catch (e) { json = undefined; }
-                    state.results[op.id] = { code: response.status, text: statusText(response.status, response.statusText), ms: Math.round(performance.now() - started), json: json, raw: text, ctype: (response.headers.get('content-type') || '').split(';')[0], unauth: response.status === 401 && !state.token };
+                    state.results[op.id] = { code: response.status, text: statusText(response.status, response.statusText), ms: Math.round(performance.now() - started), json: json, raw: text, ctype: (response.headers.get('content-type') || '').split(';')[0], unauth: response.status === 401 && !opAuthReady(op) };
                 });
             })
             .catch(function (error) {
@@ -1037,8 +1176,8 @@
             '<span class="g4t-try-tools"><button type="button" class="g4t-btn" data-action="toggle-history" data-op="' + esc(op.id) + '" aria-pressed="' + histOpen + '">' + ICON.clock + 'History' + (historyCount ? ' <span class="g4t-count">' + historyCount + '</span>' : '') + '</button>' +
             '<button type="button" class="g4t-btn" data-action="reset-inputs" data-op="' + esc(op.id) + '" title="Forget the values saved for this endpoint">' + ICON.reset + 'Reset</button></span></div>';
         if (histOpen) { html += historyHtml(op); }
-        if (op.secured && !state.token) {
-            html += '<div class="g4t-hint">' + ICON.lock + '<span>Needs a token. Requests will return 401 until you log in.</span><button type="button" data-action="open-login">Log in</button></div>';
+        if (op.secured && !opAuthReady(op)) {
+            html += '<div class="g4t-hint">' + ICON.lock + '<span>Needs ' + esc(requirementLabel(op)) + '. Requests will return 401 until you add it.</span><button type="button" data-action="' + (S.autoLogin ? 'open-login' : 'open-token') + '">' + (S.autoLogin ? 'Log in' : 'Authorize') + '</button></div>';
         }
         var inputs = op.params.filter(function (p) { return ['path', 'query', 'header'].indexOf(p.in) !== -1; });
         if (inputs.length) {
@@ -1116,7 +1255,7 @@
         var html = '<article id="op-' + esc(op.id) + '" class="g4t-op' + (open ? ' is-open' : '') + (op.deprecated ? ' g4t-deprecated' : '') + '">' +
             '<button type="button" class="g4t-op-head" data-action="toggle-op" data-op="' + esc(op.id) + '" aria-expanded="' + open + '">' +
             '<span class="g4t-method m-' + esc(m) + '">' + esc(op.method) + '</span><span class="g4t-path">' + esc(op.path) + '</span><span class="g4t-op-summary">' + esc(op.summary) + '</span>' +
-            '<span class="g4t-op-tail">' + (op.secured ? '<span class="g4t-lock' + (state.token ? ' is-ready' : '') + '" title="' + (state.token ? 'Token will be sent' : 'Requires a token') + '">' + ICON.lock + '</span>' : '') + ICON.chev + '</span></button>';
+            '<span class="g4t-op-tail">' + (op.secured ? '<span class="g4t-lock' + (opAuthReady(op) ? ' is-ready' : '') + '" title="' + esc(opAuthReady(op) ? 'Credentials will be sent' : 'Requires ' + requirementLabel(op)) + '">' + ICON.lock + '</span>' : '') + ICON.chev + '</span></button>';
         if (!open) { return html + '</article>'; }
 
         html += '<div class="g4t-op-body"><div class="g4t-op-intro"><p class="g4t-op-desc">' + esc(op.desc || op.summary || 'No description.') + '</p><div style="display:flex;gap:8px;flex:none">' +
@@ -1250,16 +1389,17 @@
             case 'theme': state.theme = value; store.set('theme', value); applyRoot(); renderAppear(); break;
             case 'toggle-auth-menu': state.authMenuOpen = !state.authMenuOpen; state.appearOpen = false; renderAuth(); renderAppear(); break;
             case 'copy-token': if (state.token) { copy(state.token, 'Token copied'); } state.authMenuOpen = false; renderAuth(); break;
-            case 'logout': setToken(null, 'Logged out'); break;
+            case 'logout': state.creds = {}; saveJson('creds', state.creds); setToken(null, 'Logged out · credentials cleared'); break;
             case 'open-login': openLogin('credentials'); break;
             case 'open-token': openLogin('token'); break;
             case 'login-tab': state.loginTab = value; state.loginError = ''; renderLogin(); break;
             case 'paste-token':
                 if (navigator.clipboard && navigator.clipboard.readText) {
+                    var pasteScheme = el.getAttribute('data-scheme') || primaryBearer();
                     navigator.clipboard.readText().then(function (text) {
-                        var input = els.login.querySelector('input[name="token"]');
-                        state.loginValues.token = String(text || '').trim();
-                        if (input) { input.value = state.loginValues.token; input.focus(); }
+                        var input = els.login.querySelector('input[data-bind="cred"][data-scheme="' + CSS.escape(pasteScheme) + '"]');
+                        (state.credDraft[pasteScheme] = state.credDraft[pasteScheme] || {}).value = String(text || '').trim();
+                        if (input) { input.value = state.credDraft[pasteScheme].value; input.focus(); }
                     }, function () { toast('Clipboard access was blocked — paste with ⌘V / Ctrl+V'); });
                 } else {
                     toast('Paste with ⌘V / Ctrl+V');
@@ -1339,7 +1479,8 @@
             case 'env-new':
             case 'env-duplicate':
                 var base = action === 'env-duplicate' ? editedEnv() : null;
-                var created = { id: newId(), name: base ? base.name + ' copy' : 'Environment ' + (state.envs.length + 1), baseUrl: base ? base.baseUrl : '', vars: base ? base.vars.map(function (v) { return { key: v.key, value: v.value }; }) : [] };
+                var copyPairs = function (list) { return (list || []).map(function (v) { return { key: v.key, value: v.value }; }); };
+                var created = { id: newId(), name: base ? base.name + ' copy' : 'Environment ' + (state.envs.length + 1), baseUrl: base ? base.baseUrl : '', vars: base ? copyPairs(base.vars) : [], headers: base ? copyPairs(base.headers) : [] };
                 state.envs.push(created); state.envEdit = created.id; saveEnvs(); renderEnvs();
                 setTimeout(function () { var f = els.envs.querySelector('[data-bind="env-name"]'); if (f) { f.focus(); f.select(); } }, 20);
                 break;
@@ -1357,6 +1498,12 @@
                 if (keyInputs.length) { keyInputs[keyInputs.length - 1].focus(); }
                 break;
             case 'env-remove-var': editedEnv().vars.splice(Number(el.getAttribute('data-index')), 1); saveEnvs(); renderEnvs(); renderEnvButton(); break;
+            case 'env-add-header':
+                (editedEnv().headers = editedEnv().headers || []).push({ key: '', value: '' }); saveEnvs(); renderEnvs();
+                var headerInputs = els.envs.querySelectorAll('[data-bind="env-hkey"]');
+                if (headerInputs.length) { headerInputs[headerInputs.length - 1].focus(); }
+                break;
+            case 'env-remove-header': editedEnv().headers.splice(Number(el.getAttribute('data-index')), 1); saveEnvs(); renderEnvs(); break;
             case 'show-all': state.version = 'all'; store.set('version', 'all'); renderVersions(); load(); break;
             case 'clear-filter': state.filter = ''; els.filter.value = ''; renderNav(); renderOps(); break;
         }
@@ -1378,6 +1525,7 @@
         else if (bind === 'form-item') { setListItem(id, name, Number(el.getAttribute('data-index')), el.value); }
         else if (bind === 'body') { state.bodies[id] = el.value; }
         else if (bind === 'login') { state.loginValues[el.name] = el.value; }
+        else if (bind === 'cred') { var credScheme = el.getAttribute('data-scheme'); (state.credDraft[credScheme] = state.credDraft[credScheme] || {})[el.getAttribute('data-field')] = el.value; }
         else if (bind && bind.indexOf('env-') === 0) { editEnvField(el, bind); }
         if (['param', 'form', 'form-item', 'body'].indexOf(bind) !== -1) { persistInputs(); }
     });
@@ -1387,6 +1535,8 @@
         else if (bind === 'env-url') { env.baseUrl = el.value.trim(); }
         else if (bind === 'env-key') { env.vars[index].key = el.value.trim(); }
         else if (bind === 'env-value') { env.vars[index].value = el.value; }
+        else if (bind === 'env-hkey') { env.headers[index].key = el.value.trim(); }
+        else if (bind === 'env-hvalue') { env.headers[index].value = el.value; }
         saveEnvs(); renderEnvButton();
     }
 
@@ -1448,6 +1598,7 @@
     });
 
     loadEnvs();
+    state.creds = loadJson('creds', {}) || {};
     restoreInputs();
     applyRoot();
     renderEnvButton();

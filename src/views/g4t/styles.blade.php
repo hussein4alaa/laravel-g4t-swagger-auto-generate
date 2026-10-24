@@ -313,6 +313,10 @@
     .g4t-token-field { display: flex; gap: 8px; }
     .g4t-token-field input { flex: 1; min-width: 0; font-size: 13px; }
     .g4t-token-field .g4t-btn { height: 36px; }
+    .g4t-cred { display: grid; gap: 6px; padding: 10px 12px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface-2); }
+    .g4t-cred-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 8px; font-size: 13px; font-weight: 600; }
+    .g4t-cred-head .g4t-muted { font-size: 12px; font-weight: 400; }
+    .g4t-cred input { height: 36px; padding-inline: 10px; border: 1px solid var(--border-strong); border-radius: 8px; background: var(--surface); color: var(--text); font-size: 13.5px; min-width: 0; width: 100%; }
     .g4t-login-error { padding: 9px 11px; border-radius: 8px; background: var(--err-bg); color: var(--err-fg) !important; white-space: pre-line; }
     .g4t-login-dialog .g4t-actions { justify-content: flex-end; margin-top: 4px; }
     .g4t-login-dialog .g4t-btn, .g4t-login-dialog .g4t-btn-primary { height: 36px; font-size: 13.5px; padding-inline: 14px; }

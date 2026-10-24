@@ -35,7 +35,7 @@ The Swagger Laravel Autogenerate Package automatically generates OpenAPI (Swagge
 composer require g4t/swagger
 ```
 
-## Upgrade notes (fix/review-issues)
+## Upgrade notes (5.0)
 
 - **Disabled in production by default:** `swagger.enable` now defaults to `APP_ENV !== production`. Set `SWAGGER_ENABLED=true` to keep the docs online in production.
 - **Cached spec moved out of `public/`:** `swagger:cache` / `make:swagger` now write to `storage/app/swagger/{cached_spec_path}` (served only through the protected JSON endpoint). Set `SWAGGER_CACHED_SPEC_LOCATION=public` for the old location, and delete any old `public/doc.json` (`php artisan swagger:cache --clear` removes both).

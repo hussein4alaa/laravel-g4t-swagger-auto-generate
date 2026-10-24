@@ -249,6 +249,8 @@ class DashboardController
             'security_schemes.*.in' => ['nullable', Rule::in(['header', 'query', 'cookie'])],
             'security_schemes.*.name' => ['nullable', 'string', 'max:100'],
             'security_schemes.*.bearerFormat' => ['nullable', 'string', 'max:50'],
+            'auth_middlewares' => ['array', 'max:50'],
+            'auth_middlewares.*' => ['required', 'string', 'max:200', 'distinct', 'regex:/^\S+$/'],
             'global_headers' => ['array'],
             'global_headers.*.name' => ['required', 'string', 'max:100', $header],
             'global_headers.*.description' => ['nullable', 'string', 'max:500'],
@@ -319,10 +321,13 @@ class DashboardController
         if (blank($values['password'] ?? null)) {
             unset($values['password']);
         }
-        foreach (['security_schemes', 'global_headers', 'environments', 'servers', 'versions', 'show_prefix'] as $listKey) {
+        foreach (['security_schemes', 'auth_middlewares', 'global_headers', 'environments', 'servers', 'versions', 'show_prefix'] as $listKey) {
             if (array_key_exists($listKey, $values) && $values[$listKey] === null) {
                 $values[$listKey] = [];
             }
+        }
+        if (isset($values['auth_middlewares'])) {
+            $values['auth_middlewares'] = array_values($values['auth_middlewares']);
         }
         if (isset($values['global_headers'])) {
             $values['global_headers'] = array_values(array_map(fn (array $h) => array_filter($h, fn ($v) => $v !== null && $v !== '' && $v !== []), $values['global_headers']));

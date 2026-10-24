@@ -284,7 +284,7 @@ Shared environments are visible in the page, so never put secrets in them.
 
 ## Settings dashboard
 
-Everything above can also be changed from a dashboard, without editing `config/swagger.php`: the info block, the UI and its theme, versions and servers, security schemes, global headers, shared environments, the Try it out login, the generation switches and access. Drag sections and operations to set their order in every UI, and hide an operation, or a whole controller (endpoints added to it later stay hidden too), from the documentation; the routes keep working.
+Everything above can also be changed from a dashboard, without editing `config/swagger.php`: the info block, the UI and its theme, versions and servers, security schemes, auth middlewares, global headers, shared environments, the Try it out login, the generation switches and access. Drag sections and operations to set their order in every UI, and hide an operation, or a whole controller (endpoints added to it later stay hidden too), from the documentation; the routes keep working.
 
 The dashboard is off until it has credentials. Add them to `.env`:
 

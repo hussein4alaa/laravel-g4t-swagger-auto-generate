@@ -4,6 +4,7 @@ namespace G4T\Swagger\Tests\Feature;
 
 use G4T\Swagger\Support\CachedSpec;
 use G4T\Swagger\Support\Settings;
+use G4T\Swagger\Tests\Fixtures\Controllers\V1\MiscController;
 use G4T\Swagger\Tests\TestCase;
 use Illuminate\Support\Facades\Hash;
 
@@ -232,6 +233,23 @@ class DashboardTest extends TestCase
         ]])->assertStatus(422)->assertJsonValidationErrors([
             'environments.0.name', 'environments.0.base_url', 'environments.0.variables.0.key', 'environments.0.headers.0.key',
         ]);
+    }
+
+    public function test_auth_middlewares_mark_routes_as_protected(): void
+    {
+        $this->app['router']->middleware(['api', 'jwt.auth'])->get('api/v1/guarded', [MiscController::class, 'ping']);
+        $this->assertArrayNotHasKey('security', $this->spec()['paths']['/api/v1/guarded']['get']);
+
+        $this->withSession(self::SESSION)->putJson('/swagger/dashboard/api/settings', ['settings' => [
+            'auth_middlewares' => ['auth', 'jwt.auth'],
+        ]])->assertOk()->assertJsonPath('settings.auth_middlewares', ['auth', 'jwt.auth']);
+
+        $operation = $this->spec()['paths']['/api/v1/guarded']['get'];
+        $this->assertArrayHasKey('security', $operation);
+        $this->assertArrayHasKey('401', $operation['responses']);
+
+        $this->withSession(self::SESSION)->putJson('/swagger/dashboard/api/settings', ['settings' => ['auth_middlewares' => ['has space', 'x', 'x']]])
+            ->assertStatus(422)->assertJsonValidationErrors(['auth_middlewares.0', 'auth_middlewares.1']);
     }
 
     public function test_invalid_values_are_rejected_with_field_errors(): void

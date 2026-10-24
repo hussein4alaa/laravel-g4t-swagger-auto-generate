@@ -17,7 +17,7 @@ final class Settings
         'enable', 'enable_auth', 'username', 'password',
         'ui', 'theme', 'g4t', 'scalar',
         'versions', 'default', 'servers',
-        'security_schemes', 'global_headers', 'environments', 'auto_login',
+        'security_schemes', 'auth_middlewares', 'global_headers', 'environments', 'auto_login',
         'infer_response_examples', 'infer_error_response_examples', 'response_schemas',
         'unwrap_resource_collection_examples', 'include_web_routes', 'show_prefix', 'spatie_query_builder',
     ];

@@ -12,7 +12,7 @@
         ['interface', 'Interface', ['ui', 'theme', 'g4t', 'scalar']],
         ['endpoints', 'Endpoints', []],
         ['versions', 'Versions & servers', ['versions', 'default', 'servers']],
-        ['security', 'Security schemes', ['security_schemes']],
+        ['security', 'Security schemes', ['security_schemes', 'auth_middlewares']],
         ['headers', 'Global headers', ['global_headers']],
         ['environments', 'Environments', ['environments']],
         ['login', 'Try it out login', ['auto_login']],
@@ -90,6 +90,7 @@
                 var x = schemes[name] || {};
                 return { name: name, type: x.type || 'http', scheme: x.scheme || 'bearer', where: x.in || 'header', keyName: x.name || '', bearerFormat: x.bearerFormat || '' };
             }),
+            authMiddlewares: (Array.isArray(s.auth_middlewares) ? s.auth_middlewares : []).map(String),
             headers: headerList(s.global_headers),
             envs: (Array.isArray(s.environments) ? s.environments : []).map(function (e) {
                 return { name: e.name || '', base_url: e.base_url || '', vars: pairList(e.variables), headers: pairList(e.headers) };
@@ -125,6 +126,7 @@
             versions: m.versions.slice(), default: m.def,
             servers: m.servers.map(function (x) { return { url: x.url, description: x.description }; }),
             security_schemes: schemes,
+            auth_middlewares: m.authMiddlewares.map(function (v) { return v.trim(); }),
             global_headers: m.headers.map(function (h) {
                 var out = { name: h.name, required: !!h.required };
                 if (h.description) { out.description = h.description; }
@@ -267,8 +269,13 @@
             }
             return '<div class="d-item" data-sort-index="' + i + '">' + handle('scheme ' + x.name) + '<div class="d-item-body">' + row + '</div></div>' + removeBtn('schemes', i, 'scheme ' + x.name) + '</div>';
         }).join('') + '</div>';
+        var middlewares = '<div class="d-list">' + model.authMiddlewares.map(function (name, i) {
+            return '<div class="d-item"><div class="d-item-body"><label class="d-field' + (errors['auth_middlewares.' + i] ? ' is-invalid' : '') + '"><span class="g4t-sr">Middleware ' + (i + 1) + '</span><input class="g4t-mono" data-bind="authMiddlewares.' + i + '" value="' + esc(name) + '" placeholder="jwt.auth" aria-label="Middleware name" autocomplete="off" spellcheck="false">' + errorText('auth_middlewares.' + i) + '</label></div>' + removeBtn('authMiddlewares', i, 'middleware ' + name) + '</div>';
+        }).join('') + '</div>';
         return section('security', 'Security schemes', 'How protected routes are authorized. Protected routes accept any one of these; the g4t UI shows one field per scheme in Authorize.',
-            (model.schemes.length ? list : '<div class="d-note">No schemes: protected routes will not ask for credentials.</div>') + addBtn('schemes', 'Add scheme') + errorText('security_schemes'));
+            (model.schemes.length ? list : '<div class="d-note">No schemes: protected routes will not ask for credentials.</div>') + addBtn('schemes', 'Add scheme') + errorText('security_schemes') +
+            '<div class="d-field" style="margin-top:6px">Auth middlewares<span class="d-hint">A route using one of these is documented as protected (security + 401). <code class="g4t-mono">auth</code> and <code class="g4t-mono">auth:*</code> always count; add your own, e.g. <code class="g4t-mono">jwt.auth</code> or <code class="g4t-mono">auth.admin</code>.</span></div>' +
+            (model.authMiddlewares.length ? middlewares : '') + addBtn('authMiddlewares', 'Add middleware') + errorText('auth_middlewares'));
     }
     function sHeaders() {
         var list = '<div class="d-list" data-sortable="headers">' + model.headers.map(function (h, i) {
@@ -369,6 +376,7 @@
         if (name === 'servers') { return model.servers; }
         if (name === 'schemes') { return model.schemes; }
         if (name === 'headers') { return model.headers; }
+        if (name === 'authMiddlewares') { return model.authMiddlewares; }
         if (name === 'fields') { return model.login.fields; }
         if (name === 'envs') { return model.envs; }
         if (name.indexOf('env-vars:') === 0) { return (model.envs[Number(name.slice(9))] || {}).vars; }
@@ -389,6 +397,7 @@
         if (name === 'schemes') { model.schemes.push({ name: 'scheme' + (model.schemes.length + 1), type: 'apiKey', scheme: 'bearer', where: 'header', keyName: 'X-API-Key', bearerFormat: '' }); }
         if (name === 'headers') { model.headers.push({ name: '', description: '', required: false, example: '', default: '', enumText: '' }); }
         if (name === 'fields') { model.login.fields.push({ key: '', label: '' }); }
+        if (name === 'authMiddlewares') { model.authMiddlewares.push(''); }
         if (name === 'envs') { model.envs.push({ name: model.envs.length ? 'Environment ' + (model.envs.length + 1) : 'Staging', base_url: '', vars: [], headers: [] }); }
         if (name.indexOf('env-') === 0 && name !== 'envs') { var rows = listArray(name); if (rows) { rows.push({ key: '', value: '' }); } }
     }

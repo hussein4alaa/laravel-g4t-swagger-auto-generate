@@ -6,8 +6,8 @@ namespace G4T\Swagger\Support;
  * Settings saved from the dashboard, layered over config/swagger.php.
  *
  * The file (swagger-settings.json in the project root by default) only holds what was changed in the dashboard:
- * `config` (overridden swagger.* values) and `layout` (tag / operation order and hidden
- * operations). Keys that were never changed keep following the config file.
+ * `config` (overridden swagger.* values) and `layout` (tag / operation order, hidden operations
+ * and hidden controllers). Keys that were never changed keep following the config file.
  */
 final class Settings
 {
@@ -25,7 +25,7 @@ final class Settings
     /** Keys whose value is an associative array merged over the config file value (one level). */
     private const MERGED = ['g4t', 'scalar', 'auto_login'];
 
-    /** @var array{config: array<string, mixed>, layout: array{tags: list<string>, operations: array<string, list<string>>, hidden: list<string>}}|null */
+    /** @var array{config: array<string, mixed>, layout: array{tags: list<string>, operations: array<string, list<string>>, hidden: list<string>, hidden_tags: list<string>}}|null */
     private static ?array $data = null;
 
     /** @var array<string, mixed>|null swagger.* before the dashboard overrides were applied */
@@ -74,7 +74,7 @@ final class Settings
     }
 
     /**
-     * @return array{tags: list<string>, operations: array<string, list<string>>, hidden: list<string>}
+     * @return array{tags: list<string>, operations: array<string, list<string>>, hidden: list<string>, hidden_tags: list<string>}
      */
     public static function layout(): array
     {
@@ -85,7 +85,7 @@ final class Settings
      * Stores the given effective values: only keys that differ from the config file are kept.
      *
      * @param  array<string, mixed>  $values  editable swagger.* keys
-     * @param  array{tags?: list<string>, operations?: array<string, list<string>>, hidden?: list<string>}  $layout
+     * @param  array{tags?: list<string>, operations?: array<string, list<string>>, hidden?: list<string>, hidden_tags?: list<string>}  $layout
      */
     public static function save(array $values, array $layout): bool
     {
@@ -150,7 +150,7 @@ final class Settings
     }
 
     /**
-     * @return array{config: array<string, mixed>, layout: array{tags: list<string>, operations: array<string, list<string>>, hidden: list<string>}}
+     * @return array{config: array<string, mixed>, layout: array{tags: list<string>, operations: array<string, list<string>>, hidden: list<string>, hidden_tags: list<string>}}
      */
     private static function data(): array
     {
@@ -170,7 +170,7 @@ final class Settings
 
     /**
      * @param  array<string, mixed>  $layout
-     * @return array{tags: list<string>, operations: array<string, list<string>>, hidden: list<string>}
+     * @return array{tags: list<string>, operations: array<string, list<string>>, hidden: list<string>, hidden_tags: list<string>}
      */
     private static function cleanLayout(array $layout): array
     {
@@ -182,7 +182,13 @@ final class Settings
             }
         }
 
-        return ['tags' => $strings($layout['tags'] ?? []), 'operations' => $operations, 'hidden' => $strings($layout['hidden'] ?? [])];
+        return [
+            'tags' => $strings($layout['tags'] ?? []),
+            'operations' => $operations,
+            'hidden' => $strings($layout['hidden'] ?? []),
+            // Whole controllers, so endpoints added to them later stay hidden too.
+            'hidden_tags' => $strings($layout['hidden_tags'] ?? []),
+        ];
     }
 
     private static function merged(string $key, mixed $value, mixed $base): mixed

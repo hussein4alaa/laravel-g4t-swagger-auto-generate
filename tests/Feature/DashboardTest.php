@@ -283,6 +283,26 @@ class DashboardTest extends TestCase
         $this->assertSame(['post_api_v1_posts'], array_column($hidden, 'id'), 'The dashboard still lists hidden operations');
     }
 
+    public function test_a_whole_controller_can_be_hidden(): void
+    {
+        $this->withSession(self::SESSION)->putJson('/swagger/dashboard/api/settings', [
+            'settings' => [],
+            'layout' => ['hidden_tags' => ['Post']],
+        ])->assertOk()->assertJsonPath('layout.hidden_tags', ['Post']);
+
+        $spec = $this->spec();
+        $this->assertNotContains('Post', array_column($spec['tags'], 'name'));
+        $this->assertArrayNotHasKey('/api/v1/posts', $spec['paths']);
+        $this->assertArrayNotHasKey('/api/v1/posts/{post}', $spec['paths']);
+        $this->assertArrayHasKey('/api/v1/ping', $spec['paths']);
+
+        $state = $this->withSession(self::SESSION)->getJson('/swagger/dashboard/api/settings')->json();
+        $this->assertContains('get_api_v1_posts', array_column($state['operations'], 'id'), 'The dashboard still lists the hidden controller');
+
+        $this->withSession(self::SESSION)->putJson('/swagger/dashboard/api/settings', ['settings' => [], 'layout' => ['hidden_tags' => []]])->assertOk();
+        $this->assertArrayHasKey('/api/v1/posts', $this->spec()['paths']);
+    }
+
     public function test_an_empty_password_keeps_the_docs_password(): void
     {
         // As if config/swagger.php had this password when the app booted.

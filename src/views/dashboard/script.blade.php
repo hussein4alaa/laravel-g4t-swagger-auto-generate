@@ -101,7 +101,7 @@
             flags: flags,
             showPrefix: (s.show_prefix || []).join(', '),
             access: { enable: !!s.enable, enable_auth: !!s.enable_auth, username: s.username || '', password: '', passwordSet: !!s.password_set },
-            tags: tags, ops: ops, info: info, hidden: (state.layout && state.layout.hidden) || []
+            tags: tags, ops: ops, info: info, hidden: ((state.layout && state.layout.hidden) || []).slice(), hiddenTags: ((state.layout && state.layout.hidden_tags) || []).slice()
         };
     }
 
@@ -145,7 +145,7 @@
         if (m.access.password) { settings.password = m.access.password; }
         var operations = {};
         m.tags.forEach(function (t) { operations[t] = m.ops[t].slice(); });
-        return { settings: settings, layout: { tags: m.tags.slice(), operations: operations, hidden: m.hidden.slice() } };
+        return { settings: settings, layout: { tags: m.tags.slice(), operations: operations, hidden: m.hidden.slice(), hidden_tags: m.hiddenTags.slice() } };
     }
 
     function changedSettings(payload) {
@@ -198,7 +198,7 @@
     function section(id, title, description, body) {
         var keys = (SECTIONS.filter(function (s) { return s[0] === id; })[0] || [])[2] || [];
         var saved = id === 'endpoints'
-            ? (server.layout.tags.length || server.layout.hidden.length || Object.keys(server.layout.operations).length)
+            ? (server.layout.tags.length || server.layout.hidden.length || server.layout.hidden_tags.length || Object.keys(server.layout.operations).length)
             : keys.some(function (k) { return server.overridden.indexOf(k) !== -1; });
         return '<section class="d-section" id="sec-' + id + '"><header><h2>' + esc(title) + (saved ? '<span class="d-badge" title="Overrides config/swagger.php">saved in dashboard</span>' : '') + '</h2>' + (description ? '<p>' + description + '</p>' : '') + '</header>' + body + '</section>';
     }
@@ -223,16 +223,18 @@
         return section('interface', 'Interface', 'What readers see at the documentation URL.', body);
     }
     function sEndpoints() {
-        var hiddenCount = model.hidden.length;
-        var body = '<div class="g4t-actions" style="justify-content:space-between"><span class="g4t-muted" style="font-size:13px">' + Object.keys(model.info).length + ' operations' + (hiddenCount ? ' · ' + hiddenCount + ' hidden' : '') + '</span>' +
+        var hiddenCount = Object.keys(model.info).filter(function (id) { return model.hidden.indexOf(id) !== -1 || model.hiddenTags.indexOf(model.info[id].tag) !== -1; }).length;
+        var body = '<div class="g4t-actions" style="justify-content:space-between"><span class="g4t-muted" style="font-size:13px">' + Object.keys(model.info).length + ' operations' + (hiddenCount ? ' · ' + hiddenCount + ' hidden' : '') + (model.hiddenTags.length ? ' · ' + model.hiddenTags.length + ' controller' + (model.hiddenTags.length > 1 ? 's' : '') + ' hidden' : '') + '</span>' +
             '<button type="button" class="g4t-btn" data-action="reset-layout">Default order &amp; show all</button></div><div class="d-list" data-sortable="tags">' +
             model.tags.map(function (tag, ti) {
-                return '<div class="d-tag" data-sort-index="' + ti + '"><div class="d-tag-head">' + handle(tag) + '<strong>' + esc(tag) + '</strong><span class="g4t-muted" style="font-size:12px">' + model.ops[tag].length + '</span></div>' +
+                var tagHidden = model.hiddenTags.indexOf(tag) !== -1;
+                return '<div class="d-tag' + (tagHidden ? ' is-hidden' : '') + '" data-sort-index="' + ti + '"><div class="d-tag-head">' + handle(tag) + '<strong>' + esc(tag) + '</strong><span class="g4t-muted" style="font-size:12px">' + model.ops[tag].length + (tagHidden ? ' · hidden, new endpoints too' : '') + '</span>' +
+                    '<button type="button" class="d-icon-btn d-tag-eye" data-action="toggle-tag" data-value="' + esc(tag) + '" aria-pressed="' + tagHidden + '" aria-label="' + (tagHidden ? 'Show' : 'Hide') + ' every ' + esc(tag) + ' endpoint" title="' + (tagHidden ? 'Show this controller in the documentation' : 'Hide the whole controller') + '">' + (tagHidden ? ICON.eyeOff : ICON.eye) + '</button></div>' +
                     '<div class="d-ops" data-sortable="ops:' + esc(tag) + '">' + model.ops[tag].map(function (id, oi) {
-                        var op = model.info[id], hidden = model.hidden.indexOf(id) !== -1, m = op.method.toLowerCase();
+                        var op = model.info[id], hidden = tagHidden || model.hidden.indexOf(id) !== -1, m = op.method.toLowerCase();
                         return '<div class="d-op' + (hidden ? ' is-hidden' : '') + '" data-sort-index="' + oi + '">' + handle(op.method + ' ' + op.path) +
                             '<span class="d-op-text"><span class="g4t-method m-' + esc(m) + '">' + esc(op.method) + '</span><span class="d-op-path">' + esc(op.path) + '</span><span class="d-op-summary">' + esc(op.summary) + '</span></span>' +
-                            '<button type="button" class="d-icon-btn" data-action="toggle-op" data-value="' + esc(id) + '" aria-pressed="' + hidden + '" aria-label="' + (hidden ? 'Show' : 'Hide') + ' ' + esc(op.method + ' ' + op.path) + '" title="' + (hidden ? 'Hidden from the documentation' : 'Hide from the documentation') + '">' + (hidden ? ICON.eyeOff : ICON.eye) + '</button></div>';
+                            '<button type="button" class="d-icon-btn" data-action="toggle-op"' + (tagHidden ? ' disabled' : '') + ' data-value="' + esc(id) + '" aria-pressed="' + hidden + '" aria-label="' + (hidden ? 'Show' : 'Hide') + ' ' + esc(op.method + ' ' + op.path) + '" title="' + (hidden ? 'Hidden from the documentation' : 'Hide from the documentation') + '">' + (hidden ? ICON.eyeOff : ICON.eye) + '</button></div>';
                     }).join('') + '</div></div>';
             }).join('') + '</div>';
         if (!model.tags.length) { body = '<div class="d-note">No documented operations yet. Routes need the <code class="g4t-mono">api</code> middleware.</div>'; }
@@ -337,7 +339,7 @@
         var errorList = Object.keys(errors);
         var head = '<div style="display:grid;gap:6px"><h1 style="margin:0;font-size:24px;font-weight:650;letter-spacing:-.02em">Settings</h1>' +
             '<p style="margin:0;color:var(--text-2);font-size:13.5px">Saved to <code class="g4t-mono" style="font-size:12px">' + esc(server.settings_file) + '</code> and layered over <code class="g4t-mono" style="font-size:12px">config/swagger.php</code>: anything you never change here keeps following the file.' + (server.cached_spec ? ' Saving also clears the cached document (<code class="g4t-mono" style="font-size:12px">swagger:cache</code>).' : '') + '</p>' +
-            (server.overridden.length || server.layout.tags.length || server.layout.hidden.length ? '<div><button type="button" class="g4t-btn g4t-btn-danger" data-action="reset-all">Remove all dashboard changes</button></div>' : '') + '</div>' +
+            (server.overridden.length || server.layout.tags.length || server.layout.hidden.length || server.layout.hidden_tags.length ? '<div><button type="button" class="g4t-btn g4t-btn-danger" data-action="reset-all">Remove all dashboard changes</button></div>' : '') + '</div>' +
             (errorList.length ? '<div class="d-alert" role="alert"><strong>Some values need fixing:</strong>' + errorList.slice(0, 8).map(function (k) { return '<span>' + esc([].concat(errors[k])[0]) + '</span>'; }).join('') + '</div>' : '');
         els.content.innerHTML = head + sGeneral() + sInterface() + sEndpoints() + sVersions() + sSecurity() + sHeaders() + sEnvironments() + sLogin() + sGeneration() + sAccess();
         window.scrollTo(0, scrollY);
@@ -458,8 +460,12 @@
                 var at = model.hidden.indexOf(value);
                 if (at === -1) { model.hidden.push(value); } else { model.hidden.splice(at, 1); }
                 render(); break;
+            case 'toggle-tag':
+                var tagAt = model.hiddenTags.indexOf(value);
+                if (tagAt === -1) { model.hiddenTags.push(value); } else { model.hiddenTags.splice(tagAt, 1); }
+                render(); break;
             case 'reset-layout':
-                model.hidden = [];
+                model.hidden = []; model.hiddenTags = [];
                 model.tags = model.tags.slice().sort(function (a, b) { return originalOrder.tags.indexOf(a) - originalOrder.tags.indexOf(b); });
                 resetToRouteOrder = true; toast('Default order and visibility apply after saving'); render(); break;
             case 'discard': model = toModel(server); errors = {}; render(); toast('Changes discarded'); break;
@@ -514,7 +520,7 @@
     function save() {
         if (saving) { return; }
         var payload = toPayload(model);
-        if (resetToRouteOrder) { payload.layout = { tags: [], operations: {}, hidden: [] }; }
+        if (resetToRouteOrder) { payload.layout = { tags: [], operations: {}, hidden: [], hidden_tags: [] }; }
         saving = true; errors = {}; renderSavebar();
         request('PUT', { settings: changedSettings(payload), layout: payload.layout }).then(function (state) {
             saving = false;

@@ -197,9 +197,10 @@ class Swagger
     private function applyLayout(array $apiRoutes, array $controllers): array
     {
         $layout = Settings::layout();
-        if (! $this->includeHidden && $layout['hidden'] !== []) {
+        if (! $this->includeHidden && ($layout['hidden'] !== [] || $layout['hidden_tags'] !== [])) {
             $hidden = array_flip($layout['hidden']);
-            $apiRoutes = array_values(array_filter($apiRoutes, fn (array $route) => ! isset($hidden[$route['operation_id']])));
+            $hiddenTags = array_flip($layout['hidden_tags']);
+            $apiRoutes = array_values(array_filter($apiRoutes, fn (array $route) => ! isset($hidden[$route['operation_id']]) && ! isset($hiddenTags[$route['controller']])));
             $used = array_flip(array_map(fn (array $route) => $route['controller'], $apiRoutes));
             $controllers = array_filter($controllers, fn (array $controller, $tag) => isset($used[$tag]), ARRAY_FILTER_USE_BOTH);
         }

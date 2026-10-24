@@ -60,6 +60,9 @@
     .d-tag.is-dragging { opacity: .45; }
     .d-tag-head { display: flex; align-items: center; gap: 8px; padding: 8px 10px; background: var(--surface-2); border-bottom: 1px solid var(--border); }
     .d-tag-head strong { font-size: 14px; }
+    .d-tag-eye { margin-inline-start: auto; }
+    .d-tag.is-hidden .d-tag-head strong { opacity: .55; text-decoration: line-through; }
+    .d-icon-btn:disabled { opacity: .4; cursor: not-allowed; }
     .d-ops { display: grid; }
     .d-op { display: flex; align-items: center; gap: 8px; padding: 6px 10px; border-top: 1px solid var(--border); background: var(--surface); }
     .d-op:first-child { border-top: 0; }

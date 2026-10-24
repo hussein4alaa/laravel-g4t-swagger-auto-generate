@@ -209,6 +209,42 @@
     .g4t-file-name.is-empty { color: var(--text-3); font-family: inherit; }
     .g4t-file-clear { flex: none; width: 26px; height: 26px; display: grid; place-items: center; border: 1px solid var(--border); border-radius: 6px; background: var(--surface); color: var(--text-2); font-size: 15px; line-height: 1; cursor: pointer; }
     .g4t-file-clear:hover { color: var(--err-fg); border-color: color-mix(in oklab, var(--err-fg) 40%, var(--border)); }
+    /* Environments, download, code samples, history */
+    .g4t-env-btn { height: 32px; display: inline-flex; align-items: center; gap: 7px; padding-inline: 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); color: var(--text); font-size: 13px; font-weight: 500; cursor: pointer; flex: none; max-width: 200px; }
+    .g4t-env-btn:hover { border-color: var(--border-strong); }
+    .g4t-env-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .g4t-count { min-width: 18px; height: 18px; padding-inline: 5px; display: inline-grid; place-items: center; border-radius: 999px; background: var(--surface-2); border: 1px solid var(--border); color: var(--text-2); font: 600 11px/1 var(--mono); }
+    .g4t-download-menu { width: 230px; gap: 6px; }
+    .g4t-download-menu .g4t-btn { justify-content: flex-start; }
+    .g4t-env-dialog { width: min(520px, 100%); }
+    .g4t-env-body { display: grid; gap: 14px; padding: 22px; max-height: calc(100vh - 48px); overflow: auto; }
+    .g4t-env-body > p { margin: 0; font-size: 13px; color: var(--text-2); }
+    .g4t-env-body code { font-size: 12px; padding: 1px 4px; border-radius: 4px; background: var(--surface-2); }
+    .g4t-env-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+    .g4t-env-head h2 { margin: 0; font-size: 17px; font-weight: 600; }
+    .g4t-env-body label { display: grid; gap: 5px; font-size: 13px; font-weight: 500; }
+    .g4t-env-body input { height: 36px; padding-inline: 10px; border: 1px solid var(--border-strong); border-radius: 8px; background: var(--surface); color: var(--text); font-size: 13.5px; min-width: 0; }
+    .g4t-env-tabs { display: flex; flex-wrap: wrap; gap: 6px; }
+    .g4t-env-tab { height: 30px; display: inline-flex; align-items: center; gap: 7px; padding-inline: 11px; border: 1px solid var(--border); border-radius: 999px; background: var(--surface); color: var(--text-2); font-size: 12.5px; font-weight: 500; cursor: pointer; }
+    .g4t-env-tab[aria-selected="true"] { border-color: var(--accent); color: var(--text); box-shadow: 0 0 0 3px color-mix(in oklab, var(--accent) 15%, transparent); }
+    .g4t-env-add { border-style: dashed; }
+    .g4t-dot-on { background: var(--ok-fg); }
+    .g4t-var-row { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 3fr) 34px; gap: 8px; }
+    .g4t-try-title { justify-content: space-between; }
+    .g4t-try-tools { display: inline-flex; gap: 6px; margin-inline-start: auto; }
+    .g4t-try-tools .g4t-btn { height: 28px; font-size: 12px; padding-inline: 9px; }
+    .g4t-try-tools .g4t-btn[aria-pressed="true"] { background: var(--surface-2); border-color: var(--border-strong); }
+    .g4t-history { display: grid; gap: 1px; background: var(--border); border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
+    .g4t-history-row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; padding: 8px 10px; background: var(--surface); }
+    .g4t-history-url { flex: 1 1 200px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12.5px; }
+    .g4t-history-meta { font-size: 12px; }
+    .g4t-history-actions { display: inline-flex; gap: 6px; }
+    .g4t-history-actions .g4t-btn { height: 26px; font-size: 12px; padding-inline: 8px; }
+    .g4t-history > .g4t-actions { padding: 6px 10px; background: var(--surface); }
+    .g4t-history-empty { padding: 12px; border: 1px dashed var(--border-strong); border-radius: 8px; font-size: 13px; color: var(--text-3); }
+    .g4t-code-panel { display: grid; gap: 8px; min-width: 0; }
+    .g4t-code-panel .g4t-code { max-height: 360px; }
+    .g4t-op-intro .g4t-btn[aria-pressed="true"] { background: var(--surface-2); border-color: var(--border-strong); }
     .g4t-items { display: grid; gap: 6px; justify-items: start; }
     .g4t-item { display: flex; align-items: center; gap: 8px; width: 100%; min-width: 0; }
     .g4t-item > input, .g4t-item > select { flex: 1; }
@@ -294,7 +330,9 @@
     }
 
     @media (max-width: 559px) {
-        .g4t-brand-sub, .g4t-auth-text, .g4t-auth-text-out { display: none; }
+        .g4t-brand-sub, .g4t-auth-text, .g4t-auth-text-out, .g4t-env-name { display: none; }
+        .g4t-var-row { grid-template-columns: minmax(0, 1fr) 34px; }
+        .g4t-var-row input[data-bind="env-value"] { grid-column: 1; }
         .g4t-header { gap: 8px; padding-inline: 12px; }
         .g4t-brand-name { max-width: 28vw; }
         .g4t-divider { display: none; }

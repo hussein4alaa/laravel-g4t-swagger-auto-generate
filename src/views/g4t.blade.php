@@ -28,6 +28,13 @@
                 <svg class="g4t-select-chev" aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="m6 9 6 6 6-6"></path></svg>
             </label>
             <div class="g4t-spacer"></div>
+            <button type="button" class="g4t-env-btn" data-action="open-envs" id="g4t-env-btn" aria-haspopup="dialog" title="Environments and variables"></button>
+            <div class="g4t-pop" data-g4t-pop="download">
+                <button type="button" class="g4t-icon-btn" data-action="toggle-download" aria-label="Download the OpenAPI document" aria-haspopup="menu" aria-expanded="false" id="g4t-download-btn">
+                    <svg aria-hidden="true" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4v11M7 10l5 5 5-5M5 20h14"></path></svg>
+                </button>
+                <div class="g4t-menu g4t-download-menu" role="menu" id="g4t-download" hidden></div>
+            </div>
             <div class="g4t-pop" data-g4t-pop="auth" id="g4t-auth"></div>
             <div class="g4t-pop" data-g4t-pop="appear">
                 <button type="button" class="g4t-icon-btn" data-action="toggle-appear" aria-label="Appearance" aria-haspopup="dialog" aria-expanded="false" id="g4t-appear-btn">
@@ -63,6 +70,7 @@
         </div>
 
         <div id="g4t-login"></div>
+        <div id="g4t-envs"></div>
         <div class="g4t-toast-wrap" aria-live="polite"><div class="g4t-toast" id="g4t-toast" hidden></div></div>
     </div>
 

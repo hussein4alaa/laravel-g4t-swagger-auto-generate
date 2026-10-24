@@ -1,0 +1,77 @@
+name: tests
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: tests-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  tests:
+    name: PHP ${{ matrix.php }} / Laravel ${{ matrix.laravel }} (${{ matrix.stability }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    strategy:
+      fail-fast: false
+      matrix:
+        php: ['8.2', '8.3', '8.4', '8.5']
+        laravel: ['11', '12', '13']
+        stability: [prefer-stable]
+        include:
+          # Laravel -> Orchestra Testbench major (verified against the packagist requirements).
+          - laravel: '11'
+            testbench: '^9.0'
+          - laravel: '12'
+            testbench: '^10.0'
+          - laravel: '13'
+            testbench: '^11.0'
+          # Lowest supported dependencies on the oldest PHP of each Laravel line.
+          - php: '8.2'
+            laravel: '11'
+            testbench: '^9.0'
+            stability: prefer-lowest
+          - php: '8.2'
+            laravel: '12'
+            testbench: '^10.0'
+            stability: prefer-lowest
+          - php: '8.3'
+            laravel: '13'
+            testbench: '^11.0'
+            stability: prefer-lowest
+        exclude:
+          # Laravel 13 requires PHP >= 8.3.
+          - php: '8.2'
+            laravel: '13'
+          # Laravel 11 supports PHP 8.2 - 8.4.
+          - php: '8.5'
+            laravel: '11'
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ matrix.php }}
+          extensions: dom, curl, libxml, mbstring, zip, pdo, sqlite, pdo_sqlite, fileinfo
+          coverage: none
+
+      - name: Install dependencies
+        run: |
+          composer require "laravel/framework:^${{ matrix.laravel }}.0" "orchestra/testbench:${{ matrix.testbench }}" --dev --no-interaction --no-update
+          composer update --${{ matrix.stability }} --prefer-dist --no-interaction --no-progress
+
+      - name: List installed versions
+        run: composer show laravel/framework orchestra/testbench phpunit/phpunit
+
+      - name: Run tests
+        run: vendor/bin/phpunit

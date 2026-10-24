@@ -3,157 +3,155 @@
 namespace G4T\Swagger;
 
 use G4T\Swagger\Attributes\SwaggerSection;
-use G4T\Swagger\ResponseExampleExtractor;
 use G4T\Swagger\Sections\Paths;
 use G4T\Swagger\Sections\Schemas;
 use G4T\Swagger\Sections\Tags;
+use G4T\Swagger\Support\Debug;
+use G4T\Swagger\Support\SchemaBuilder;
+use Illuminate\Routing\Route as RoutingRoute;
 use Illuminate\Support\Facades\Route;
 use Illuminate\Support\Str;
 use ReflectionClass;
 use stdClass;
+use Throwable;
 
-class Swagger {
-
-    use Tags, Paths, Helpers, Schemas;
+class Swagger
+{
+    use Helpers, Paths, Schemas, Tags;
 
     /**
-     * Generate the Swagger documentation.
+     * Generate the OpenAPI document.
      *
-     * @return array
+     * @return array<string, mixed>
      */
-    public function swagger() {
+    public function swagger(): array
+    {
+        $generated = $this->generateSwaggerJsonResponse();
+
         return [
-            "openapi" => "3.0.3",
-            "info" => [
-                "title" => config('swagger.title'),
-                "description" => config('swagger.description'),
-                "termsOfService" => "http://swagger.io/terms/",
-                "contact" => [
-                    "email" => config('swagger.email'),
+            'openapi' => '3.0.3',
+            'info' => [
+                'title' => config('swagger.title'),
+                'description' => config('swagger.description'),
+                'termsOfService' => 'http://swagger.io/terms/',
+                'contact' => [
+                    'email' => config('swagger.email'),
                 ],
-                "license" => [
-                    "name" => "Github",
-                    "url" => "https://github.com/hussein4alaa"
+                'license' => [
+                    'name' => 'Github',
+                    'url' => 'https://github.com/hussein4alaa',
                 ],
-                "version" => config('swagger.version')
+                'version' => config('swagger.version'),
             ],
-            "servers" => config('swagger.servers'),
-            "components" => $this->generateSwaggerJsonResponse(),
-            "tags" => $this->generateSwaggerJsonResponse()->tags,
-            "paths" => $this->generateSwaggerJsonResponse()->paths,
+            'servers' => config('swagger.servers'),
+            'tags' => $generated->tags,
+            'paths' => $generated->paths === [] ? new stdClass : $generated->paths,
+            'components' => [
+                'schemas' => $generated->schemas === [] ? new stdClass : $generated->schemas,
+                'securitySchemes' => empty($generated->securitySchemes) ? new stdClass : $generated->securitySchemes,
+            ],
         ];
     }
 
-
-
     /**
-     * Generate the Swagger JSON response for API documentation.
+     * Collect every documented route in a single pass and build tags, paths and request schemas.
      *
-     * This function retrieves all routes defined in the application and filters out the API routes. It collects relevant information for each API route, including prefix, action name, route name, HTTP method, URI, operation ID, validations, and schema name. The function determines if a route has a schema based on the presence of validations. It also checks if a token is required for the route.
-     *
-     * The collected information is used to build an array of API routes, which includes details such as the route's prefix, method, URI, name, schema name, action, middleware, validations, parameters, operation ID, whether it has a schema, and whether a token is required.
-     *
-     * Additionally, the function collects all the route names to generate tags for the Swagger documentation. It formats the collected API routes and constructs the JSON data structure required for Swagger documentation. This JSON data includes tags, paths, schemas, and security schemes.
-     *
-     * The function returns the generated Swagger JSON response as an object.
-     *
-     * @return object The Swagger JSON response for API documentation.
+     * @return object{tags: list<array<string, string>>, paths: array<string, mixed>, schemas: array<string, mixed>, securitySchemes: mixed}
      */
+    public function generateSwaggerJsonResponse(): object
+    {
+        $inferExamples = (bool) config('swagger.infer_response_examples', true);
+        $inferErrorExamples = (bool) config('swagger.infer_error_response_examples', true);
+        $exampleExtractor = ($inferExamples || $inferErrorExamples) ? new ResponseExampleExtractor : null;
 
-    public function generateSwaggerJsonResponse() {
-        $routes = Route::getRoutes();
-        $apiRoutes = [];
-        $names = [];
-        $schemas = [];
-        $show_prefix_array = config('swagger.show_prefix');
-        $mapping_prefix = config('swagger.mapping_prefix');
-        $controllers = [];
-        $inferExamples = config('swagger.infer_response_examples', true);
-        $inferErrorExamples = config('swagger.infer_error_response_examples', true);
-        $exampleExtractor = ($inferExamples || $inferErrorExamples) ? new ResponseExampleExtractor() : null;
-
+        $allRoutes = $this->collectDocumentedRoutes(null);
         $version = $this->getVersion();
+        $routes = $version === null
+            ? $allRoutes
+            : array_values(array_filter($allRoutes, fn (RoutingRoute $route) => $this->uriMatchesVersion('/'.ltrim($route->uri(), '/'), $version)));
+
+        // Names are resolved across every version so a tag/schema keeps the same name in each version view.
+        [$tagNames, $schemaPrefixes] = $this->resolveControllerNames(array_map(
+            fn (RoutingRoute $route) => $this->getControllerPath($route->getAction('controller')),
+            $allRoutes,
+        ));
+
+        $mappingPrefix = config('swagger.mapping_prefix') ?? [];
+        $apiRoutes = [];
+        $schemas = [];
+        $controllers = [];
+
         foreach ($routes as $route) {
-            $filter_route = $this->isApiRoute($route);
+            $action = ltrim($route->getActionName(), '\\');
+            $controllerClass = $this->getControllerPath($route->getAction('controller'));
+            $controllerShort = $this->getControllerName($route->getAction('controller'));
+            $tag = $tagNames[$controllerClass] ?? $controllerShort;
+            $prefix = $route->getPrefix();
+            $uri = '/'.ltrim($route->uri(), '/');
 
-            if (config('swagger.include_web_routes'))
-                $filter_route = str_contains($route->getActionName(), 'App\\Http\\Controllers');
-
-            if ($filter_route) {
-                if (is_string($route->getAction('controller'))) {
-                    $uri = '/' . $route->uri();
-                    if (is_null($version) || str_contains($uri, $version)) {
-                        $prefix = $route->getPrefix();
-                        $action = ltrim($route->getActionName(), '\\');
-                        $controller = $this->getControllerName($route->getAction('controller'));
-                        $routeName = $this->getRouteName($route->uri(), $prefix);
-                        $method = implode('|', $route->methods());
-                        $operationId = $this->generateOperationId($uri, $method);
-                        $validations = $this->getRequestClassName($action);
-                        $schemaName = $this->schemaName($action);
-                        if ($action !== 'Closure') {
-                            $description = isset($route->action['description']) ? $route->action['description'] : '';
-                            $summary = isset($route->action['summary']) ? $route->action['summary'] : null;
-                            $is_hidden = isset($route->action['is_hidden']) ? $route->action['is_hidden'] : false;
-                            if($is_hidden) {
-                                continue;
-                            }
-                            $prefix_for_condition = isset($show_prefix_array) && count($show_prefix_array) > 0 ? $show_prefix_array : ["$prefix"];
-                            if (in_array($prefix, $prefix_for_condition)) {
-                                $hasSchema = false;
-
-                                if (isset($mapping_prefix[$prefix])) {
-                                    $uri = str_replace($prefix, $mapping_prefix[$prefix], $uri);
-                                    $prefix = $mapping_prefix[$prefix];
-                                }
-
-                                if (!is_null($validations) && count($validations) > 0) {
-                                    $accept_methods = ['PUT', 'POST', 'PATCH'];
-                                    if(in_array($method, $accept_methods)) {
-                                        $hasSchema = true;
-                                        $schemas[$schemaName] = $this->getSchemas($validations, $schemaName, $method);    
-                                    }
-                                }
-
-                                $needToken = $this->checkIfTokenIsRequired($route);
-                                $controller_path = $this->getControllerPath($route->getAction('controller'));
-                                $controller_description = $this->getSectionAttributeValue($controller_path);
-                                $controllers[$controller] = [
-                                    "name" => $controller,
-                                    "class" => $controller_path,
-                                    "description" => $controller_description
-                                ];
-
-                                $params = $this->formatParams($validations, $route);
-
-                                $this->spatieSchema($params, $method);
-
-                                $apiRoutes[] = [
-                                    'prefix' => $prefix,
-                                    'method' => $method,
-                                    'controller' => $controller,
-                                    'uri' => $uri,
-                                    'description' => $description,
-                                    'summary' => $summary,
-                                    'name' => $routeName,
-                                    'schema_name' => $schemaName,
-                                    'action' => $action,
-                                    'middleware' => $route->middleware(),
-                                    'validations' => $validations,
-                                    'params' => $params,
-                                    'operation_id' => $operationId,
-                                    'has_schema' => $hasSchema,
-                                    'need_token' => $needToken,
-                                    'response_example' => $inferExamples && $exampleExtractor ? $exampleExtractor->extract($action) : null,
-                                    'error_response_examples' => $inferErrorExamples && $exampleExtractor ? $exampleExtractor->extractErrorResponseExamples($action) : [],
-                                ];
-                            }
-                        }
-                    }
-                }
+            if (is_array($mappingPrefix) && $prefix !== null && isset($mappingPrefix[$prefix])) {
+                $uri = str_replace($prefix, $mappingPrefix[$prefix], $uri);
+                $prefix = $mappingPrefix[$prefix];
             }
+
+            $methods = array_values(array_diff($route->methods(), ['HEAD']));
+            $method = $methods[0] ?? 'GET';
+            $hasBody = in_array($method, ['POST', 'PUT', 'PATCH'], true);
+
+            $validations = $this->getRequestClassName($action);
+            $builder = new SchemaBuilder($validations);
+            $schemaName = ($schemaPrefixes[$controllerClass] ?? '').$this->schemaName($action);
+
+            $documentedMethod = $method;
+            $requestBody = null;
+            if ($hasBody && ! $builder->isEmpty()) {
+                $extra = [];
+                if ($builder->hasFiles() && $method !== 'POST') {
+                    // PHP only parses multipart bodies on POST: Laravel needs method spoofing.
+                    $documentedMethod = 'POST';
+                    $extra['_method'] = ['type' => 'string', 'enum' => [$method], 'default' => $method];
+                }
+                $requestBody = $this->buildRequestBody($builder, $schemaName, $extra, $schemas, $route->action['description'] ?? '');
+            }
+
+            $controllers[$tag] ??= [
+                'name' => $tag,
+                'class' => $controllerClass,
+                'description' => $this->getSectionAttributeValue($controllerClass),
+            ];
+
+            $params = $hasBody ? [] : $builder->queryParameters();
+            $this->spatieSchema($params, $method);
+
+            $apiRoutes[] = [
+                'prefix' => $prefix,
+                'method' => $documentedMethod,
+                'original_method' => $method,
+                'methods' => $methods,
+                'controller' => $tag,
+                'storage_controller' => $controllerShort,
+                'uri' => $uri,
+                'description' => $route->action['description'] ?? '',
+                'summary' => $route->action['summary'] ?? null,
+                'name' => $this->getRouteName($route->uri(), $prefix),
+                'schema_name' => $schemaName,
+                'action' => $action,
+                'middleware' => $route->middleware(),
+                'validations' => $validations,
+                'query_params' => $params,
+                'path_params' => $this->pathParameterSchemas($route, $action),
+                'params' => $params,
+                'operation_id' => $this->generateOperationId($uri, $documentedMethod),
+                'has_schema' => $requestBody !== null,
+                'request_body' => $requestBody,
+                'need_token' => $this->checkIfTokenIsRequired($route),
+                'success_status' => $this->inferSuccessStatus($exampleExtractor, $action, $method),
+                'response_example' => $inferExamples && $exampleExtractor ? $this->safely(fn () => $exampleExtractor->extract($action), $action) : null,
+                'error_response_examples' => $inferErrorExamples && $exampleExtractor ? ($this->safely(fn () => $exampleExtractor->extractErrorResponseExamples($action), $action) ?? []) : [],
+            ];
         }
-        $swaggerJson = new stdClass();
+
+        $swaggerJson = new stdClass;
         $swaggerJson->tags = $this->getTags($controllers);
         $swaggerJson->paths = $this->formatPaths($apiRoutes);
         $swaggerJson->schemas = $schemas;
@@ -162,86 +160,219 @@ class Swagger {
         return $swaggerJson;
     }
 
+    /**
+     * @return list<RoutingRoute>
+     */
+    private function collectDocumentedRoutes(?string $version): array
+    {
+        $showPrefixes = config('swagger.show_prefix');
+        $includeWebRoutes = (bool) config('swagger.include_web_routes');
+        $documented = [];
 
-    public function getControllerPath($controller) {
-        try {
-            $controller = explode("@", $controller);
-            return $controller[0];
-        } catch (\Throwable $th) {
-            return null;
-        }
-    }
+        foreach (Route::getRoutes() as $route) {
+            $isDocumentable = $includeWebRoutes
+                ? str_contains($route->getActionName(), 'App\\Http\\Controllers')
+                : $this->isApiRoute($route);
 
-    private function getSectionAttributeValue(string $controllerClassName) {
-        try {
-            $class = new $controllerClassName;
-            $reflector = new ReflectionClass($class);
-            $attributes = $reflector->getAttributes(SwaggerSection::class);
-            if (!empty($attributes)) {
-                $attribute = $attributes[0];
-                return $attribute->newInstance()->getValue();
-            } else {
-                return null;
+            if (! $isDocumentable || ! is_string($route->getAction('controller'))) {
+                continue;
             }
-        } catch (\Throwable $th) {
+            if (ltrim($route->getActionName(), '\\') === 'Closure' || ! empty($route->action['is_hidden'])) {
+                continue;
+            }
+            if ($version !== null && ! $this->uriMatchesVersion('/'.ltrim($route->uri(), '/'), $version)) {
+                continue;
+            }
+
+            $prefix = $route->getPrefix();
+            $allowedPrefixes = is_array($showPrefixes) && count($showPrefixes) > 0 ? $showPrefixes : [$prefix];
+            if (! in_array($prefix, $allowedPrefixes, true)) {
+                continue;
+            }
+
+            $documented[] = $route;
+        }
+
+        return $documented;
+    }
+
+    /**
+     * Tag names and schema-name prefixes per controller class. Controllers that share a short name
+     * (e.g. Api\V1\ProductController and Api\V2\ProductController) get distinguishing namespace segments.
+     *
+     * @param  list<string|null>  $classes
+     * @return array{0: array<string, string>, 1: array<string, string>}
+     */
+    private function resolveControllerNames(array $classes): array
+    {
+        $byShortName = [];
+        foreach (array_unique(array_filter($classes)) as $class) {
+            $byShortName[$this->getControllerName($class)][] = $class;
+        }
+
+        $tags = [];
+        $prefixes = [];
+        foreach ($byShortName as $short => $group) {
+            if (count($group) === 1) {
+                $tags[$group[0]] = $short;
+                $prefixes[$group[0]] = '';
+
+                continue;
+            }
+
+            $namespaces = array_map(fn (string $class) => array_slice(explode('\\', $class), 0, -1), $group);
+            $depth = 1;
+            $maxDepth = max(array_map('count', $namespaces));
+            while ($depth < $maxDepth) {
+                $suffixes = array_map(fn (array $segments) => implode('/', array_slice($segments, -$depth)), $namespaces);
+                if (count(array_unique($suffixes)) === count($suffixes)) {
+                    break;
+                }
+                $depth++;
+            }
+
+            foreach ($group as $index => $class) {
+                $segments = array_slice($namespaces[$index], -$depth);
+                $tags[$class] = implode('/', $segments).'/'.$short;
+                $prefixes[$class] = Str::studly(implode('_', $segments));
+            }
+        }
+
+        return [$tags, $prefixes];
+    }
+
+    /**
+     * @param  array<string, array<string, mixed>>  $extra
+     * @param  array<string, mixed>  $schemas
+     * @return array<string, mixed>
+     */
+    private function buildRequestBody(SchemaBuilder $builder, string $schemaName, array $extra, array &$schemas, string $description): array
+    {
+        if ($builder->hasFiles()) {
+            $schemas[$schemaName] = $builder->formSchema($extra);
+            $content = [
+                'multipart/form-data' => ['schema' => ['$ref' => "#/components/schemas/{$schemaName}"]],
+            ];
+        } else {
+            $schemas[$schemaName] = $builder->jsonSchema($extra);
+            $schemas[$schemaName.'Form'] = $builder->formSchema($extra);
+            $content = [
+                'application/json' => ['schema' => ['$ref' => "#/components/schemas/{$schemaName}"]],
+                'multipart/form-data' => ['schema' => ['$ref' => "#/components/schemas/{$schemaName}Form"]],
+            ];
+        }
+
+        $body = ['content' => $content, 'required' => true];
+        if ($description !== '') {
+            $body['description'] = $description;
+        }
+
+        return $body;
+    }
+
+    private function inferSuccessStatus(?ResponseExampleExtractor $extractor, string $action, string $method): int
+    {
+        if ($extractor !== null && method_exists($extractor, 'inferSuccessStatus')) {
+            $status = $this->safely(fn () => $extractor->inferSuccessStatus($action), $action);
+            if (is_int($status) && $status >= 200 && $status < 300) {
+                return $status;
+            }
+        }
+
+        return 200;
+    }
+
+    private function safely(callable $callback, string $action): mixed
+    {
+        try {
+            return $callback();
+        } catch (Throwable $e) {
+            Debug::log("example inference failed for {$action}", $e);
+
             return null;
         }
     }
 
-    private function getVersion() {
+    public function getControllerPath($controller)
+    {
+        if (! is_string($controller)) {
+            return null;
+        }
+
+        return explode('@', $controller)[0];
+    }
+
+    private function getSectionAttributeValue(?string $controllerClassName)
+    {
+        if ($controllerClassName === null || ! class_exists($controllerClassName)) {
+            return null;
+        }
+
+        try {
+            $attributes = (new ReflectionClass($controllerClassName))->getAttributes(SwaggerSection::class);
+
+            return $attributes === [] ? null : $attributes[0]->newInstance()->getValue();
+        } catch (Throwable $e) {
+            Debug::log("could not read #[SwaggerSection] on {$controllerClassName}", $e);
+
+            return null;
+        }
+    }
+
+    private function getVersion()
+    {
         $versions = config('swagger.versions');
         $version = 'api/';
         if (request()->filled('version') && in_array(request()->version, $versions)) {
             if (request()->version == 'all') {
                 $version = null;
             } else {
-                $version = 'api/' . request()->version;
+                $version = 'api/'.request()->version;
             }
         }
+
         return $version;
     }
 
+    /**
+     * `api/v1` must match `/api/v1/...` but not `/api/v10/...`.
+     */
+    private function uriMatchesVersion(string $uri, string $version): bool
+    {
+        $version = trim($version, '/');
+
+        return (bool) preg_match('#(^|/)'.preg_quote($version, '#').'(/|$)#', $uri);
+    }
 
     private function spatieSchema(&$params, $method)
     {
-        $spatie_query_builder = config('swagger.spatie_query_builder');
-        if ($method == 'GET|HEAD' &&  $spatie_query_builder) {
+        if ($method !== 'GET' || ! config('swagger.spatie_query_builder')) {
+            return;
+        }
+
+        $params[] = [
+            'name' => 'filter',
+            'in' => 'query',
+            'description' => 'Filter',
+            'required' => false,
+            'style' => 'deepObject',
+            'explode' => true,
+            'schema' => [
+                'type' => 'object',
+                'additionalProperties' => [
+                    'type' => 'string',
+                    'description' => 'The dynamic filtering',
+                ],
+            ],
+        ];
+        foreach (['sort', 'include'] as $name) {
             $params[] = [
-                "name" => "filter",
-                "in" => "query",
-                "description" => "Filter",
-                "required" => false,
-                "style" => "deepObject",
-                "explode" => true,
-                "schema" => [
-                    "type" => "object",
-                    "additionalProperties" => [
-                        "type" => "string",
-                        "description" => "The dynamic filtering"
-                    ]
-                ]
-            ];
-            $params[] = [
-                "name" => "sort",
-                "in" => "query",
-                "description" => "sort",
-                "required" => false,
-                "schema" => [
-                    "nullable" => "true",
-                    "type" => "string",
-                ]
-            ];
-            $params[] = [
-                "name" => "include",
-                "in" => "query",
-                "description" => "include",
-                "required" => false,
-                "schema" => [
-                    "nullable" => "true",
-                    "type" => "string",
-                ]
+                'name' => $name,
+                'in' => 'query',
+                'description' => $name,
+                'required' => false,
+                'schema' => ['type' => 'string', 'nullable' => true],
             ];
         }
     }
-
 }

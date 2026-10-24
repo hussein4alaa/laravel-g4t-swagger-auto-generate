@@ -2,6 +2,7 @@
 
 namespace G4T\Swagger\Responses;
 
+use G4T\Swagger\Support\FieldRules;
 use Illuminate\Support\Str;
 
 abstract class BaseResponse
@@ -9,8 +10,9 @@ abstract class BaseResponse
     protected static function getResponses($method, $route)
     {
         $status = config('swagger.status') ?? [];
+        $responses = $status[$method] ?? [];
 
-        return $status[$method] ?? [];
+        return is_array($responses) ? $responses : [];
     }
 
     private static function getSummary($route)
@@ -27,8 +29,9 @@ abstract class BaseResponse
             return;
         }
 
-        $dir = str_replace(['/', '{', '}', '?'], '-', $route['uri']);
-        $jsonDirPath = storage_path("swagger/{$route['controller']}/{$dir}");
+        $dir = str_replace(['/', '{', '}', '?'], '-', $route['storage_uri'] ?? $route['uri']);
+        $controller = $route['storage_controller'] ?? $route['controller'];
+        $jsonDirPath = storage_path("swagger/{$controller}/{$dir}");
         if (! is_dir($jsonDirPath)) {
             return;
         }
@@ -63,13 +66,66 @@ abstract class BaseResponse
             return;
         }
 
-        $has200Example = isset($response['responses']['200']['content']['application/json']['example']);
-        if ($has200Example) {
+        $code = self::successStatus($route);
+        if ($code === '204') {
             return;
         }
 
-        $response['responses']['200']['description'] = $response['responses']['200']['description'] ?? 'OK';
-        $response['responses']['200']['content']['application/json']['example'] = $route['response_example'];
+        foreach ($response['responses'] as $status => $definition) {
+            if ((int) $status >= 200 && (int) $status < 300 && isset($definition['content']['application/json']['example'])) {
+                return;
+            }
+        }
+
+        $response['responses'][$code]['description'] = $response['responses'][$code]['description'] ?? self::defaultSuccessDescription((int) $code);
+        $response['responses'][$code]['content']['application/json']['example'] = $route['response_example'];
+    }
+
+    /**
+     * Every operation documents its success response (OpenAPI requires a non-empty responses object),
+     * and protected routes document 401.
+     */
+    private static function ensureDefaultResponses(array &$response, array $route): void
+    {
+        $hasSuccess = false;
+        foreach (array_keys($response['responses']) as $status) {
+            if ((int) $status >= 200 && (int) $status < 300) {
+                $hasSuccess = true;
+
+                break;
+            }
+        }
+
+        if (! $hasSuccess) {
+            $code = self::successStatus($route);
+            $response['responses'][$code] = ['description' => self::defaultSuccessDescription((int) $code)];
+        }
+
+        if (! empty($route['need_token']) && ! isset($response['responses']['401'])) {
+            $response['responses']['401'] = [
+                'description' => 'Unauthenticated',
+                'content' => ['application/json' => ['example' => ['message' => 'Unauthenticated.']]],
+            ];
+        }
+
+        ksort($response['responses'], SORT_STRING);
+    }
+
+    private static function successStatus(array $route): string
+    {
+        $status = (int) ($route['success_status'] ?? 200);
+
+        return (string) ($status >= 200 && $status < 300 ? $status : 200);
+    }
+
+    private static function defaultSuccessDescription(int $code): string
+    {
+        return match ($code) {
+            201 => 'Created',
+            202 => 'Accepted',
+            204 => 'No Content',
+            default => 'OK',
+        };
     }
 
     /**
@@ -274,7 +330,9 @@ abstract class BaseResponse
             if (! self::validationRulesMarkFieldRequired($rule)) {
                 continue;
             }
-            $errors[$field] = ["The {$field} field is required."];
+            $key = str_replace('*', '0', (string) $field);
+            $label = str_replace(['_', '.*.', '.'], [' ', ' ', ' '], (string) $field);
+            $errors[$key] = ["The {$label} field is required."];
         }
 
         return [
@@ -284,44 +342,13 @@ abstract class BaseResponse
     }
 
     /**
-     * Only fields whose rules include a bare `required` segment get a "field is required" line in the example;
-     * optional / `nullable`-only attributes are omitted.
+     * Only fields that are unconditionally required (`required`, not `required_if` / `sometimes`).
      *
-     * @param  mixed  $rule  string pipe-rules or array of rules
+     * @param  mixed  $rule  pipe string, array of rules or a rule object
      */
     private static function validationRulesMarkFieldRequired(mixed $rule): bool
     {
-        if (is_array($rule)) {
-            foreach ($rule as $segment) {
-                if (is_string($segment) && self::pipeRuleStringContainsBareRequired($segment)) {
-                    return true;
-                }
-            }
-
-            return false;
-        }
-
-        if (is_string($rule)) {
-            return self::pipeRuleStringContainsBareRequired($rule);
-        }
-
-        return false;
-    }
-
-    private static function pipeRuleStringContainsBareRequired(string $pipeRules): bool
-    {
-        foreach (explode('|', $pipeRules) as $part) {
-            $part = trim($part);
-            if ($part === '') {
-                continue;
-            }
-            $name = strtolower(strtok($part, ':'));
-            if ($name === 'required') {
-                return true;
-            }
-        }
-
-        return false;
+        return FieldRules::parse($rule)->isRequired();
     }
 
     public static function index($route)
@@ -329,46 +356,24 @@ abstract class BaseResponse
         $response = [
             'tags' => [$route['controller']],
             'summary' => self::getSummary($route),
-            'description' => "{$route['description']}",
+            'description' => (string) $route['description'],
             'operationId' => $route['operation_id'],
-            'parameters' => $route['params'],
+            'parameters' => array_values($route['params']),
             'responses' => self::getResponses(static::METHOD, $route),
-            'security' => self::getSecurity($route),
         ];
 
-        if ($route['has_schema']) {
-            $response['requestBody'] = [
-                'description' => "{$route['description']}",
-                'content' => [
-                    'multipart/form-data' => [
-                        'schema' => [
-                            '$ref' => "#/components/schemas/{$route['schema_name']}",
-                        ],
-                    ],
-                    'application/json' => [
-                        'schema' => [
-                            '$ref' => "#/components/schemas/{$route['schema_name']}",
-                        ],
-                    ],
-                ],
-                'required' => true,
-            ];
+        if (! empty($route['request_body'])) {
+            $response['requestBody'] = $route['request_body'];
         }
 
         self::applyStoredResponseExamples($response, $route);
         self::applyInferredResponseExample($response, $route);
         self::applyInferredErrorExamples($response, $route);
         self::omitDefaultNotFoundForShow($response, $route);
+        self::ensureDefaultResponses($response, $route);
 
         if ($route['need_token']) {
-            $security_array = [];
-            $security_schemes = config('swagger.security_schemes');
-            foreach ($security_schemes as $key => $security_scheme) {
-                $security_array[] = [$key => []];
-            }
-            $response['security'] = $security_array;
-        } else {
-            unset($response['security']);
+            $response['security'] = self::getSecurity($route);
         }
 
         return $response;

@@ -2,7 +2,7 @@
 
 namespace G4T\Swagger\Tests\Fixtures\Requests;
 
-use G4T\Swagger\Tests\Fixtures\Enums\PostStatus;
+use G4T\Swagger\Tests\Fixtures\Enums\PostStatusRule;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 
@@ -15,7 +15,7 @@ class StorePostRequest extends FormRequest
             'title' => 'required|string|max:255',
             // array syntax
             'body' => ['nullable', 'string'],
-            'status' => ['required', Rule::enum(PostStatus::class)],
+            'status' => ['required', PostStatusRule::make()],
             'priority' => 'required|in:low,medium,high',
             'category_id' => 'required|integer|exists:categories,id',
             'reference' => 'nullable|uuid',

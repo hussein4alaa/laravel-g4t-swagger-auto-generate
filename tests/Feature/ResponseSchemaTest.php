@@ -23,7 +23,10 @@ class ResponseSchemaTest extends TestCase
         $this->assertSame('object', $post['type']);
         $this->assertSame('integer', $post['properties']['id']['type']);
         $this->assertSame('boolean', $post['properties']['is_featured']['type']);
-        $this->assertSame(['draft', 'published'], $post['properties']['status']['enum']);
+        if (PHP_VERSION_ID >= 80100) {
+            // Enum casts need PHP 8.1 enums.
+            $this->assertSame(['draft', 'published'], $post['properties']['status']['enum']);
+        }
         $this->assertSame('date-time', $post['properties']['created_at']['format']);
     }
 

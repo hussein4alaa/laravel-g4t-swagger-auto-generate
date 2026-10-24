@@ -2,7 +2,7 @@
 
 namespace G4T\Swagger\Tests\Fixtures\Requests;
 
-use G4T\Swagger\Tests\Fixtures\Enums\PostStatus;
+use G4T\Swagger\Tests\Fixtures\Enums\PostStatusRule;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 
@@ -12,7 +12,7 @@ class UpdatePostRequest extends FormRequest
     {
         return [
             'title' => ['sometimes', 'string', 'max:255'],
-            'status' => ['sometimes', Rule::enum(PostStatus::class)],
+            'status' => ['sometimes', PostStatusRule::make()],
         ];
     }
 }

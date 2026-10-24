@@ -157,9 +157,8 @@ class Swagger
                 'request_body' => $requestBody,
                 'need_token' => $this->checkIfTokenIsRequired($route),
                 'success_status' => $this->inferSuccessStatus($exampleExtractor, $action, $method),
-                ...$this->successResponse($exampleExtractor, $action, $inferExamples, $responseSchemas),
                 'error_response_examples' => $inferErrorExamples && $exampleExtractor ? ($this->safely(fn () => $exampleExtractor->extractErrorResponseExamples($action), $action) ?? []) : [],
-            ];
+            ] + $this->successResponse($exampleExtractor, $action, $inferExamples, $responseSchemas);
         }
 
         $swaggerJson = new stdClass;

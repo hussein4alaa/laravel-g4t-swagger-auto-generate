@@ -22,11 +22,15 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        php: ['8.2', '8.3', '8.4', '8.5']
-        laravel: ['11', '12', '13']
+        php: ['8.0', '8.1', '8.2', '8.3', '8.4', '8.5']
+        laravel: ['9', '10', '11', '12', '13']
         stability: [prefer-stable]
         include:
           # Laravel -> Orchestra Testbench major (verified against the packagist requirements).
+          - laravel: '9'
+            testbench: '^7.0'
+          - laravel: '10'
+            testbench: '^8.0'
           - laravel: '11'
             testbench: '^9.0'
           - laravel: '12'
@@ -34,6 +38,14 @@ jobs:
           - laravel: '13'
             testbench: '^11.0'
           # Lowest supported dependencies on the oldest PHP of each Laravel line.
+          - php: '8.0'
+            laravel: '9'
+            testbench: '^7.0'
+            stability: prefer-lowest
+          - php: '8.1'
+            laravel: '10'
+            testbench: '^8.0'
+            stability: prefer-lowest
           - php: '8.2'
             laravel: '11'
             testbench: '^9.0'
@@ -47,12 +59,22 @@ jobs:
             testbench: '^11.0'
             stability: prefer-lowest
         exclude:
-          # Laravel 13 requires PHP >= 8.3.
-          - php: '8.2'
-            laravel: '13'
-          # Laravel 11 supports PHP 8.2 - 8.4.
-          - php: '8.5'
-            laravel: '11'
+          # PHP versions each Laravel line supports: 9 → 8.0–8.2, 10 → 8.1–8.3,
+          # 11 → 8.2–8.4, 12 → 8.2–8.5, 13 → 8.3–8.5.
+          - { laravel: '9', php: '8.3' }
+          - { laravel: '9', php: '8.4' }
+          - { laravel: '9', php: '8.5' }
+          - { laravel: '10', php: '8.0' }
+          - { laravel: '10', php: '8.4' }
+          - { laravel: '10', php: '8.5' }
+          - { laravel: '11', php: '8.0' }
+          - { laravel: '11', php: '8.1' }
+          - { laravel: '11', php: '8.5' }
+          - { laravel: '12', php: '8.0' }
+          - { laravel: '12', php: '8.1' }
+          - { laravel: '13', php: '8.0' }
+          - { laravel: '13', php: '8.1' }
+          - { laravel: '13', php: '8.2' }
 
     steps:
       - name: Checkout
@@ -65,10 +87,10 @@ jobs:
           extensions: dom, curl, libxml, mbstring, zip, pdo, sqlite, pdo_sqlite, fileinfo
           coverage: none
 
-      # Laravel 11 no longer receives security fixes, and Composer 2.9+ refuses packages with
-      # open advisories. Allow them here so the package is still tested against Laravel 11.
-      - name: Allow Laravel 11 despite open advisories (CI only)
-        if: matrix.laravel == '11'
+      # Laravel 9, 10 and 11 no longer receive security fixes, and Composer 2.9+ refuses packages
+      # with open advisories. Allow them here so the package is still tested against those lines.
+      - name: Allow end-of-life Laravel lines despite open advisories (CI only)
+        if: contains(fromJSON('["9", "10", "11"]'), matrix.laravel)
         run: composer config audit.block-insecure false
 
       - name: Install dependencies

@@ -7,7 +7,10 @@ use Illuminate\Http\Resources\Json\JsonResource;
 
 class PostResource extends JsonResource
 {
-    public function toArray(Request $request): array
+    /**
+     * @param  Request  $request  untyped: Laravel 9 declares JsonResource::toArray($request)
+     */
+    public function toArray($request): array
     {
         return [
             'id' => $this->id,

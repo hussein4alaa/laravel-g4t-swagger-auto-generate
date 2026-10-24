@@ -14,8 +14,8 @@
   <a href="https://packagist.org/packages/g4t/swagger"><img src="https://img.shields.io/packagist/v/g4t/swagger?label=packagist&color=4f46e5" alt="Latest version"></a>
   <a href="https://packagist.org/packages/g4t/swagger"><img src="https://img.shields.io/packagist/dt/g4t/swagger?color=4f46e5" alt="Total downloads"></a>
   <a href="https://github.com/hussein4alaa/laravel-g4t-swagger-auto-generate/actions/workflows/tests.yml"><img src="https://github.com/hussein4alaa/laravel-g4t-swagger-auto-generate/actions/workflows/tests.yml/badge.svg" alt="Tests"></a>
-  <img src="https://img.shields.io/badge/php-8.2%2B-777bb4" alt="PHP 8.2+">
-  <img src="https://img.shields.io/badge/laravel-11%20%7C%2012%20%7C%2013-ff2d20" alt="Laravel 11, 12, 13">
+  <img src="https://img.shields.io/badge/php-8.0%2B-777bb4" alt="PHP 8.0+">
+  <img src="https://img.shields.io/badge/laravel-9%20%E2%80%93%2013-ff2d20" alt="Laravel 9 to 13">
   <a href="LICENSE"><img src="https://img.shields.io/packagist/l/g4t/swagger?color=4f46e5" alt="MIT license"></a>
 </p>
 
@@ -46,10 +46,15 @@
 
 ## Requirements
 
-| | Version |
+| Laravel | PHP |
 |---|---|
-| PHP | 8.2 or newer |
-| Laravel | 11, 12 or 13 |
+| 13 | 8.3 – 8.5 |
+| 12 | 8.2 – 8.5 |
+| 11 | 8.2 – 8.4 |
+| 10 | 8.1 – 8.3 |
+| 9 | 8.0 – 8.2 |
+
+Enum features (`Rule::enum()`, enum casts in response schemas) need PHP 8.1, like enums themselves.
 
 ## Installation
 
@@ -315,7 +320,7 @@ Set `MOCK_SERVER_APP_ID` to always update the same mock app without prompts.
 composer test
 ```
 
-The suite runs on Orchestra Testbench, and GitHub Actions covers PHP 8.2–8.5 with Laravel 11, 12 and 13.
+The suite runs on Orchestra Testbench, and GitHub Actions covers every supported pair above (Laravel 9 to 13, PHP 8.0 to 8.5), including the lowest supported dependencies.
 
 <p align="center">
   <img src="./back.png" alt="I Stand with IRAN">

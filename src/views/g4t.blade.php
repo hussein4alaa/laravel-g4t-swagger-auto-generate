@@ -29,7 +29,10 @@
                 <svg class="g4t-select-chev" aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="m6 9 6 6 6-6"></path></svg>
             </label>
             <div class="g4t-spacer"></div>
-            <button type="button" class="g4t-env-btn" data-action="open-envs" id="g4t-env-btn" aria-haspopup="dialog" title="Environments and variables"></button>
+            <div class="g4t-pop" data-g4t-pop="envs">
+                <button type="button" class="g4t-env-btn" data-action="toggle-env-menu" id="g4t-env-btn" aria-haspopup="menu" aria-expanded="false" title="Switch environment"></button>
+                <div class="g4t-menu g4t-env-menu" role="menu" aria-label="Environments" id="g4t-env-menu" hidden></div>
+            </div>
             <div class="g4t-pop" data-g4t-pop="download">
                 <button type="button" class="g4t-icon-btn" data-action="toggle-download" aria-label="Download the OpenAPI document" aria-haspopup="menu" aria-expanded="false" id="g4t-download-btn">
                     <svg aria-hidden="true" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4v11M7 10l5 5 5-5M5 20h14"></path></svg>
@@ -83,6 +86,7 @@
             'defaultTheme' => $defaultTheme,
             'mode' => $g4t['mode'],
             'density' => $g4t['density'],
+            'environments' => $environments ?? [],
             'jsonUrl' => url(config('swagger.url') . '/json'),
         ], JSON_UNESCAPED_SLASHES | JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) !!};
     </script>

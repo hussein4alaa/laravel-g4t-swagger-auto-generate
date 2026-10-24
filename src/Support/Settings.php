@@ -5,7 +5,7 @@ namespace G4T\Swagger\Support;
 /**
  * Settings saved from the dashboard, layered over config/swagger.php.
  *
- * The file (storage/app/swagger/settings.json) only holds what was changed in the dashboard:
+ * The file (swagger-settings.json in the project root by default) only holds what was changed in the dashboard:
  * `config` (overridden swagger.* values) and `layout` (tag / operation order and hidden
  * operations). Keys that were never changed keep following the config file.
  */
@@ -17,7 +17,7 @@ final class Settings
         'enable', 'enable_auth', 'username', 'password',
         'ui', 'theme', 'g4t', 'scalar',
         'versions', 'default', 'servers',
-        'security_schemes', 'global_headers', 'auto_login',
+        'security_schemes', 'global_headers', 'environments', 'auto_login',
         'infer_response_examples', 'infer_error_response_examples', 'response_schemas',
         'unwrap_resource_collection_examples', 'include_web_routes', 'show_prefix', 'spatie_query_builder',
     ];
@@ -32,6 +32,14 @@ final class Settings
     private static ?array $baseline = null;
 
     public static function path(): string
+    {
+        $path = (string) (config('swagger.dashboard.settings_path') ?: 'swagger-settings.json');
+
+        return preg_match('#^([/\\\\]|[A-Za-z]:[/\\\\])#', $path) ? $path : base_path($path);
+    }
+
+    /** Where releases before the configurable path saved the settings; read until the next save. */
+    public static function legacyPath(): string
     {
         return storage_path('app/swagger/settings.json');
     }
@@ -103,6 +111,9 @@ final class Settings
         }
 
         self::$data = $data;
+        if (self::legacyPath() !== self::path() && is_file(self::legacyPath())) {
+            @unlink(self::legacyPath());
+        }
         foreach (self::EDITABLE as $key) {
             config()->set('swagger.'.$key, array_key_exists($key, $overrides) ? self::merged($key, $overrides[$key], $baseline[$key] ?? null) : ($baseline[$key] ?? null));
         }
@@ -116,9 +127,10 @@ final class Settings
      */
     public static function reset(): bool
     {
-        $path = self::path();
-        if (is_file($path) && ! unlink($path)) {
-            return false;
+        foreach (array_unique([self::path(), self::legacyPath()]) as $path) {
+            if (is_file($path) && ! unlink($path)) {
+                return false;
+            }
         }
 
         foreach (self::EDITABLE as $key) {
@@ -146,7 +158,8 @@ final class Settings
             return self::$data;
         }
 
-        $raw = is_file(self::path()) ? json_decode((string) file_get_contents(self::path()), true) : null;
+        $file = is_file(self::path()) ? self::path() : (is_file(self::legacyPath()) ? self::legacyPath() : null);
+        $raw = $file !== null ? json_decode((string) file_get_contents($file), true) : null;
         $config = is_array($raw['config'] ?? null) ? array_intersect_key($raw['config'], array_flip(self::EDITABLE)) : [];
 
         return self::$data = [

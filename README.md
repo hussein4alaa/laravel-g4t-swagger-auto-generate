@@ -265,11 +265,26 @@ To document a header on **every** operation (a language, a tenant, a request id�
 ],
 ```
 
-In the `g4t` UI, each environment can also send its own headers with every request (Environments → Headers), with `{{variables}}` in their values, e.g. `X-Tenant: {{tenant}}`.
+### Environments
+
+The environment menu in the `g4t` UI header switches the base URL, the `{{variables}}` you can type in any parameter, field or body, and headers sent with every request. Readers can create their own; the ones in `environments` (or the dashboard's **Environments** section) are shared with everyone and read-only for readers, who can duplicate them to change values:
+
+```php
+"environments" => [
+    [
+        "name" => "Staging",
+        "base_url" => "https://staging.example.com",
+        "variables" => ["tenant" => "acme"],
+        "headers" => ["X-Tenant" => "{{tenant}}"],
+    ],
+],
+```
+
+Shared environments are visible in the page, so never put secrets in them.
 
 ## Settings dashboard
 
-Everything above can also be changed from a dashboard, without editing `config/swagger.php`: the info block, the UI and its theme, versions and servers, security schemes, global headers, the Try it out login, the generation switches and access. Drag sections and operations to set their order in every UI, and hide an operation from the documentation (the route keeps working).
+Everything above can also be changed from a dashboard, without editing `config/swagger.php`: the info block, the UI and its theme, versions and servers, security schemes, global headers, shared environments, the Try it out login, the generation switches and access. Drag sections and operations to set their order in every UI, and hide an operation from the documentation (the route keeps working).
 
 The dashboard is off until it has credentials. Add them to `.env`:
 
@@ -280,7 +295,7 @@ SWAGGER_DASHBOARD_PASSWORD=a-long-random-password   # or a bcrypt/argon hash fro
 
 Then open `/swagger/dashboard` (`SWAGGER_DASHBOARD_URL`). Sign-in uses the session (the `web` middleware group) and allows 5 attempts a minute per IP.
 
-Saved changes go to `storage/app/swagger/settings.json`, and only the values you changed are kept; everything else keeps following `config/swagger.php`. Saving the config file's value again removes the override, and **Reset** removes them all. Saving also clears the `swagger:cache` file. To commit the settings or share them between servers, deploy that file with your app; turn the dashboard off with `SWAGGER_DASHBOARD_ENABLED=false`.
+Saved changes go to `swagger-settings.json` in the project root (`SWAGGER_DASHBOARD_SETTINGS_PATH`, relative to the root or absolute), outside `public/`, so it is never served. Only the values you changed are kept; everything else keeps following `config/swagger.php`. Saving the config file's value again removes the override, and **Reset** removes them all. Saving also clears the `swagger:cache` file. Commit the file to ship the same settings to every server (it holds the docs password if you set one in the dashboard); turn the dashboard off with `SWAGGER_DASHBOARD_ENABLED=false`. Settings saved by earlier versions in `storage/app/swagger/settings.json` keep working and move to the new file on the next save.
 
 ## Configuration
 
@@ -298,6 +313,7 @@ All keys live in `config/swagger.php`. The most useful ones:
 | `auth_middlewares` | | `auth`, `auth:api`, `auth:sanctum` | Extra middleware names that mark a route as protected |
 | `security_schemes` | | HTTP bearer | OpenAPI security schemes (bearer, basic, API key in a header or query) |
 | `global_headers` | | `[]` | Header parameters added to every operation |
+| `environments` | | `[]` | [Shared environments](#environments) for the `g4t` UI |
 | `infer_response_examples` | | `true` | Success examples from controllers |
 | `infer_error_response_examples` | | `true` | Error examples (`abort`, `json(…, 4xx)`, `422`) |
 | `response_schemas` | `SWAGGER_RESPONSE_SCHEMAS` | `true` | Response schemas and `$ref` components |
@@ -306,7 +322,7 @@ All keys live in `config/swagger.php`. The most useful ones:
 | `enable_auth` | `SWAGGER_AUTH_ENABLED` | `false` | Basic Auth on the docs (`SWAGGER_USERNAME`, `SWAGGER_PASSWORD`) |
 | `middleware` | | `[]` | Extra middleware for the docs routes, e.g. `["web", "auth"]` |
 | `cached_spec_location` | `SWAGGER_CACHED_SPEC_LOCATION` | `storage` | Where `swagger:cache` writes (`storage` or `public`) |
-| `dashboard` | `SWAGGER_DASHBOARD_*` | off until a username and password are set | The [settings dashboard](#settings-dashboard): `enabled`, `url`, `username`, `password`, `middleware` |
+| `dashboard` | `SWAGGER_DASHBOARD_*` | off until a username and password are set | The [settings dashboard](#settings-dashboard): `enabled`, `url`, `username`, `password`, `settings_path`, `middleware` |
 
 ### Protecting the documentation
 

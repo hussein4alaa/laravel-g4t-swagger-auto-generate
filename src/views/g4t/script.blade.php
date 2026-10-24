@@ -52,12 +52,12 @@
         expanded: {}, trying: {}, respTab: {}, exTab: {}, respView: {}, ctype: {},
         bodies: {}, inputs: {}, forms: {}, files: {}, busy: {}, results: {},
         codeLang: store.get('codeLang', 'curl'), codeOpen: {}, historyOpen: {},
-        envs: [], envId: null, envsOpen: false, envEdit: null, downloadOpen: false,
+        envs: [], envId: null, envsOpen: false, envEdit: null, envMenuOpen: false, downloadOpen: false,
         creds: {}, credDraft: {}
     };
 
     var $ = function (id) { return document.getElementById(id); };
-    var els = { app: document.querySelector('.g4t-app'), version: $('g4t-version'), auth: $('g4t-auth'), appear: $('g4t-appear'), appearBtn: $('g4t-appear-btn'), filter: $('g4t-filter'), nav: $('g4t-nav'), info: $('g4t-info'), ops: $('g4t-ops'), login: $('g4t-login'), toast: $('g4t-toast'), envBtn: $('g4t-env-btn'), envs: $('g4t-envs'), download: $('g4t-download'), downloadBtn: $('g4t-download-btn'), scrim: document.querySelector('.g4t-scrim'), drawerBtn: document.querySelector('.g4t-drawer-btn') };
+    var els = { app: document.querySelector('.g4t-app'), version: $('g4t-version'), auth: $('g4t-auth'), appear: $('g4t-appear'), appearBtn: $('g4t-appear-btn'), filter: $('g4t-filter'), nav: $('g4t-nav'), info: $('g4t-info'), ops: $('g4t-ops'), login: $('g4t-login'), toast: $('g4t-toast'), envBtn: $('g4t-env-btn'), envMenu: $('g4t-env-menu'), envs: $('g4t-envs'), download: $('g4t-download'), downloadBtn: $('g4t-download-btn'), scrim: document.querySelector('.g4t-scrim'), drawerBtn: document.querySelector('.g4t-drawer-btn') };
 
     /* ---------- helpers ---------- */
 
@@ -549,16 +549,40 @@
 
     function newId() { return 'env-' + Math.random().toString(36).slice(2, 9); }
     function loadEnvs() {
+        var pairs = function (list) { return Array.isArray(list) ? list.map(function (v) { return { key: String(v.key || ''), value: String(v.value == null ? '' : v.value) }; }) : []; };
+        var clean = function (e, shared) { return { id: String(e.id), name: String(e.name || 'Environment'), baseUrl: String(e.baseUrl || ''), vars: pairs(e.vars), headers: pairs(e.headers), shared: shared }; };
+        // Shared environments come from swagger.environments (config or dashboard); they are read-only here.
+        var shared = (Array.isArray(S.environments) ? S.environments : []).filter(function (e) { return e && e.id; }).map(function (e) { return clean(e, true); });
         var envs = loadJson('envs', null);
-        state.envs = Array.isArray(envs) && envs.length ? envs.filter(function (e) { return e && e.id; }).map(function (e) {
-            var pairs = function (list) { return Array.isArray(list) ? list.map(function (v) { return { key: String(v.key || ''), value: String(v.value == null ? '' : v.value) }; }) : []; };
-            return { id: String(e.id), name: String(e.name || 'Environment'), baseUrl: String(e.baseUrl || ''), vars: pairs(e.vars), headers: pairs(e.headers) };
-        }) : [];
-        if (!state.envs.length) { state.envs = [{ id: 'default', name: 'Default', baseUrl: '', vars: [], headers: [] }]; }
+        var own = Array.isArray(envs) ? envs.filter(function (e) { return e && e.id && String(e.id).indexOf('shared:') !== 0; }).map(function (e) { return clean(e, false); }) : [];
+        if (!own.length) { own = [{ id: 'default', name: shared.length ? 'This server' : 'Default', baseUrl: '', vars: [], headers: [], shared: false }]; }
+        state.envs = shared.concat(own);
         var saved = store.get('envId', null);
         state.envId = state.envs.some(function (e) { return e.id === saved; }) ? saved : state.envs[0].id;
     }
-    function saveEnvs() { saveJson('envs', state.envs); store.set('envId', state.envId); }
+    function saveEnvs() {
+        saveJson('envs', state.envs.filter(function (e) { return !e.shared; }).map(function (e) { return { id: e.id, name: e.name, baseUrl: e.baseUrl, vars: e.vars, headers: e.headers }; }));
+        store.set('envId', state.envId);
+    }
+    function switchEnv(id) {
+        if (!state.envs.some(function (e) { return e.id === id; })) { return; }
+        state.envId = id; state.envMenuOpen = false; saveEnvs(); renderEnvMenu(); afterEnvChange(); toast('Environment: ' + activeEnv().name);
+    }
+    function renderEnvMenu() {
+        els.envMenu.hidden = !state.envMenuOpen;
+        els.envBtn.setAttribute('aria-expanded', state.envMenuOpen ? 'true' : 'false');
+        if (!state.envMenuOpen) { return; }
+        var item = function (e) {
+            var on = e.id === state.envId;
+            return '<button type="button" role="menuitemradio" aria-checked="' + on + '" class="g4t-env-item" data-action="env-switch" data-value="' + esc(e.id) + '">' +
+                '<span class="g4t-dot' + (on ? ' g4t-dot-on' : '') + '"></span><span class="g4t-env-item-text"><span>' + esc(e.name) + '</span>' +
+                '<span class="g4t-muted g4t-mono">' + esc(e.baseUrl || 'Same server as the page') + '</span></span></button>';
+        };
+        var shared = state.envs.filter(function (e) { return e.shared; }), own = state.envs.filter(function (e) { return !e.shared; });
+        els.envMenu.innerHTML = (shared.length ? '<div class="g4t-menu-label">Shared</div>' + shared.map(item).join('') + '<div class="g4t-menu-label">Yours</div>' : '') +
+            own.map(item).join('') +
+            '<button type="button" role="menuitem" class="g4t-btn" data-action="open-envs">' + ICON.vars + 'Manage environments…</button>';
+    }
     function editedEnv() { return state.envs.filter(function (e) { return e.id === state.envEdit; })[0] || activeEnv(); }
     function renderEnvButton() {
         var env = activeEnv(), count = (env.vars || []).filter(function (v) { return v.key; }).length;
@@ -568,32 +592,35 @@
     function renderEnvs() {
         if (!state.envsOpen) { els.envs.innerHTML = ''; return; }
         var env = editedEnv(), servers = state.model ? state.model.servers : [];
+        // Shared environments are shown read-only; Duplicate makes an editable copy.
+        var ro = env.shared ? ' readonly' : '', rmVar = function (i, key) { return env.shared ? '' : '<button type="button" class="g4t-item-remove" data-action="env-remove-var" data-index="' + i + '" aria-label="Remove variable ' + esc(key) + '">−</button>'; };
         var tabs = state.envs.map(function (e) {
-            return '<button type="button" role="tab" class="g4t-env-tab" aria-selected="' + (e.id === env.id) + '" data-action="env-select" data-value="' + esc(e.id) + '">' + (e.id === state.envId ? '<span class="g4t-dot g4t-dot-on" title="Active"></span>' : '') + '<span>' + esc(e.name) + '</span></button>';
+            return '<button type="button" role="tab" class="g4t-env-tab" aria-selected="' + (e.id === env.id) + '" data-action="env-select" data-value="' + esc(e.id) + '">' + (e.id === state.envId ? '<span class="g4t-dot g4t-dot-on" title="Active"></span>' : '') + '<span>' + esc(e.name) + '</span>' + (e.shared ? '<span class="g4t-env-shared">shared</span>' : '') + '</button>';
         }).join('') + '<button type="button" class="g4t-env-tab g4t-env-add" data-action="env-new">+ New</button>';
         var rows = (env.vars || []).map(function (v, i) {
-            return '<div class="g4t-var-row"><input class="g4t-mono" data-bind="env-key" data-index="' + i + '" value="' + esc(v.key) + '" placeholder="name" aria-label="Variable name" spellcheck="false" autocomplete="off">' +
-                '<input class="g4t-mono" data-bind="env-value" data-index="' + i + '" value="' + esc(v.value) + '" placeholder="value" aria-label="Variable value" spellcheck="false" autocomplete="off">' +
-                '<button type="button" class="g4t-item-remove" data-action="env-remove-var" data-index="' + i + '" aria-label="Remove variable ' + esc(v.key) + '">−</button></div>';
+            return '<div class="g4t-var-row"><input class="g4t-mono" data-bind="env-key" data-index="' + i + '" value="' + esc(v.key) + '" placeholder="name" aria-label="Variable name" spellcheck="false" autocomplete="off"' + ro + '>' +
+                '<input class="g4t-mono" data-bind="env-value" data-index="' + i + '" value="' + esc(v.value) + '" placeholder="value" aria-label="Variable value" spellcheck="false" autocomplete="off"' + ro + '>' +
+                rmVar(i, v.key) + '</div>';
         }).join('');
         els.envs.innerHTML = '<div class="g4t-modal" data-action="close-envs-backdrop"><div class="g4t-login-dialog g4t-env-dialog" role="dialog" aria-modal="true" aria-labelledby="g4t-env-title"><div class="g4t-env-body">' +
             '<div class="g4t-env-head"><h2 id="g4t-env-title">Environments</h2><button type="button" class="g4t-file-clear" data-action="close-envs" aria-label="Close">×</button></div>' +
             '<p>Use <code class="g4t-mono">{{name}}</code> in any parameter, form field, header or JSON body; it is replaced when the request is sent. <code class="g4t-mono">{{token}}</code> is the current bearer token.</p>' +
             '<div class="g4t-env-tabs" role="tablist" aria-label="Environments">' + tabs + '</div>' +
-            '<label>Name<input data-bind="env-name" value="' + esc(env.name) + '" autocomplete="off"></label>' +
-            '<label>Base URL<input class="g4t-mono" data-bind="env-url" value="' + esc(env.baseUrl) + '" list="g4t-env-servers" placeholder="Same server as the page" autocomplete="off" spellcheck="false"></label>' +
+            (env.shared ? '<p class="g4t-env-note">Shared by the API team, so it is read-only here. Duplicate it to change values for yourself.</p>' : '') +
+            '<label>Name<input data-bind="env-name" value="' + esc(env.name) + '" autocomplete="off"' + ro + '></label>' +
+            '<label>Base URL<input class="g4t-mono" data-bind="env-url" value="' + esc(env.baseUrl) + '" list="g4t-env-servers" placeholder="Same server as the page" autocomplete="off" spellcheck="false"' + ro + '></label>' +
             '<datalist id="g4t-env-servers">' + servers.map(function (sv) { return '<option value="' + esc(sv.url) + '">' + esc(sv.label) + '</option>'; }).join('') + '</datalist>' +
             '<div style="display:grid;gap:6px"><span style="font-size:13px;font-weight:500">Variables</span>' + (rows || '<span class="g4t-muted" style="font-size:13px">No variables yet.</span>') +
-            '<button type="button" class="g4t-btn g4t-add-item" data-action="env-add-var" style="justify-self:start">+ Add variable</button></div>' +
+            (env.shared ? '' : '<button type="button" class="g4t-btn g4t-add-item" data-action="env-add-var" style="justify-self:start">+ Add variable</button>') + '</div>' +
             '<div style="display:grid;gap:6px"><span style="font-size:13px;font-weight:500">Headers <span class="g4t-muted" style="font-weight:400">sent with every request (values may use {{variables}})</span></span>' +
             ((env.headers || []).map(function (h, i) {
-                return '<div class="g4t-var-row"><input class="g4t-mono" data-bind="env-hkey" data-index="' + i + '" value="' + esc(h.key) + '" placeholder="X-Tenant" aria-label="Header name" spellcheck="false" autocomplete="off">' +
-                    '<input class="g4t-mono" data-bind="env-hvalue" data-index="' + i + '" value="' + esc(h.value) + '" placeholder="value" aria-label="Header value" spellcheck="false" autocomplete="off">' +
-                    '<button type="button" class="g4t-item-remove" data-action="env-remove-header" data-index="' + i + '" aria-label="Remove header ' + esc(h.key) + '">−</button></div>';
+                return '<div class="g4t-var-row"><input class="g4t-mono" data-bind="env-hkey" data-index="' + i + '" value="' + esc(h.key) + '" placeholder="X-Tenant" aria-label="Header name" spellcheck="false" autocomplete="off"' + ro + '>' +
+                    '<input class="g4t-mono" data-bind="env-hvalue" data-index="' + i + '" value="' + esc(h.value) + '" placeholder="value" aria-label="Header value" spellcheck="false" autocomplete="off"' + ro + '>' +
+                    (env.shared ? '' : '<button type="button" class="g4t-item-remove" data-action="env-remove-header" data-index="' + i + '" aria-label="Remove header ' + esc(h.key) + '">−</button>') + '</div>';
             }).join('') || '<span class="g4t-muted" style="font-size:13px">No headers yet.</span>') +
-            '<button type="button" class="g4t-btn g4t-add-item" data-action="env-add-header" style="justify-self:start">+ Add header</button></div>' +
+            (env.shared ? '' : '<button type="button" class="g4t-btn g4t-add-item" data-action="env-add-header" style="justify-self:start">+ Add header</button>') + '</div>' +
             '<div class="g4t-actions" style="justify-content:space-between"><span class="g4t-actions">' +
-            (state.envs.length > 1 ? '<button type="button" class="g4t-btn g4t-btn-danger" data-action="env-delete">Delete</button>' : '') +
+            (!env.shared && state.envs.filter(function (e) { return !e.shared; }).length > 1 ? '<button type="button" class="g4t-btn g4t-btn-danger" data-action="env-delete">Delete</button>' : '') +
             '<button type="button" class="g4t-btn" data-action="env-duplicate">Duplicate</button></span><span class="g4t-actions">' +
             (env.id !== state.envId ? '<button type="button" class="g4t-btn" data-action="env-activate">Use this environment</button>' : '<span class="g4t-muted" style="font-size:12.5px">Active</span>') +
             '<button type="button" class="g4t-btn g4t-btn-primary" data-action="close-envs">Done</button></span></div>' +
@@ -1475,7 +1502,10 @@
             case 'reset-inputs': resetInputs(id); renderOp(id); toast('Saved values cleared'); break;
             case 'toggle-download': state.downloadOpen = !state.downloadOpen; state.appearOpen = false; state.authMenuOpen = false; renderDownload(); renderAppear(); renderAuth(); break;
             case 'download': downloadSpec(value); break;
+            case 'toggle-env-menu': state.envMenuOpen = !state.envMenuOpen; state.downloadOpen = false; state.appearOpen = false; state.authMenuOpen = false; renderEnvMenu(); renderDownload(); renderAppear(); renderAuth(); break;
+            case 'env-switch': switchEnv(value); break;
             case 'open-envs':
+                state.envMenuOpen = false; renderEnvMenu();
                 state.envsOpen = true; state.envEdit = state.envId; renderEnvs();
                 setTimeout(function () { var f = els.envs.querySelector('[data-bind="env-name"]'); if (f) { f.focus(); } }, 20);
                 break;
@@ -1487,12 +1517,12 @@
             case 'env-duplicate':
                 var base = action === 'env-duplicate' ? editedEnv() : null;
                 var copyPairs = function (list) { return (list || []).map(function (v) { return { key: v.key, value: v.value }; }); };
-                var created = { id: newId(), name: base ? base.name + ' copy' : 'Environment ' + (state.envs.length + 1), baseUrl: base ? base.baseUrl : '', vars: base ? copyPairs(base.vars) : [], headers: base ? copyPairs(base.headers) : [] };
+                var created = { id: newId(), name: base ? base.name + ' copy' : 'Environment ' + (state.envs.length + 1), baseUrl: base ? base.baseUrl : '', vars: base ? copyPairs(base.vars) : [], headers: base ? copyPairs(base.headers) : [], shared: false };
                 state.envs.push(created); state.envEdit = created.id; saveEnvs(); renderEnvs();
                 setTimeout(function () { var f = els.envs.querySelector('[data-bind="env-name"]'); if (f) { f.focus(); f.select(); } }, 20);
                 break;
             case 'env-delete':
-                if (state.envs.length > 1) {
+                if (!editedEnv().shared && state.envs.filter(function (en) { return !en.shared; }).length > 1) {
                     var gone = editedEnv();
                     state.envs = state.envs.filter(function (en) { return en.id !== gone.id; });
                     if (state.envId === gone.id) { state.envId = state.envs[0].id; }
@@ -1500,12 +1530,14 @@
                 }
                 break;
             case 'env-add-var':
+                if (editedEnv().shared) { break; }
                 editedEnv().vars.push({ key: '', value: '' }); saveEnvs(); renderEnvs();
                 var keyInputs = els.envs.querySelectorAll('[data-bind="env-key"]');
                 if (keyInputs.length) { keyInputs[keyInputs.length - 1].focus(); }
                 break;
             case 'env-remove-var': editedEnv().vars.splice(Number(el.getAttribute('data-index')), 1); saveEnvs(); renderEnvs(); renderEnvButton(); break;
             case 'env-add-header':
+                if (editedEnv().shared) { break; }
                 (editedEnv().headers = editedEnv().headers || []).push({ key: '', value: '' }); saveEnvs(); renderEnvs();
                 var headerInputs = els.envs.querySelectorAll('[data-bind="env-hkey"]');
                 if (headerInputs.length) { headerInputs[headerInputs.length - 1].focus(); }
@@ -1538,6 +1570,7 @@
     });
     function editEnvField(el, bind) {
         var env = editedEnv(), index = Number(el.getAttribute('data-index'));
+        if (env.shared) { return; }
         if (bind === 'env-name') { env.name = el.value || 'Environment'; var tab = els.envs.querySelector('.g4t-env-tab[aria-selected="true"]'); if (tab) { tab.lastChild.textContent = env.name; } }
         else if (bind === 'env-url') { env.baseUrl = el.value.trim(); }
         else if (bind === 'env-key') { env.vars[index].key = el.value.trim(); }
@@ -1575,10 +1608,10 @@
             e.preventDefault(); setDrawer(window.innerWidth < 900 ? true : state.drawer); els.filter.focus();
         }
         if (e.key === 'Escape') {
-            var changed = state.appearOpen || state.authMenuOpen || state.loginOpen || state.drawer || state.downloadOpen || state.envsOpen;
+            var changed = state.appearOpen || state.authMenuOpen || state.loginOpen || state.drawer || state.downloadOpen || state.envsOpen || state.envMenuOpen;
             var envsWereOpen = state.envsOpen;
-            state.appearOpen = false; state.authMenuOpen = false; state.loginOpen = false; state.downloadOpen = false; state.envsOpen = false;
-            if (changed) { setDrawer(false); renderAppear(); renderAuth(); renderLogin(); renderDownload(); renderEnvs(); }
+            state.appearOpen = false; state.authMenuOpen = false; state.loginOpen = false; state.downloadOpen = false; state.envsOpen = false; state.envMenuOpen = false;
+            if (changed) { setDrawer(false); renderAppear(); renderAuth(); renderLogin(); renderDownload(); renderEnvs(); renderEnvMenu(); }
             if (envsWereOpen) { saveEnvs(); afterEnvChange(); }
             if (e.target === els.filter && els.filter.value) { state.filter = ''; els.filter.value = ''; renderNav(); renderOps(); }
         }
@@ -1589,6 +1622,7 @@
         if (state.appearOpen && !(t.closest && t.closest('[data-g4t-pop="appear"]'))) { state.appearOpen = false; renderAppear(); }
         if (state.authMenuOpen && !(t.closest && t.closest('[data-g4t-pop="auth"]'))) { state.authMenuOpen = false; renderAuth(); }
         if (state.downloadOpen && !(t.closest && t.closest('[data-g4t-pop="download"]'))) { state.downloadOpen = false; renderDownload(); }
+        if (state.envMenuOpen && !(t.closest && t.closest('[data-g4t-pop="envs"]'))) { state.envMenuOpen = false; renderEnvMenu(); }
     });
 
     if (window.matchMedia) {

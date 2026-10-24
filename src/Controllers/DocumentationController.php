@@ -46,6 +46,7 @@ class DocumentationController
                 'themes' => $this->getThemesList(),
                 'defaultTheme' => (string) config('swagger.theme', 'default'),
                 'g4t' => $this->g4tSettings(),
+                'environments' => $this->sharedEnvironments(),
             ]);
         }
 
@@ -85,6 +86,47 @@ class DocumentationController
             'mode' => in_array($mode, ['light', 'dark', 'system'], true) ? $mode : 'light',
             'density' => in_array($density, ['comfortable', 'compact'], true) ? $density : 'comfortable',
         ];
+    }
+
+    /**
+     * Environments from swagger.environments, in the shape the g4t UI keeps its own.
+     *
+     * @return list<array{id: string, name: string, baseUrl: string, vars: list<array{key: string, value: string}>, headers: list<array{key: string, value: string}>}>
+     */
+    private function sharedEnvironments(): array
+    {
+        $pairs = function ($list): array {
+            $pairs = [];
+            foreach ((array) $list as $key => $value) {
+                // Both ["name" => "value"] and [["key" => "name", "value" => "value"]] are accepted.
+                if (is_array($value)) {
+                    [$key, $value] = [$value['key'] ?? null, $value['value'] ?? ''];
+                }
+                if (is_string($key) && $key !== '' && (is_scalar($value) || $value === null)) {
+                    $pairs[] = ['key' => $key, 'value' => (string) $value];
+                }
+            }
+
+            return $pairs;
+        };
+
+        $environments = [];
+        foreach ((array) config('swagger.environments', []) as $environment) {
+            if (! is_array($environment) || blank($environment['name'] ?? null)) {
+                continue;
+            }
+            $name = (string) $environment['name'];
+            $environments[] = [
+                // Stable across reorders, so a reader's active environment survives them.
+                'id' => 'shared:'.substr(md5($name), 0, 12),
+                'name' => $name,
+                'baseUrl' => (string) ($environment['base_url'] ?? ''),
+                'vars' => $pairs($environment['variables'] ?? []),
+                'headers' => $pairs($environment['headers'] ?? []),
+            ];
+        }
+
+        return $environments;
     }
 
     /**

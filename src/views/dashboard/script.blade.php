@@ -14,6 +14,7 @@
         ['versions', 'Versions & servers', ['versions', 'default', 'servers']],
         ['security', 'Security schemes', ['security_schemes']],
         ['headers', 'Global headers', ['global_headers']],
+        ['environments', 'Environments', ['environments']],
         ['login', 'Try it out login', ['auto_login']],
         ['generation', 'Generation', ['infer_response_examples', 'infer_error_response_examples', 'response_schemas', 'unwrap_resource_collection_examples', 'include_web_routes', 'spatie_query_builder', 'show_prefix']],
         ['access', 'Access', ['enable', 'enable_auth', 'username', 'password']]
@@ -58,6 +59,13 @@
         });
     }
 
+    /** {name: value} maps (or [{key, value}] lists) as editable rows. */
+    function pairList(raw) {
+        if (!raw) { return []; }
+        if (Array.isArray(raw)) { return raw.map(function (p) { return { key: String((p || {}).key || ''), value: String((p || {}).value == null ? '' : p.value) }; }); }
+        return Object.keys(raw).map(function (k) { return { key: k, value: raw[k] == null ? '' : String(raw[k]) }; });
+    }
+
     function toModel(state) {
         var s = clone(state.settings || {});
         var schemes = s.security_schemes || {};
@@ -83,6 +91,9 @@
                 return { name: name, type: x.type || 'http', scheme: x.scheme || 'bearer', where: x.in || 'header', keyName: x.name || '', bearerFormat: x.bearerFormat || '' };
             }),
             headers: headerList(s.global_headers),
+            envs: (Array.isArray(s.environments) ? s.environments : []).map(function (e) {
+                return { name: e.name || '', base_url: e.base_url || '', vars: pairList(e.variables), headers: pairList(e.headers) };
+            }),
             login: {
                 url: login.url || '', method: login.method || 'POST', token_path: login.token_path || '', security_scheme: login.security_scheme || '',
                 fields: Object.keys(login.fields || {}).map(function (k) { return { key: k, label: login.fields[k] }; })
@@ -121,6 +132,10 @@
                 if (h.default) { out.default = h.default; }
                 if (splitList(h.enumText).length) { out.enum = splitList(h.enumText); }
                 return out;
+            }),
+            environments: m.envs.map(function (e) {
+                var pairs = function (list) { return list.map(function (p) { return { key: p.key, value: p.value }; }); };
+                return { name: e.name, base_url: e.base_url, variables: pairs(e.vars), headers: pairs(e.headers) };
             }),
             auto_login: { url: m.login.url || null, method: m.login.method, fields: fields, token_path: m.login.token_path || null, security_scheme: m.login.security_scheme || null },
             show_prefix: splitList(m.showPrefix),
@@ -266,6 +281,30 @@
         return section('headers', 'Global headers', 'Header parameters added to every operation, so every UI shows an input for them (a language, a tenant, a request id…).',
             (model.headers.length ? list : '<div class="d-note">No global headers.</div>') + addBtn('headers', 'Add header'));
     }
+    function sEnvironments() {
+        var pairRows = function (env, ei, kind, keyLabel, keyHolder, valueHolder) {
+            var errKey = 'environments.' + ei + '.' + (kind === 'vars' ? 'variables' : 'headers');
+            return '<div class="d-list" data-sortable="env-' + kind + ':' + ei + '">' + env[kind].map(function (p, i) {
+                return '<div class="d-item" data-sort-index="' + i + '">' + handle(keyLabel + ' ' + p.key) + '<div class="d-item-body"><div class="d-row">' +
+                    '<label class="d-field' + (errors[errKey + '.' + i + '.key'] ? ' is-invalid' : '') + '">' + keyLabel + '<input class="g4t-mono" data-bind="envs.' + ei + '.' + kind + '.' + i + '.key" value="' + esc(p.key) + '" placeholder="' + keyHolder + '" autocomplete="off" spellcheck="false">' + errorText(errKey + '.' + i + '.key') + '</label>' +
+                    '<label class="d-field" style="grid-column:span 2">Value<input class="g4t-mono" data-bind="envs.' + ei + '.' + kind + '.' + i + '.value" value="' + esc(p.value) + '" placeholder="' + valueHolder + '" autocomplete="off" spellcheck="false"></label></div></div>' +
+                    removeBtn('env-' + kind + ':' + ei, i, keyLabel + ' ' + p.key) + '</div>';
+            }).join('') + '</div>';
+        };
+        var list = '<div class="d-list" data-sortable="envs">' + model.envs.map(function (env, ei) {
+            var key = 'environments.' + ei;
+            return '<div class="d-item d-env" data-sort-index="' + ei + '">' + handle('environment ' + env.name) + '<div class="d-item-body">' +
+                '<div class="d-row"><label class="d-field' + (errors[key + '.name'] ? ' is-invalid' : '') + '">Name<input data-bind="envs.' + ei + '.name" value="' + esc(env.name) + '" placeholder="Staging" autocomplete="off">' + errorText(key + '.name') + '</label>' +
+                '<label class="d-field' + (errors[key + '.base_url'] ? ' is-invalid' : '') + '" style="grid-column:span 2">Base URL<input class="g4t-mono" data-bind="envs.' + ei + '.base_url" value="' + esc(env.base_url) + '" placeholder="https://staging.example.com (empty: the page\'s server)" autocomplete="off" spellcheck="false">' + errorText(key + '.base_url') + '</label></div>' +
+                '<div class="d-field">Variables<span class="d-hint">Used as {{name}} in any parameter, field, header or body.</span></div>' +
+                pairRows(env, ei, 'vars', 'Variable', 'tenant', 'acme') + addBtn('env-vars:' + ei, 'Add variable') +
+                '<div class="d-field">Headers<span class="d-hint">Sent with every request in this environment; values may use {{variables}}.</span></div>' +
+                pairRows(env, ei, 'headers', 'Header', 'X-Tenant', '{{tenant}}') + addBtn('env-headers:' + ei, 'Add header') +
+                '</div>' + removeBtn('envs', ei, 'environment ' + env.name) + '</div>';
+        }).join('') + '</div>';
+        return section('environments', 'Environments', 'Shared environments every reader can switch between in the g4t UI (the environment menu in the header). Readers can still add their own. Values are visible in the page, so never put secrets here.',
+            (model.envs.length ? list : '<div class="d-note">No shared environments: readers only see the ones they create.</div>') + addBtn('envs', 'Add environment') + errorText('environments'));
+    }
     function sLogin() {
         var schemeOptions = [['', '— first bearer scheme —']].concat(model.schemes.filter(function (x) { return x.name; }).map(function (x) { return [x.name, x.name]; }));
         var fields = '<div class="d-list" data-sortable="fields">' + model.login.fields.map(function (f, i) {
@@ -300,7 +339,7 @@
             '<p style="margin:0;color:var(--text-2);font-size:13.5px">Saved to <code class="g4t-mono" style="font-size:12px">' + esc(server.settings_file) + '</code> and layered over <code class="g4t-mono" style="font-size:12px">config/swagger.php</code>: anything you never change here keeps following the file.' + (server.cached_spec ? ' Saving also clears the cached document (<code class="g4t-mono" style="font-size:12px">swagger:cache</code>).' : '') + '</p>' +
             (server.overridden.length || server.layout.tags.length || server.layout.hidden.length ? '<div><button type="button" class="g4t-btn g4t-btn-danger" data-action="reset-all">Remove all dashboard changes</button></div>' : '') + '</div>' +
             (errorList.length ? '<div class="d-alert" role="alert"><strong>Some values need fixing:</strong>' + errorList.slice(0, 8).map(function (k) { return '<span>' + esc([].concat(errors[k])[0]) + '</span>'; }).join('') + '</div>' : '');
-        els.content.innerHTML = head + sGeneral() + sInterface() + sEndpoints() + sVersions() + sSecurity() + sHeaders() + sLogin() + sGeneration() + sAccess();
+        els.content.innerHTML = head + sGeneral() + sInterface() + sEndpoints() + sVersions() + sSecurity() + sHeaders() + sEnvironments() + sLogin() + sGeneration() + sAccess();
         window.scrollTo(0, scrollY);
         renderSavebar();
         if (focusAfterRender) {
@@ -329,6 +368,9 @@
         if (name === 'schemes') { return model.schemes; }
         if (name === 'headers') { return model.headers; }
         if (name === 'fields') { return model.login.fields; }
+        if (name === 'envs') { return model.envs; }
+        if (name.indexOf('env-vars:') === 0) { return (model.envs[Number(name.slice(9))] || {}).vars; }
+        if (name.indexOf('env-headers:') === 0) { return (model.envs[Number(name.slice(12))] || {}).headers; }
         if (name === 'tags') { return model.tags; }
         if (name.indexOf('ops:') === 0) { return model.ops[name.slice(4)]; }
         return null;
@@ -345,6 +387,8 @@
         if (name === 'schemes') { model.schemes.push({ name: 'scheme' + (model.schemes.length + 1), type: 'apiKey', scheme: 'bearer', where: 'header', keyName: 'X-API-Key', bearerFormat: '' }); }
         if (name === 'headers') { model.headers.push({ name: '', description: '', required: false, example: '', default: '', enumText: '' }); }
         if (name === 'fields') { model.login.fields.push({ key: '', label: '' }); }
+        if (name === 'envs') { model.envs.push({ name: model.envs.length ? 'Environment ' + (model.envs.length + 1) : 'Staging', base_url: '', vars: [], headers: [] }); }
+        if (name.indexOf('env-') === 0 && name !== 'envs') { var rows = listArray(name); if (rows) { rows.push({ key: '', value: '' }); } }
     }
 
     /* Pointer-based drag and drop: works with mouse, touch and pen; arrow keys move the focused handle. */

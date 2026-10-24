@@ -20,6 +20,7 @@ class DashboardTest extends TestCase
     protected function tearDown(): void
     {
         @unlink(Settings::path());
+        @unlink(Settings::legacyPath());
         Settings::flush();
         parent::tearDown();
     }
@@ -144,6 +145,28 @@ class DashboardTest extends TestCase
             ->assertJsonPath('overridden', []);
     }
 
+    public function test_settings_are_saved_in_the_project_root(): void
+    {
+        $this->withSession(self::SESSION)->putJson('/swagger/dashboard/api/settings', ['settings' => ['title' => 'Root']])->assertOk();
+
+        $this->assertSame(base_path('swagger-settings.json'), Settings::path());
+        $this->assertFileExists(base_path('swagger-settings.json'));
+    }
+
+    public function test_settings_from_the_old_storage_location_move_on_the_next_save(): void
+    {
+        @mkdir(dirname(Settings::legacyPath()), 0755, true);
+        file_put_contents(Settings::legacyPath(), json_encode(['config' => ['title' => 'Legacy'], 'layout' => []]));
+        Settings::flush();
+        Settings::apply();
+        $this->assertSame('Legacy', config('swagger.title'));
+
+        $this->withSession(self::SESSION)->putJson('/swagger/dashboard/api/settings', ['settings' => ['version' => '9.9.9']])->assertOk();
+
+        $this->assertFileDoesNotExist(Settings::legacyPath());
+        $this->assertSame(['title' => 'Legacy', 'version' => '9.9.9'], json_decode(file_get_contents(Settings::path()), true)['config']);
+    }
+
     public function test_settings_survive_a_new_application_boot(): void
     {
         $this->withSession(self::SESSION)->putJson('/swagger/dashboard/api/settings', ['settings' => ['title' => 'Persisted']])->assertOk();
@@ -172,6 +195,43 @@ class DashboardTest extends TestCase
         $headers = array_values(array_filter($spec['paths']['/api/v1/posts']['get']['parameters'], fn (array $p) => $p['in'] === 'header'));
         $this->assertSame('Accept-Language', $headers[0]['name']);
         $this->assertSame(['en', 'ar'], $headers[0]['schema']['enum']);
+    }
+
+    public function test_shared_environments_are_saved_and_reach_the_g4t_ui(): void
+    {
+        $this->withSession(self::SESSION)->putJson('/swagger/dashboard/api/settings', ['settings' => [
+            'environments' => [[
+                'name' => 'Staging',
+                'base_url' => 'https://staging.example.com',
+                'variables' => [['key' => 'tenant', 'value' => 'acme']],
+                'headers' => [['key' => 'X-Tenant', 'value' => '{{tenant}}']],
+            ]],
+        ]])->assertOk()->assertJsonPath('settings.environments.0.variables', ['tenant' => 'acme']);
+
+        $this->assertSame([[
+            'name' => 'Staging',
+            'base_url' => 'https://staging.example.com',
+            'variables' => ['tenant' => 'acme'],
+            'headers' => ['X-Tenant' => '{{tenant}}'],
+        ]], json_decode(file_get_contents(Settings::path()), true)['config']['environments']);
+
+        $this->get('/swagger/documentation?ui=g4t')
+            ->assertSee('"name":"Staging"', false)
+            ->assertSee('"baseUrl":"https://staging.example.com"', false)
+            ->assertSee('"vars":[{"key":"tenant","value":"acme"}]', false)
+            ->assertSee('"headers":[{"key":"X-Tenant","value":"{{tenant}}"}]', false);
+    }
+
+    public function test_invalid_environments_are_rejected(): void
+    {
+        $this->withSession(self::SESSION)->putJson('/swagger/dashboard/api/settings', ['settings' => [
+            'environments' => [
+                ['name' => 'Staging', 'base_url' => 'not a url', 'variables' => [['key' => 'bad name', 'value' => 'x']], 'headers' => [['key' => 'Bad Header', 'value' => 'x']]],
+                ['name' => 'Staging'],
+            ],
+        ]])->assertStatus(422)->assertJsonValidationErrors([
+            'environments.0.name', 'environments.0.base_url', 'environments.0.variables.0.key', 'environments.0.headers.0.key',
+        ]);
     }
 
     public function test_invalid_values_are_rejected_with_field_errors(): void

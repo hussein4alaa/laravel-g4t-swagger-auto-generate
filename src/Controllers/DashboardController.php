@@ -105,7 +105,7 @@ class DashboardController
         $layout = (array) $request->input('layout', []);
 
         if (! Settings::save($values, $layout)) {
-            return response()->json(['message' => 'Could not write '.Settings::path().'. Check that storage/app is writable.'], 500);
+            return response()->json(['message' => 'Could not write '.Settings::path().'. Check that its directory is writable.'], 500);
         }
 
         return response()->json(['message' => 'Settings saved.'] + $this->state($request));
@@ -257,6 +257,19 @@ class DashboardController
             'global_headers.*.default' => ['nullable', 'string', 'max:500'],
             'global_headers.*.enum' => ['nullable', 'array'],
             'global_headers.*.enum.*' => ['string', 'max:100'],
+            'environments' => ['array', 'max:30'],
+            'environments.*.name' => ['required', 'string', 'max:60', 'distinct'],
+            'environments.*.base_url' => ['nullable', 'string', 'max:500', function ($attribute, $value, $fail) {
+                if (filled($value) && ! preg_match('#^(https?://[^\s]+|/[^\s]*|\{\{[A-Za-z0-9_.-]+\}\}[^\s]*)$#i', (string) $value)) {
+                    $fail('A base URL starts with http://, https://, / or a {{variable}}.');
+                }
+            }],
+            'environments.*.variables' => ['array'],
+            'environments.*.variables.*.key' => ['required', 'string', 'max:60', $name],
+            'environments.*.variables.*.value' => ['nullable', 'string', 'max:2000'],
+            'environments.*.headers' => ['array'],
+            'environments.*.headers.*.key' => ['required', 'string', 'max:100', $header],
+            'environments.*.headers.*.value' => ['nullable', 'string', 'max:2000'],
             'auto_login' => ['array'],
             'auto_login.url' => ['nullable', 'string', 'max:500'],
             'auto_login.method' => [Rule::in(['POST', 'PUT'])],
@@ -306,7 +319,7 @@ class DashboardController
         if (blank($values['password'] ?? null)) {
             unset($values['password']);
         }
-        foreach (['security_schemes', 'global_headers', 'servers', 'versions', 'show_prefix'] as $listKey) {
+        foreach (['security_schemes', 'global_headers', 'environments', 'servers', 'versions', 'show_prefix'] as $listKey) {
             if (array_key_exists($listKey, $values) && $values[$listKey] === null) {
                 $values[$listKey] = [];
             }
@@ -316,6 +329,16 @@ class DashboardController
         }
         if (isset($values['security_schemes'])) {
             $values['security_schemes'] = array_map(fn (array $s) => array_filter($s, fn ($v) => $v !== null && $v !== ''), $values['security_schemes']);
+        }
+        if (isset($values['environments'])) {
+            // Saved the way config/swagger.php writes them: name => value maps.
+            $pairs = fn (array $list) => array_reduce($list, fn (array $map, array $pair) => $map + [$pair['key'] => (string) ($pair['value'] ?? '')], []);
+            $values['environments'] = array_values(array_map(fn (array $env) => [
+                'name' => $env['name'],
+                'base_url' => (string) ($env['base_url'] ?? ''),
+                'variables' => $pairs((array) ($env['variables'] ?? [])),
+                'headers' => $pairs((array) ($env['headers'] ?? [])),
+            ], $values['environments']));
         }
         if (array_key_exists('auto_login', $values) && blank($values['auto_login']['url'] ?? null)) {
             $values['auto_login']['url'] = null;

@@ -214,6 +214,18 @@
     .g4t-env-btn:hover { border-color: var(--border-strong); }
     .g4t-env-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .g4t-count { min-width: 18px; height: 18px; padding-inline: 5px; display: inline-grid; place-items: center; border-radius: 999px; background: var(--surface-2); border: 1px solid var(--border); color: var(--text-2); font: 600 11px/1 var(--mono); }
+    .g4t-env-menu { width: 280px; gap: 4px; padding: 8px; }
+    .g4t-env-menu .g4t-menu-label { padding: 6px 8px 2px; }
+    .g4t-env-menu .g4t-btn { justify-content: flex-start; margin-top: 4px; }
+    .g4t-env-item { display: flex; align-items: center; gap: 10px; width: 100%; padding: 8px; border: 0; border-radius: 8px; background: none; color: var(--text); font: inherit; font-size: 13px; text-align: start; cursor: pointer; }
+    .g4t-env-item:hover, .g4t-env-item:focus-visible { background: var(--surface-2); }
+    .g4t-env-item[aria-checked="true"] { font-weight: 600; }
+    .g4t-env-item-text { display: grid; gap: 2px; min-width: 0; }
+    .g4t-env-item-text > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .g4t-env-item-text .g4t-muted { font-size: 11.5px; font-weight: 400; }
+    .g4t-env-shared { font-size: 10.5px; font-weight: 600; text-transform: uppercase; letter-spacing: .04em; color: var(--text-3); }
+    .g4t-env-dialog input[readonly] { background: var(--surface-2); color: var(--text-2); }
+    .g4t-env-note { margin: 0; padding: 8px 10px; border-radius: 8px; background: color-mix(in oklab, var(--accent) 8%, transparent); font-size: 12.5px; }
     .g4t-download-menu { width: 230px; gap: 6px; }
     .g4t-download-menu .g4t-btn { justify-content: flex-start; }
     .g4t-env-dialog { width: min(520px, 100%); }

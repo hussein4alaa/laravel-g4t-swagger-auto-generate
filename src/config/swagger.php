@@ -297,6 +297,9 @@ return [
         "url" => env("SWAGGER_DASHBOARD_URL", "swagger/dashboard"),
         "username" => env("SWAGGER_DASHBOARD_USERNAME"),
         "password" => env("SWAGGER_DASHBOARD_PASSWORD"),
+        // Where saved settings go, relative to the project root (or an absolute path). Outside public/,
+        // so it is never served; commit it to ship the same settings to every server.
+        "settings_path" => env("SWAGGER_DASHBOARD_SETTINGS_PATH", "swagger-settings.json"),
         // The dashboard needs sessions and CSRF protection: keep "web".
         "middleware" => ["web"],
     ],
@@ -414,6 +417,26 @@ return [
     "global_headers" => [
         // ["name" => "Accept-Language", "description" => "Response language", "enum" => ["en", "ar"], "default" => "en"],
         // ["name" => "X-Tenant", "required" => true, "example" => "acme"],
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
+    | Shared environments (g4t UI)
+    |--------------------------------------------------------------------------
+    |
+    | Environments every reader can switch between in the g4t UI: a base URL,
+    | {{variables}} usable in any input, and headers sent with every request.
+    | Readers can still create their own. Everything here is visible in the
+    | page, so never put secrets in it.
+    |
+    */
+    "environments" => [
+        // [
+        //     "name" => "Staging",
+        //     "base_url" => "https://staging.example.com",
+        //     "variables" => ["tenant" => "acme", "user_id" => "1"],
+        //     "headers" => ["X-Tenant" => "{{tenant}}"],
+        // ],
     ],
 
     /*

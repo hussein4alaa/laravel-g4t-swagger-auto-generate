@@ -6,6 +6,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
 
     <title>{{ config('app.name') }} - G4T Swagger</title>
+    @include('swagger::partials.favicon')
 
     <link rel="stylesheet" href="{{ asset('g4t/swagger/css/swagger-ui.css') }}">
     <link href="{{ asset('g4t/swagger/css/bootstrap.min.css') }}" rel="stylesheet"

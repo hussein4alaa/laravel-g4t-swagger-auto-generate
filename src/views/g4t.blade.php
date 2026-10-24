@@ -5,6 +5,7 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>{{ config('app.name') }} — API reference</title>
+    @include('swagger::partials.favicon')
     @include('swagger::g4t.styles')
 </head>
 
@@ -15,7 +16,7 @@
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 6h16M4 12h16M4 18h16"></path></svg>
             </button>
             <div class="g4t-brand">
-                <div class="g4t-logo" aria-hidden="true">{ }</div>
+                @include('swagger::partials.logo', ['size' => 28])
                 <div class="g4t-brand-text">
                     <div class="g4t-brand-name">{{ config('app.name') }}</div>
                     <div class="g4t-brand-sub">API reference · g4t/swagger</div>

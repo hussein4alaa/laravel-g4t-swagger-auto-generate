@@ -50,7 +50,7 @@
     .g4t-icon-btn:hover { border-color: var(--border-strong); }
     .g4t-drawer-btn { width: 36px; height: 36px; display: none; }
     .g4t-brand { display: flex; align-items: center; gap: 10px; min-width: 0; }
-    .g4t-logo { width: 28px; height: 28px; flex: none; border-radius: 7px; background: var(--text); color: var(--bg); display: grid; place-items: center; font: 600 11px/1 var(--mono); letter-spacing: -.04em; }
+    .g4t-logo-mark { flex: none; display: block; }
     .g4t-brand-text { min-width: 0; line-height: 1.2; }
     .g4t-brand-name { font-weight: 600; font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .g4t-brand-sub { font-size: 11.5px; color: var(--text-3); white-space: nowrap; }

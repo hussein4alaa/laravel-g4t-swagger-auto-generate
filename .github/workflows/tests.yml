@@ -65,13 +65,19 @@ jobs:
           extensions: dom, curl, libxml, mbstring, zip, pdo, sqlite, pdo_sqlite, fileinfo
           coverage: none
 
+      # Laravel 11 no longer receives security fixes, and Composer 2.9+ refuses packages with
+      # open advisories. Allow them here so the package is still tested against Laravel 11.
+      - name: Allow Laravel 11 despite open advisories (CI only)
+        if: matrix.laravel == '11'
+        run: composer config audit.block-insecure false
+
       - name: Install dependencies
         run: |
           composer require "laravel/framework:^${{ matrix.laravel }}.0" "orchestra/testbench:${{ matrix.testbench }}" --dev --no-interaction --no-update
           composer update --${{ matrix.stability }} --prefer-dist --no-interaction --no-progress
 
       - name: List installed versions
-        run: composer show laravel/framework orchestra/testbench phpunit/phpunit
+        run: composer show | grep -E '^(laravel/framework|orchestra/testbench|phpunit/phpunit) '
 
       - name: Run tests
         run: vendor/bin/phpunit

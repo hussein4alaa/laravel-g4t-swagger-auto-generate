@@ -6,6 +6,11 @@
             "G4T\\Swagger\\": "src/"
         }
     },
+    "autoload-dev": {
+        "psr-4": {
+            "G4T\\Swagger\\Tests\\": "tests/"
+        }
+    },
     "authors": [
         {
             "name": "Hussein Alaa",
@@ -14,12 +19,22 @@
     ],
     "license": "MIT",
     "minimum-stability": "stable",
-    "require": {},
+    "require": {
+        "php": "^8.2",
+        "illuminate/support": "^11.0|^12.0|^13.0"
+    },
+    "require-dev": {
+        "orchestra/testbench": "^9.0|^10.0|^11.0",
+        "phpunit/phpunit": "^10.5|^11.5|^12.0"
+    },
     "extra": {
         "laravel": {
             "providers": [
                 "G4T\\Swagger\\SwaggerServiceProvider"
             ]
         }
+    },
+    "scripts": {
+        "test": "vendor/bin/phpunit"
     }
 }

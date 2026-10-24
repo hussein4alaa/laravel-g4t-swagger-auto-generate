@@ -2,35 +2,61 @@
 
 namespace G4T\Swagger\Controllers;
 
+use Illuminate\Http\Response;
+
 class IssueController
 {
+    /**
+     * Only the end of the log is scanned, so a large laravel.log never exhausts memory.
+     */
+    private const MAX_BYTES = 512 * 1024;
 
     public function index()
     {
-        $logFilePath = storage_path('logs/laravel.log');
-        if (!file_exists($logFilePath)) {
-            $issues = [];
-        } else {
-            $logContents = file_get_contents($logFilePath);
-            $issues = $this->parseNewLogEntries($logContents);
+        if (! config('swagger.enable')) {
+            abort(Response::HTTP_FORBIDDEN);
         }
-        $issues = array_reverse($issues);
+
+        $issues = array_reverse($this->parseNewLogEntries($this->readLogTail(storage_path('logs/laravel.log'))));
+
         return view('swagger::issues', ['issues' => $issues]);
     }
 
-    private function parseNewLogEntries($logContents)
+    private function readLogTail(string $path): string
     {
-        $newEntries = [];
-        $logLines = explode("\n", $logContents);
-        foreach ($logLines as $line) {
-            if (str_contains($line, 'g4t/swagger') && str_contains($line, 'local.')) {
-                preg_match_all('/\[(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})\]/', $line, $matches);
-                $newEntries[] = [
-                    'message' => $line,
-                    'date' => isset($matches[1][0]) ? $matches[1][0] : "Unknwon"
-                ];
-            }
+        if (! is_file($path) || ! is_readable($path)) {
+            return '';
         }
-        return $newEntries;
+
+        $handle = fopen($path, 'rb');
+        if ($handle === false) {
+            return '';
+        }
+
+        $size = filesize($path) ?: 0;
+        if ($size > self::MAX_BYTES) {
+            fseek($handle, -self::MAX_BYTES, SEEK_END);
+            fgets($handle); // drop the partial first line
+        }
+        $contents = stream_get_contents($handle) ?: '';
+        fclose($handle);
+
+        return $contents;
+    }
+
+    private function parseNewLogEntries(string $logContents): array
+    {
+        $entries = [];
+        foreach (explode("\n", $logContents) as $line) {
+            if (! str_contains($line, 'g4t/swagger') || ! preg_match('/^\[(\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}:\d{2})[^\]]*\]\s+\w+\.\w+:/', $line, $matches)) {
+                continue;
+            }
+            $entries[] = [
+                'message' => $line,
+                'date' => $matches[1],
+            ];
+        }
+
+        return $entries;
     }
 }

@@ -35,6 +35,14 @@ The Swagger Laravel Autogenerate Package automatically generates OpenAPI (Swagge
 composer require g4t/swagger
 ```
 
+## Upgrade notes (fix/review-issues)
+
+- **Disabled in production by default:** `swagger.enable` now defaults to `APP_ENV !== production`. Set `SWAGGER_ENABLED=true` to keep the docs online in production.
+- **Cached spec moved out of `public/`:** `swagger:cache` / `make:swagger` now write to `storage/app/swagger/{cached_spec_path}` (served only through the protected JSON endpoint). Set `SWAGGER_CACHED_SPEC_LOCATION=public` for the old location, and delete any old `public/doc.json` (`php artisan swagger:cache --clear` removes both).
+- **Basic auth:** credentials come from `SWAGGER_AUTH_ENABLED`, `SWAGGER_USERNAME`, `SWAGGER_PASSWORD`; an empty password never authenticates. `session_ttl` replaces the misspelled `sesson_ttl` (still read) and applies only when the docs routes have a session (`swagger.middleware`, e.g. `["web"]`).
+- **Valid OpenAPI 3.0 output:** `paths`/`tags` are at the document root, nested rules (`address.city`, `items.*.id`) become nested JSON schemas, optional path parameters (`{year?}`) produce one path per variant, and `auth:sanctum` routes are detected.
+- **Controllers with the same name** in different namespaces get distinct tags/schemas (e.g. `V1/Product`, `V2/Product`).
+
 ## Usage
 
 #### Video walkthrough
@@ -96,12 +104,89 @@ composer require g4t/swagger
    "sesson_ttl" => 100000,
    ```
 
+## Documentation UI
+
+Three interfaces ship with the package:
+
+| `ui` | Interface |
+|------|-----------|
+| `g4t` (default) | The package's own API reference: sidebar with filter (`/`), operation cards, Try it out with file uploads, Copy as cURL, status-code and named-example tabs, Example / Schema views, light / dark / system mode, density and accent themes. Plain HTML + JS, nothing loaded from a CDN |
+| `swagger` | Swagger UI, bundled with the package, with the theme picker |
+| `scalar` | [Scalar API Reference](https://github.com/scalar/scalar), loaded from jsDelivr at a pinned version |
+
+```php
+// config/swagger.php
+"ui" => env("SWAGGER_UI", "g4t"),
+"g4t" => [
+    "mode" => "light",          // light | dark | system (readers can switch; their choice is remembered)
+    "density" => "comfortable", // comfortable | compact
+],
+"theme" => env("SWAGGER_THEME", "default"), // default Swagger UI theme / g4t accent
+
+"scalar" => [
+    "version" => "1.73.0",
+    "theme" => "purple",        // default, moon, purple, solarized, bluePlanet, deepSpace, saturn, kepler, mars, laserwave, ...
+    "layout" => "modern",       // modern | classic
+    "dark_mode" => null,        // null lets the reader toggle
+    "locale" => null,           // e.g. "ar"
+    "direction" => "auto",      // auto | ltr | rtl
+],
+```
+
+Append `?ui=g4t`, `?ui=swagger` or `?ui=scalar` to the documentation URL to switch for one visit.
+Operations have deep links (`#op-<operationId>`).
+Each entry of `versions` becomes a definition in Swagger UI and a source in Scalar.
+
+## Auto login for "Try it out"
+
+Set the login endpoint and a **Login** button appears in every interface (without it, the `g4t`
+UI lets readers paste a token by hand). It posts the
+credentials as JSON, reads the token from the response and authorizes every protected
+endpoint. The token stays in the browser until **Logout**.
+
+```php
+"auto_login" => [
+    "url" => env("SWAGGER_LOGIN_URL"),   // e.g. "/api/v1/auth/login"; null disables the button
+    "method" => "POST",
+    "fields" => ["email" => "Email", "password" => "Password"],
+    "token_path" => "access_token",      // dot path; token, access_token, data.token, ... are tried when missing
+    "security_scheme" => "bearerAuth",   // key in security_schemes
+    "prefill" => [],                     // pre-filled values, only rendered in the local environment
+],
+```
+
+## Response schemas
+
+Every JSON response gets a `schema` next to its example (`response_schemas`, default `true`).
+JsonResources and Eloquent models become reusable components referenced with `$ref`, so client
+generators (openapi-generator, orval, Kiota, ...) produce typed models:
+
+```json
+"201": {
+  "content": {
+    "application/json": {
+      "schema": { "$ref": "#/components/schemas/Order" },
+      "example": { "id": 1, "status": "pending", "items": [ ... ] }
+    }
+  }
+}
+```
+
+- Component names come from the class: `ProductResource` → `Product`; clashes get the namespace
+  segment (`V1Product`); request body schema names are never reused.
+- Types come from model casts, so enum casts list their values (`"enum": ["draft", "published"]`).
+- Nested resources are `$ref`s too, and they stay optional because relations are only present when loaded.
+- `Resource::collection()` gives an array of `$ref`; paginated collections give `data` / `links` / `meta`.
+- Returning a model directly (`Post::findOrFail($id)`, `Post::all()`, `Post::paginate()`, `$post`,
+  or a `: Post` return type) is documented too.
+- Error payloads and `storage/swagger` examples get an inline schema typed from the example.
+
 ## Artisan commands
 
 | Command | What it does |
 |---------|----------------|
-| `make:swagger` | Writes OpenAPI JSON to **`public/{cached_spec_path}`** (default `doc.json`). Legacy name; same destination as `swagger:cache`. |
-| `swagger:cache` | Regenerates and writes the cached spec to **`public/{cached_spec_path}`**, or **`swagger:cache --clear`** removes that file. Skips generation when `swagger.enable` is false (clear still works). |
+| `make:swagger` | Legacy alias of `swagger:cache`. |
+| `swagger:cache` | Regenerates and writes the cached spec to **`storage/app/swagger/{cached_spec_path}`** (or `public/` when `cached_spec_location` is `public`); **`swagger:cache --clear`** removes it. Skips generation when `swagger.enable` is false (clear still works). |
 | `swagger:mock-server` | Optional G4T mock workflow (experimental). |
 
 ```bash

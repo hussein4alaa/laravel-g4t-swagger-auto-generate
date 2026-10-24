@@ -2,39 +2,138 @@
 
 namespace G4T\Swagger\Controllers;
 
+use G4T\Swagger\Support\CachedSpec;
 use G4T\Swagger\Swagger;
 use Illuminate\Http\Response;
 use Illuminate\Support\Facades\File;
+use stdClass;
 
 class DocumentationController
 {
-
+    /**
+     * Freshly generated OpenAPI document.
+     *
+     * @return array<string, mixed>
+     */
     public function getSwaggerData()
     {
-        $enable = config('swagger.enable');
-        if (!$enable) {
+        if (! config('swagger.enable')) {
             abort(Response::HTTP_FORBIDDEN);
         }
-        $swager_json = new Swagger;
-        $response = $swager_json->swagger();
-        return $response;
+
+        return (new Swagger)->swagger();
     }
 
     public function showViewDocumentation()
     {
-        $payload = $this->resolveSwaggerSpecification();
-        $versions = $this->reformatVersions();
-        $themes = $this->getThemesList();
-        $themes_path = url('g4t/swagger/themes');
+        if (! config('swagger.enable')) {
+            abort(Response::HTTP_FORBIDDEN);
+        }
 
-        $stylesheet = config('swagger.stylesheet');
-        return view('swagger::documentation', [
-            'themes_path' => $themes_path,
-            'response' => $payload,
-            'versions' => $versions,
-            'stylesheet' => $stylesheet,
-            'themes' => $themes
+        $shared = [
+            'versions' => $this->reformatVersions(),
+            'autoLogin' => $this->autoLoginSettings(),
+        ];
+
+        $ui = $this->selectedUi();
+        if ($ui === 'scalar') {
+            return view('swagger::scalar', $shared + [
+                'scalar' => $this->scalarSettings(),
+            ]);
+        }
+        if ($ui === 'g4t') {
+            return view('swagger::g4t', $shared + [
+                'themes' => $this->getThemesList(),
+                'defaultTheme' => (string) config('swagger.theme', 'default'),
+                'g4t' => $this->g4tSettings(),
+            ]);
+        }
+
+        return view('swagger::documentation', $shared + [
+            'themes_path' => url('g4t/swagger/themes'),
+            'themes' => $this->getThemesList(),
+            'defaultTheme' => (string) config('swagger.theme', 'default'),
         ]);
+    }
+
+    /**
+     * "g4t", "swagger" or "scalar": the ?ui= query wins over the config for one visit.
+     */
+    private function selectedUi(): string
+    {
+        $supported = ['g4t', 'swagger', 'scalar'];
+        $requested = strtolower((string) request()->query('ui', ''));
+        if (in_array($requested, $supported, true)) {
+            return $requested;
+        }
+
+        $configured = strtolower((string) config('swagger.ui', 'g4t'));
+
+        return in_array($configured, $supported, true) ? $configured : 'g4t';
+    }
+
+    /**
+     * @return array{mode: string, density: string}
+     */
+    private function g4tSettings(): array
+    {
+        $settings = (array) config('swagger.g4t', []);
+        $mode = (string) ($settings['mode'] ?? 'light');
+        $density = (string) ($settings['density'] ?? 'comfortable');
+
+        return [
+            'mode' => in_array($mode, ['light', 'dark', 'system'], true) ? $mode : 'light',
+            'density' => in_array($density, ['comfortable', 'compact'], true) ? $density : 'comfortable',
+        ];
+    }
+
+    /**
+     * @return array{version: string, theme: string, layout: string, darkMode: ?bool, locale: ?string, direction: string, hideModels: bool, defaultOpenAllTags: bool}
+     */
+    private function scalarSettings(): array
+    {
+        $scalar = (array) config('swagger.scalar', []);
+        $version = (string) ($scalar['version'] ?? '1.73.0');
+
+        return [
+            // Only plain semver can reach the CDN URL.
+            'version' => preg_match('/^\d+\.\d+\.\d+$/', $version) ? $version : '1.73.0',
+            'theme' => (string) ($scalar['theme'] ?? 'purple'),
+            'layout' => ($scalar['layout'] ?? 'modern') === 'classic' ? 'classic' : 'modern',
+            'darkMode' => isset($scalar['dark_mode']) ? (bool) $scalar['dark_mode'] : null,
+            'locale' => filled($scalar['locale'] ?? null) ? (string) $scalar['locale'] : null,
+            'direction' => in_array($scalar['direction'] ?? 'auto', ['auto', 'ltr', 'rtl'], true) ? $scalar['direction'] : 'auto',
+            'hideModels' => (bool) ($scalar['hide_models'] ?? false),
+            'defaultOpenAllTags' => (bool) ($scalar['default_open_all_tags'] ?? false),
+        ];
+    }
+
+    /**
+     * Settings for the Login button, or null when no login URL is configured.
+     *
+     * @return array{url: string, method: string, fields: array<string, string>, tokenPath: ?string, scheme: string, prefill: array<string, string>}|null
+     */
+    private function autoLoginSettings(): ?array
+    {
+        $login = (array) config('swagger.auto_login', []);
+        if (blank($login['url'] ?? null)) {
+            return null;
+        }
+
+        $url = (string) $login['url'];
+        $schemes = array_keys((array) config('swagger.security_schemes', []));
+        $scheme = (string) ($login['security_scheme'] ?? '');
+        $fields = array_filter((array) ($login['fields'] ?? []), 'is_string');
+
+        return [
+            'url' => preg_match('#^https?://#i', $url) ? $url : url($url),
+            'method' => strtoupper((string) ($login['method'] ?? 'POST')),
+            'fields' => $fields !== [] ? $fields : ['email' => 'Email', 'password' => 'Password'],
+            'tokenPath' => filled($login['token_path'] ?? null) ? (string) $login['token_path'] : null,
+            'scheme' => in_array($scheme, $schemes, true) ? $scheme : (string) ($schemes[0] ?? 'bearerAuth'),
+            // Never ship pre-filled credentials outside the local environment.
+            'prefill' => app()->isLocal() ? array_filter((array) ($login['prefill'] ?? []), 'is_string') : [],
+        ];
     }
 
     private function reformatVersions()
@@ -44,14 +143,15 @@ class DocumentationController
         foreach ($config['versions'] as $version) {
             $versions[] = [
                 'name' => $version,
-                'url' => url($config["url"] . "/json?version=$version")
+                'url' => url($config['url'].'/json?version='.urlencode($version)),
             ];
         }
-        $data['versions'] = $versions;
-        $data['default'] = $config['default'];
-        return $data;
-    }
 
+        return [
+            'versions' => $versions,
+            'default' => $config['default'],
+        ];
+    }
 
     public function showJsonDocumentation()
     {
@@ -60,150 +160,91 @@ class DocumentationController
             $data = $this->filter($data);
         }
 
-        return response()->json($data, 200, [], JSON_UNESCAPED_UNICODE);
+        return response()->json($data, 200, [], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
     }
 
     /**
      * OpenAPI document: static file when configured / cached file when present, else live from routes.
+     * Cached files are decoded to objects so empty JSON objects (`{}`) stay objects.
      *
-     * @return array<string, mixed>
+     * @return array<string, mixed>|stdClass
      */
-    public function resolveSwaggerSpecification(): array
+    public function resolveSwaggerSpecification(): array|stdClass
     {
-        if (! config('swagger.enable', true)) {
+        if (! config('swagger.enable')) {
             abort(Response::HTTP_FORBIDDEN);
         }
 
-        if (config('swagger.load_from_json')) {
-            $cached = $this->tryReadCachedSwaggerJson();
-
-            return $cached ?? [];
-        }
-
-        if (config('swagger.use_cached_spec_when_present', true)) {
-            $cached = $this->tryReadCachedSwaggerJson();
+        if (config('swagger.load_from_json') || config('swagger.use_cached_spec_when_present', true)) {
+            $cached = CachedSpec::read();
             if ($cached !== null) {
-                return $cached;
+                $decoded = json_decode($cached);
+
+                return $decoded instanceof stdClass ? $decoded : new stdClass;
+            }
+            if (config('swagger.load_from_json')) {
+                return new stdClass;
             }
         }
 
         return $this->getSwaggerData();
     }
 
-    private function swaggerPublicSpecPath(): string
-    {
-        return public_path(config('swagger.cached_spec_path', 'doc.json'));
-    }
-
     /**
-     * @return array<string, mixed>|null
+     * Keep only paths whose segments contain the requested version (`v1` matches `/api/v1/x`, not `/api/v10/x`)
+     * and the tags those paths use.
      */
-    private function tryReadCachedSwaggerJson(): ?array
+    private function filter(array|stdClass $data): stdClass
     {
-        $path = $this->swaggerPublicSpecPath();
-        if (! is_readable($path)) {
-            return null;
-        }
-        $raw = @file_get_contents($path);
-        if ($raw === false || $raw === '') {
-            return null;
-        }
-        $data = json_decode($raw, true);
-        if (json_last_error() !== JSON_ERROR_NONE || ! is_array($data)) {
-            return null;
+        $data = json_decode(json_encode($data));
+        $version = (string) request()->version;
+        if ($version === 'all' || ! $data instanceof stdClass) {
+            return $data instanceof stdClass ? $data : new stdClass;
         }
 
-        return $data;
-    }
-
-    public function filter($data)
-    {
-        $searchTerm = request()->version;
-        if ($searchTerm === 'all') {
-            return $data;
+        // Legacy cached files nested paths/tags under components.
+        $allPaths = $data->paths ?? $data->components->paths ?? new stdClass;
+        if (isset($data->components)) {
+            unset($data->components->paths, $data->components->tags);
         }
 
-        $data = $this->normalizeSpecificationToArray($data);
-
-        $allPaths = $data['components']['paths'] ?? $data['paths'] ?? [];
-        if (! is_array($allPaths)) {
-            $allPaths = [];
-        }
-
-        $paths = [];
-        $tags = [];
-        foreach ($allPaths as $key => $path) {
-            if (! str_contains((string) $key, (string) $searchTerm)) {
+        $paths = new stdClass;
+        $usedTags = [];
+        foreach (get_object_vars($allPaths) as $uri => $operations) {
+            if (! preg_match('#(^|/)'.preg_quote($version, '#').'(/|$)#', (string) $uri)) {
                 continue;
             }
-
-            $paths[$key] = $allPaths[$key];
-            $path = $this->normalizeSpecificationToArray($path);
-
-            foreach ($path as $pathValue) {
-                $pathValue = $this->normalizeSpecificationToArray($pathValue);
-                if (isset($pathValue['tags'][0])) {
-                    $tags[] = $pathValue['tags'][0];
+            $paths->{$uri} = $operations;
+            foreach (get_object_vars($operations) as $operation) {
+                foreach ($operation->tags ?? [] as $tag) {
+                    $usedTags[$tag] = true;
                 }
             }
         }
 
-        if (! isset($data['components']) || ! is_array($data['components'])) {
-            $data['components'] = [];
-        }
-
-        $data['components']['paths'] = $paths;
-        $data['components']['tags'] = $tags;
-        $data['tags'] = $tags;
-        $data['paths'] = $paths;
+        $data->paths = $paths;
+        $data->tags = array_values(array_filter(
+            is_array($data->tags ?? null) ? $data->tags : [],
+            fn ($tag) => is_object($tag) && isset($usedTags[$tag->name ?? '']),
+        ));
 
         return $data;
-    }
-
-    /**
-     * Live generation nests stdClass under "components" (see \G4T\Swagger\Swagger::swagger()); cached JSON is arrays.
-     * Normalize so filter() can use array access throughout.
-     *
-     * @param  mixed  $data
-     * @return array<string, mixed>
-     */
-    private function normalizeSpecificationToArray(mixed $data): array
-    {
-        if (! is_array($data) && ! is_object($data)) {
-            return [];
-        }
-
-        $json = json_encode($data);
-        if ($json === false) {
-            return [];
-        }
-
-        $decoded = json_decode($json, true);
-        if (json_last_error() !== JSON_ERROR_NONE || ! is_array($decoded)) {
-            return [];
-        }
-
-        return $decoded;
     }
 
     public function getThemesList()
     {
-        try {
-            $directory = public_path('g4t/swagger/themes');
-            $files = File::files($directory);
-            $fileNamesWithoutCss = [];
-            $fileNamesWithoutCss[] = 'default';
-            foreach ($files as $file) {
-                $fileName = pathinfo($file, PATHINFO_FILENAME);
-                if (pathinfo($file, PATHINFO_EXTENSION) === 'css') {
-                    $fileNameWithoutCss = str_replace('.css', '', $fileName);
-                    $fileNamesWithoutCss[] = $fileNameWithoutCss;
-                }
-            }
-            return $fileNamesWithoutCss;
-        } catch (\Throwable $th) {
-            $fileNamesWithoutCss[] = 'default';
-            return $fileNamesWithoutCss;
+        $themes = ['default'];
+        $directory = public_path('g4t/swagger/themes');
+        if (! is_dir($directory)) {
+            return $themes;
         }
+
+        foreach (File::files($directory) as $file) {
+            if ($file->getExtension() === 'css') {
+                $themes[] = $file->getFilenameWithoutExtension();
+            }
+        }
+
+        return $themes;
     }
 }

@@ -121,6 +121,8 @@
 
     <div id="swagger-ui"></div>
 
+    @include('swagger::partials.auto-login')
+
     <script src="{{ asset('g4t/swagger/js/swagger-ui-bundle.js') }}"></script>
     <script src="{{ asset('g4t/swagger/js/swagger-ui-standalone-preset.js') }}"></script>
 
@@ -130,7 +132,9 @@
             var customStyle = document.getElementById('custom-style');
 
             // Save the selected theme in local storage
-            localStorage.setItem('selectedTheme', themePath);
+            try {
+                localStorage.setItem('selectedTheme', themePath);
+            } catch (e) {}
 
             if (customStyle) {
                 customStyle.innerHTML = '@import "' + themePath + '"';
@@ -143,8 +147,15 @@
         }
 
         window.onload = function() {
-            // Get the selected theme from local storage
-            var selectedTheme = localStorage.getItem('selectedTheme');
+            // Get the selected theme from local storage, else the configured default
+            var selectedTheme = null;
+            try {
+                selectedTheme = localStorage.getItem('selectedTheme');
+            } catch (e) {}
+            var defaultTheme = {!! json_encode($defaultTheme) !!};
+            if (!selectedTheme && defaultTheme && defaultTheme !== 'default') {
+                selectedTheme = {!! json_encode($themes_path) !!} + '/' + defaultTheme + '.css';
+            }
 
             // Apply the selected theme if it exists in local storage
             if (selectedTheme) {
@@ -160,15 +171,8 @@
             }
 
             window.ui = SwaggerUIBundle({
-                urls: [
-                    @foreach ($versions['versions'] as $version)
-                        {
-                            url: '{{ $version['url'] }}',
-                            name: '{{ $version['name'] }}',
-                        },
-                    @endforeach
-                ],
-                "urls.primaryName": "{{ $versions['default'] }}",
+                urls: {!! json_encode($versions['versions'], JSON_UNESCAPED_SLASHES | JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) !!},
+                "urls.primaryName": {!! json_encode($versions['default'], JSON_UNESCAPED_SLASHES | JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) !!},
                 dom_id: '#swagger-ui',
                 deepLinking: true,
                 presets: [
@@ -184,6 +188,20 @@
                     response.headers['content-type'] = 'application/json';
                     response.headers['accept'] = 'application/json';
                     return response;
+                },
+                onComplete: () => {
+                    if (!window.G4TAuth) {
+                        return;
+                    }
+                    var applyToken = (token) => {
+                        if (token) {
+                            window.ui.preauthorizeApiKey(window.G4TAuth.scheme, token);
+                        } else {
+                            window.ui.authActions.logout([window.G4TAuth.scheme]);
+                        }
+                    };
+                    applyToken(window.G4TAuth.token());
+                    window.G4TAuth.onChange(applyToken);
                 }
             });
         };

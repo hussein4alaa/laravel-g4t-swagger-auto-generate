@@ -82,7 +82,11 @@ class PublishSwaggerMockServerCommand extends Command
 
     private function writeMockJson(): ?string
     {
-        $path = public_path(self::MOCK_JSON);
+        // Never written to public/: the file is the full API description.
+        $path = storage_path('app/swagger/'.self::MOCK_JSON);
+        if (! is_dir(dirname($path))) {
+            mkdir(dirname($path), 0755, true);
+        }
         $doc = new DocumentationController;
         $jsonData = $doc->getSwaggerData();
         $flags = JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT;

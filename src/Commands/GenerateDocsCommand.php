@@ -2,28 +2,22 @@
 
 namespace G4T\Swagger\Commands;
 
-use G4T\Swagger\Controllers\DocumentationController;
 use Illuminate\Console\Command;
-use Illuminate\Support\Facades\Http;
-use Illuminate\Support\Str;
 
 class GenerateDocsCommand extends Command
 {
     protected $signature = 'make:swagger';
 
-    protected $description = 'Generate API documentation for Swagger';
+    protected $description = 'Generate and cache the API documentation (alias of swagger:cache)';
 
-    public function handle()
+    public function handle(): int
     {
-        $this->info('Generating API documentation...');
-        $doc = new DocumentationController;
-        $jsonData = $doc->getSwaggerData();
-        $relative = config('swagger.cached_spec_path', 'doc.json');
-        $filePath = public_path($relative);
-        $flags = JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE;
-        file_put_contents($filePath, json_encode($jsonData, $flags));
-        $this->info('API documentation generated successfully.');
+        if (! config('swagger.enable')) {
+            $this->error('Swagger is disabled (swagger.enable). Enable it to generate documentation.');
+
+            return self::FAILURE;
+        }
+
+        return SwaggerCacheCommand::writeCache($this);
     }
-
-
 }

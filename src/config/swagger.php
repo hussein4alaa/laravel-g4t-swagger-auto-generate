@@ -49,10 +49,24 @@ return [
     | This options to enable documentation auth
     |
     */
-    "enable_auth" => false,
-    "username" => "admin",
-    "password" => "pass",
-    "sesson_ttl" => 100000,
+    "enable_auth" => env("SWAGGER_AUTH_ENABLED", false),
+    "username" => env("SWAGGER_USERNAME", "admin"),
+    // Set SWAGGER_PASSWORD when enable_auth is on: an empty password never authenticates.
+    "password" => env("SWAGGER_PASSWORD", ""),
+    // Idle timeout (seconds), only applied when the docs routes have a session (see "middleware").
+    // The old misspelled "sesson_ttl" key is still read when this one is missing.
+    "session_ttl" => env("SWAGGER_SESSION_TTL", 100000),
+
+    /*
+    |--------------------------------------------------------------------------
+    | Documentation Route Middleware
+    |--------------------------------------------------------------------------
+    |
+    | Extra middleware for the documentation routes, e.g. ["web"] for sessions
+    | or your own gate. Basic auth (above) is always appended.
+    |
+    */
+    "middleware" => [],
 
     /*
     |--------------------------------------------------------------------------
@@ -93,6 +107,19 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Response schemas
+    |--------------------------------------------------------------------------
+    |
+    | When true, every documented JSON response gets a schema next to its
+    | example. JsonResources and Eloquent models become reusable components
+    | (#/components/schemas/Product, ...) referenced with $ref, so client
+    | generators (openapi-generator, orval, ...) produce typed models.
+    |
+    */
+    "response_schemas" => env("SWAGGER_RESPONSE_SCHEMAS", true),
+
+    /*
+    |--------------------------------------------------------------------------
     | Unwrap resource collection examples (non-paginated)
     |--------------------------------------------------------------------------
     |
@@ -125,7 +152,7 @@ return [
     |--------------------------------------------------------------------------
     |
     | When load_from_json is false and use_cached_spec_when_present is true, the JSON
-    | endpoint serves public/{cached_spec_path} if that file exists (e.g. after
+    | endpoint serves the cached file (see cached_spec_location) if it exists (e.g. after
     | `php artisan swagger:cache` or `php artisan make:swagger`). Otherwise it builds
     | the spec from routes on each request.
     |
@@ -133,6 +160,10 @@ return [
     |
     */
     "cached_spec_path" => env("SWAGGER_CACHED_SPEC_PATH", "doc.json"),
+    // "storage" keeps the cache in storage/app/swagger (served only through the protected
+    // JSON endpoint). "public" restores the legacy public/{cached_spec_path} file, which
+    // anyone can download directly.
+    "cached_spec_location" => env("SWAGGER_CACHED_SPEC_LOCATION", "storage"),
     "use_cached_spec_when_present" => env("SWAGGER_USE_CACHED_SPEC", true),
 
     /*
@@ -160,6 +191,7 @@ return [
     "auth_middlewares" => [
         "auth",
         "auth:api",
+        "auth:sanctum",
     ],
 
     /*
@@ -187,10 +219,11 @@ return [
     | Enable Swagger
     |--------------------------------------------------------------------------
     |
-    | Whether Swagger is enabled or not.
+    | Whether Swagger is enabled or not. Disabled in production unless
+    | SWAGGER_ENABLED=true is set explicitly.
     |
     */
-    "enable" => env('SWAGGER_ENABLED', true),
+    "enable" => env('SWAGGER_ENABLED', env('APP_ENV', 'production') !== 'production'),
 
     /*
     |--------------------------------------------------------------------------
@@ -247,6 +280,80 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Documentation UI
+    |--------------------------------------------------------------------------
+    |
+    | "g4t" (the package's own reference UI, bundled, no CDN), "swagger"
+    | (Swagger UI, bundled) or "scalar" (Scalar API Reference, loaded from
+    | jsDelivr at the pinned "scalar.version"). Append ?ui=g4t, ?ui=swagger or
+    | ?ui=scalar to the documentation URL to switch for a single visit.
+    |
+    | "theme" is the default Swagger UI theme (a file name from
+    | public/g4t/swagger/themes without .css). A theme picked in the browser
+    | still wins for that browser.
+    |
+    */
+    "ui" => env("SWAGGER_UI", "g4t"),
+
+    // Defaults of the "g4t" UI; readers can still change them from the Appearance menu.
+    "g4t" => [
+        // light | dark | system
+        "mode" => env("SWAGGER_G4T_MODE", "light"),
+        // comfortable | compact
+        "density" => env("SWAGGER_G4T_DENSITY", "comfortable"),
+    ],
+
+    "theme" => env("SWAGGER_THEME", "default"),
+
+    "scalar" => [
+        "version" => env("SWAGGER_SCALAR_VERSION", "1.73.0"),
+        // default, alternate, moon, purple, solarized, bluePlanet, deepSpace,
+        // saturn, kepler, elysiajs, fastify, mars, laserwave, none
+        "theme" => env("SWAGGER_SCALAR_THEME", "purple"),
+        // modern | classic
+        "layout" => env("SWAGGER_SCALAR_LAYOUT", "modern"),
+        // null lets the reader toggle, true/false forces dark/light mode.
+        "dark_mode" => null,
+        // UI language, e.g. "ar" (direction "rtl") or "en".
+        "locale" => env("SWAGGER_SCALAR_LOCALE"),
+        // auto | ltr | rtl
+        "direction" => env("SWAGGER_SCALAR_DIRECTION", "auto"),
+        "hide_models" => false,
+        "default_open_all_tags" => false,
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
+    | Auto Login ("Try it out")
+    |--------------------------------------------------------------------------
+    |
+    | Adds a Login button to the documentation. It sends the credentials to
+    | your login endpoint, reads the token from the JSON response and fills
+    | the security scheme, so protected endpoints work in "Try it out".
+    | The token is kept in the browser (localStorage) until Logout.
+    |
+    | "url": path or absolute URL of the login endpoint. null disables it.
+    | "fields": request field => input label.
+    | "token_path": dot path of the token in the response; when it is missing
+    |   the common paths (token, access_token, data.token, ...) are tried.
+    | "security_scheme": key in "security_schemes" that receives the token.
+    | "prefill": values to pre-fill the form, only used in the local env.
+    |
+    */
+    "auto_login" => [
+        "url" => env("SWAGGER_LOGIN_URL"),
+        "method" => "POST",
+        "fields" => [
+            "email" => "Email",
+            "password" => "Password",
+        ],
+        "token_path" => env("SWAGGER_LOGIN_TOKEN_PATH"),
+        "security_scheme" => "bearerAuth",
+        "prefill" => [],
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
     | Security Schemes
     |--------------------------------------------------------------------------
     |
@@ -254,16 +361,10 @@ return [
     |
     */
     "security_schemes" => [
-        "authorization" => [
-            "type" => "apiKey",
-            "name" => "authorization",
-            "in" => "header"
+        "bearerAuth" => [
+            "type" => "http",
+            "scheme" => "bearer",
         ],
-        "apiKey1" => [
-            "type" => "apiKey",
-            "name" => "key1",
-            "in" => "query"
-        ]
     ],
 
     /*

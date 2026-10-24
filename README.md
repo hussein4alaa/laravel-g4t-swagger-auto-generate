@@ -27,6 +27,7 @@
   <a href="https://swagger.g4t.io/"><b>Documentation</b></a> ·
   <a href="#installation">Installation</a> ·
   <a href="#the-documentation-ui">The UI</a> ·
+  <a href="#settings-dashboard">Dashboard</a> ·
   <a href="#configuration">Configuration</a> ·
   <a href="#upgrading-to-50">Upgrading to 5.0</a>
 </p>
@@ -42,6 +43,7 @@
 - **Response examples from your code.** `response()->json([...])`, `new XResource(...)`, `XResource::collection(...)`, paginators, `abort(404, '…')`, returned models and more, typed from your model casts.
 - **Real response schemas.** Resources and models become `$ref` components, so client generators (openapi-generator, orval, Kiota…) produce typed models.
 - **A documentation UI people enjoy using.** Try it out with file uploads, code samples (cURL, JavaScript, Dart, PHP), environments with `{{variables}}`, request history, light/dark mode, and nothing loaded from a CDN. Swagger UI and Scalar are included too.
+- **A settings dashboard.** Change the config, drag operations into order and hide endpoints from the browser, behind its own sign-in.
 - **Safe by default.** Docs are off in production unless you turn them on; optional Basic Auth; the cached spec is never public.
 
 ## Requirements
@@ -265,6 +267,21 @@ To document a header on **every** operation (a language, a tenant, a request id�
 
 In the `g4t` UI, each environment can also send its own headers with every request (Environments → Headers), with `{{variables}}` in their values, e.g. `X-Tenant: {{tenant}}`.
 
+## Settings dashboard
+
+Everything above can also be changed from a dashboard, without editing `config/swagger.php`: the info block, the UI and its theme, versions and servers, security schemes, global headers, the Try it out login, the generation switches and access. Drag sections and operations to set their order in every UI, and hide an operation from the documentation (the route keeps working).
+
+The dashboard is off until it has credentials. Add them to `.env`:
+
+```dotenv
+SWAGGER_DASHBOARD_USERNAME=admin
+SWAGGER_DASHBOARD_PASSWORD=a-long-random-password   # or a bcrypt/argon hash from Hash::make()
+```
+
+Then open `/swagger/dashboard` (`SWAGGER_DASHBOARD_URL`). Sign-in uses the session (the `web` middleware group) and allows 5 attempts a minute per IP.
+
+Saved changes go to `storage/app/swagger/settings.json`, and only the values you changed are kept; everything else keeps following `config/swagger.php`. Saving the config file's value again removes the override, and **Reset** removes them all. Saving also clears the `swagger:cache` file. To commit the settings or share them between servers, deploy that file with your app; turn the dashboard off with `SWAGGER_DASHBOARD_ENABLED=false`.
+
 ## Configuration
 
 All keys live in `config/swagger.php`. The most useful ones:
@@ -289,6 +306,7 @@ All keys live in `config/swagger.php`. The most useful ones:
 | `enable_auth` | `SWAGGER_AUTH_ENABLED` | `false` | Basic Auth on the docs (`SWAGGER_USERNAME`, `SWAGGER_PASSWORD`) |
 | `middleware` | | `[]` | Extra middleware for the docs routes, e.g. `["web", "auth"]` |
 | `cached_spec_location` | `SWAGGER_CACHED_SPEC_LOCATION` | `storage` | Where `swagger:cache` writes (`storage` or `public`) |
+| `dashboard` | `SWAGGER_DASHBOARD_*` | off until a username and password are set | The [settings dashboard](#settings-dashboard): `enabled`, `url`, `username`, `password`, `middleware` |
 
 ### Protecting the documentation
 

@@ -8,6 +8,7 @@ use G4T\Swagger\Sections\Schemas;
 use G4T\Swagger\Sections\Tags;
 use G4T\Swagger\Support\Debug;
 use G4T\Swagger\Support\SchemaBuilder;
+use G4T\Swagger\Support\Settings;
 use Illuminate\Routing\Route as RoutingRoute;
 use Illuminate\Support\Facades\Route;
 use Illuminate\Support\Str;
@@ -161,6 +162,8 @@ class Swagger
             ] + $this->successResponse($exampleExtractor, $action, $inferExamples, $responseSchemas);
         }
 
+        [$apiRoutes, $controllers] = $this->applyLayout($apiRoutes, $controllers);
+
         $swaggerJson = new stdClass;
         $swaggerJson->tags = $this->getTags($controllers);
         $swaggerJson->paths = $this->formatPaths($apiRoutes);
@@ -168,6 +171,68 @@ class Swagger
         $swaggerJson->securitySchemes = config('swagger.security_schemes');
 
         return $swaggerJson;
+    }
+
+    /**
+     * Keep operations hidden from the dashboard in the document (the dashboard lists them all).
+     */
+    public function includingHidden(bool $include = true): static
+    {
+        $this->includeHidden = $include;
+
+        return $this;
+    }
+
+    /** @var bool */
+    private $includeHidden = false;
+
+    /**
+     * Dashboard layout: drop hidden operations and order tags and operations (unlisted ones keep
+     * their place after the listed ones, in route order).
+     *
+     * @param  list<array<string, mixed>>  $apiRoutes
+     * @param  array<string, array<string, mixed>>  $controllers
+     * @return array{0: list<array<string, mixed>>, 1: array<string, array<string, mixed>>}
+     */
+    private function applyLayout(array $apiRoutes, array $controllers): array
+    {
+        $layout = Settings::layout();
+        if (! $this->includeHidden && $layout['hidden'] !== []) {
+            $hidden = array_flip($layout['hidden']);
+            $apiRoutes = array_values(array_filter($apiRoutes, fn (array $route) => ! isset($hidden[$route['operation_id']])));
+            $used = array_flip(array_map(fn (array $route) => $route['controller'], $apiRoutes));
+            $controllers = array_filter($controllers, fn (array $controller, $tag) => isset($used[$tag]), ARRAY_FILTER_USE_BOTH);
+        }
+
+        $tagRank = array_flip($layout['tags']);
+        $tagNames = array_keys($controllers);
+        usort($tagNames, function ($a, $b) use ($tagRank, $tagNames) {
+            $rankA = $tagRank[$a] ?? PHP_INT_MAX;
+            $rankB = $tagRank[$b] ?? PHP_INT_MAX;
+
+            return $rankA === $rankB ? array_search($a, $tagNames, true) <=> array_search($b, $tagNames, true) : $rankA <=> $rankB;
+        });
+        $ordered = [];
+        foreach ($tagNames as $name) {
+            $ordered[$name] = $controllers[$name];
+        }
+
+        $position = array_flip($tagNames);
+        foreach ($apiRoutes as $index => $route) {
+            $apiRoutes[$index]['_order'] = [
+                $position[$route['controller']] ?? PHP_INT_MAX,
+                array_flip($layout['operations'][$route['controller']] ?? [])[$route['operation_id']] ?? PHP_INT_MAX,
+                $index,
+            ];
+        }
+        usort($apiRoutes, fn (array $a, array $b) => $a['_order'] <=> $b['_order']);
+        foreach ($apiRoutes as $index => $route) {
+            unset($apiRoutes[$index]['_order']);
+            // OpenAPI groups operations by path, so the exact order travels as x-order.
+            $apiRoutes[$index]['x_order'] = $index + 1;
+        }
+
+        return [$apiRoutes, $ordered];
     }
 
     /**

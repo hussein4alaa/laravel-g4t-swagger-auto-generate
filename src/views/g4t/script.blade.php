@@ -229,7 +229,7 @@
                 var body = o.requestBody && o.requestBody.$ref ? resolveRef(o.requestBody.$ref) : o.requestBody;
                 var op = {
                     id: id, method: m.toUpperCase(), path: path, tag: (o.tags && o.tags[0]) || 'default',
-                    summary: o.summary || '', desc: o.description || '', deprecated: !!o.deprecated,
+                    summary: o.summary || '', desc: o.description || '', deprecated: !!o.deprecated, order: o['x-order'],
                     security: Array.isArray(o.security) ? o.security : globalSecurity,
                     params: params, body: body && body.content ? body : null, responses: buildResponses(o.responses || {})
                 };
@@ -245,6 +245,13 @@
                 if (!byTag[op.tag]) { byTag[op.tag] = []; if (tagOrder.indexOf(op.tag) === -1) { tagOrder.push(op.tag); } }
                 byTag[op.tag].push(op);
             });
+        });
+        // x-order (set from the dashboard) is the exact operation order; OpenAPI paths group by URI.
+        Object.keys(byTag).forEach(function (n) {
+            byTag[n] = byTag[n].map(function (op, i) { return { op: op, i: i }; }).sort(function (a, b) {
+                var oa = typeof a.op.order === 'number' ? a.op.order : Infinity, ob = typeof b.op.order === 'number' ? b.op.order : Infinity;
+                return oa === ob ? a.i - b.i : oa - ob;
+            }).map(function (x) { return x.op; });
         });
         var tags = tagOrder.filter(function (n) { return byTag[n]; }).map(function (n) { return { name: n, desc: tagDesc[n] || '', anchor: 'tag-' + slug(n), ops: byTag[n] }; });
         var schemes = (spec.components && spec.components.securitySchemes) || {};

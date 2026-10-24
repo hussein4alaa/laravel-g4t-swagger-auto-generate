@@ -280,6 +280,29 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Settings dashboard
+    |--------------------------------------------------------------------------
+    |
+    | A page to edit these settings and reorder / hide endpoints without
+    | touching this file. Changes are saved to storage/app/swagger/settings.json
+    | and override this file; keys never changed there keep following it.
+    |
+    | The dashboard only exists when both username and password are set. The
+    | password may be plain text or a bcrypt hash (php artisan tinker:
+    | Hash::make('secret')).
+    |
+    */
+    "dashboard" => [
+        "enabled" => env("SWAGGER_DASHBOARD_ENABLED", true),
+        "url" => env("SWAGGER_DASHBOARD_URL", "swagger/dashboard"),
+        "username" => env("SWAGGER_DASHBOARD_USERNAME"),
+        "password" => env("SWAGGER_DASHBOARD_PASSWORD"),
+        // The dashboard needs sessions and CSRF protection: keep "web".
+        "middleware" => ["web"],
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
     | Documentation UI
     |--------------------------------------------------------------------------
     |

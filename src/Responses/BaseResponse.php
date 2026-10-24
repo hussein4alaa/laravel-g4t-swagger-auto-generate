@@ -486,6 +486,9 @@ abstract class BaseResponse
         if (! empty($route['request_body'])) {
             $response['requestBody'] = $route['request_body'];
         }
+        if (isset($route['x_order'])) {
+            $response['x-order'] = $route['x_order'];
+        }
 
         self::applyStoredResponseExamples($response, $route);
         self::applyInferredResponseExample($response, $route);

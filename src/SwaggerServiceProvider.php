@@ -5,6 +5,7 @@ namespace G4T\Swagger;
 use G4T\Swagger\Commands\GenerateDocsCommand;
 use G4T\Swagger\Commands\PublishSwaggerMockServerCommand;
 use G4T\Swagger\Commands\SwaggerCacheCommand;
+use G4T\Swagger\Support\Settings;
 use Illuminate\Routing\Route;
 use Illuminate\Support\ServiceProvider;
 
@@ -60,6 +61,9 @@ class SwaggerServiceProvider extends ServiceProvider
      */
     public function boot()
     {
+        // Values saved from the dashboard (storage/app/swagger/settings.json) override the config file.
+        Settings::apply();
+
         $this->loadRoutesFrom(__DIR__.'/Routes/web.php');
         $this->loadViewsFrom(__DIR__.'/views', 'swagger');
 

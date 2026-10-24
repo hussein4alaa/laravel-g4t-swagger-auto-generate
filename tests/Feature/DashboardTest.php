@@ -1,0 +1,261 @@
+<?php
+
+namespace G4T\Swagger\Tests\Feature;
+
+use G4T\Swagger\Support\CachedSpec;
+use G4T\Swagger\Support\Settings;
+use G4T\Swagger\Tests\TestCase;
+use Illuminate\Support\Facades\Hash;
+
+class DashboardTest extends TestCase
+{
+    private const SESSION = ['g4t_swagger_dashboard_user' => 'admin'];
+
+    protected function setUp(): void
+    {
+        Settings::flush();
+        parent::setUp();
+    }
+
+    protected function tearDown(): void
+    {
+        @unlink(Settings::path());
+        Settings::flush();
+        parent::tearDown();
+    }
+
+    protected function defineEnvironment($app): void
+    {
+        parent::defineEnvironment($app);
+        $app['config']->set('swagger.dashboard.username', 'admin');
+        $app['config']->set('swagger.dashboard.password', 'secret-password');
+    }
+
+    public function test_guests_see_the_login_page(): void
+    {
+        $this->get('/swagger/dashboard')->assertOk()->assertSee('Sign in')->assertDontSee('window.G4T_DASHBOARD', false);
+    }
+
+    public function test_wrong_credentials_are_rejected(): void
+    {
+        $this->post('/swagger/dashboard/login', ['username' => 'admin', 'password' => 'nope'])
+            ->assertStatus(422)
+            ->assertSee('These credentials do not match')
+            ->assertSessionMissing('g4t_swagger_dashboard_user');
+    }
+
+    public function test_login_is_rate_limited(): void
+    {
+        for ($i = 0; $i < 5; $i++) {
+            $this->post('/swagger/dashboard/login', ['username' => 'admin', 'password' => 'nope'])->assertStatus(422);
+        }
+
+        $this->post('/swagger/dashboard/login', ['username' => 'admin', 'password' => 'secret-password'])
+            ->assertStatus(429)
+            ->assertSee('Too many attempts');
+    }
+
+    public function test_correct_credentials_sign_in(): void
+    {
+        $this->post('/swagger/dashboard/login', ['username' => 'admin', 'password' => 'secret-password'])
+            ->assertRedirect('/swagger/dashboard')
+            ->assertSessionHas('g4t_swagger_dashboard_user', 'admin');
+    }
+
+    public function test_a_hashed_password_works(): void
+    {
+        config(['swagger.dashboard.password' => Hash::make('hashed-secret')]);
+
+        $this->post('/swagger/dashboard/login', ['username' => 'admin', 'password' => 'hashed-secret'])
+            ->assertSessionHas('g4t_swagger_dashboard_user', 'admin');
+    }
+
+    public function test_signed_in_users_see_the_dashboard_and_can_sign_out(): void
+    {
+        $this->withSession(self::SESSION)->get('/swagger/dashboard')->assertOk()->assertSee('window.G4T_DASHBOARD', false);
+        $this->withSession(self::SESSION)->post('/swagger/dashboard/logout')->assertRedirect('/swagger/dashboard')->assertSessionMissing('g4t_swagger_dashboard_user');
+    }
+
+    public function test_dashboard_script_is_valid_javascript(): void
+    {
+        $node = trim((string) shell_exec('command -v node 2>/dev/null'));
+        if ($node === '') {
+            $this->markTestSkipped('node is not installed.');
+        }
+
+        preg_match_all('#<script>(.*?)</script>#s', $this->withSession(self::SESSION)->get('/swagger/dashboard')->getContent(), $scripts);
+        $this->assertNotEmpty($scripts[1]);
+
+        $file = tempnam(sys_get_temp_dir(), 'g4t').'.js';
+        file_put_contents($file, implode("\n;\n", $scripts[1]));
+        exec(escapeshellarg($node).' --check '.escapeshellarg($file).' 2>&1', $output, $exitCode);
+        @unlink($file);
+
+        $this->assertSame(0, $exitCode, "The dashboard script does not parse:\n".implode("\n", $output));
+    }
+
+    public function test_changing_the_dashboard_username_ends_sessions(): void
+    {
+        config(['swagger.dashboard.username' => 'someone-else']);
+
+        $this->withSession(self::SESSION)->getJson('/swagger/dashboard/api/settings')->assertStatus(401);
+    }
+
+    public function test_the_api_requires_a_session(): void
+    {
+        $this->getJson('/swagger/dashboard/api/settings')->assertStatus(401);
+        $this->putJson('/swagger/dashboard/api/settings', ['settings' => ['title' => 'x']])->assertStatus(401);
+        $this->get('/swagger/dashboard/api/settings')->assertRedirect('/swagger/dashboard');
+    }
+
+    public function test_settings_lists_values_and_every_operation(): void
+    {
+        $state = $this->withSession(self::SESSION)->getJson('/swagger/dashboard/api/settings')->assertOk()->json();
+
+        $this->assertSame('Api Documentation', $state['settings']['title']);
+        $this->assertArrayNotHasKey('password', $state['settings']);
+        $this->assertArrayHasKey('password_set', $state['settings']);
+        $this->assertSame([], $state['overridden']);
+        $ids = array_column($state['operations'], 'id');
+        $this->assertContains('get_api_v1_posts', $ids);
+        $this->assertContains('get_api_v2_products', $ids, 'All versions are listed');
+    }
+
+    public function test_saving_overrides_only_changed_values(): void
+    {
+        $this->withSession(self::SESSION)->putJson('/swagger/dashboard/api/settings', ['settings' => [
+            'title' => 'Shop API',
+            'description' => config('swagger.description'),
+            'ui' => 'scalar',
+        ]])->assertOk()->assertJsonPath('settings.title', 'Shop API');
+
+        $saved = json_decode(file_get_contents(Settings::path()), true);
+        $this->assertSame(['title' => 'Shop API', 'ui' => 'scalar'], $saved['config']);
+        $this->assertSame('Shop API', $this->spec()['info']['title']);
+        $this->get('/swagger/documentation')->assertSee('Scalar.createApiReference', false);
+    }
+
+    public function test_saving_the_config_file_value_removes_the_override(): void
+    {
+        $session = $this->withSession(self::SESSION);
+        $session->putJson('/swagger/dashboard/api/settings', ['settings' => ['title' => 'Shop API']])->assertOk();
+        $session->putJson('/swagger/dashboard/api/settings', ['settings' => ['title' => 'Api Documentation']])
+            ->assertOk()
+            ->assertJsonPath('overridden', []);
+    }
+
+    public function test_settings_survive_a_new_application_boot(): void
+    {
+        $this->withSession(self::SESSION)->putJson('/swagger/dashboard/api/settings', ['settings' => ['title' => 'Persisted']])->assertOk();
+
+        // A fresh boot: the config file value again, then the saved file applied over it.
+        Settings::flush();
+        config(['swagger.title' => 'Api Documentation']);
+        Settings::apply();
+
+        $this->assertSame('Persisted', config('swagger.title'));
+        $this->assertSame('Persisted', $this->spec()['info']['title']);
+    }
+
+    public function test_security_schemes_and_global_headers_can_be_saved(): void
+    {
+        $this->withSession(self::SESSION)->putJson('/swagger/dashboard/api/settings', ['settings' => [
+            'security_schemes' => [
+                'apiKey' => ['type' => 'apiKey', 'in' => 'header', 'name' => 'X-API-Key'],
+                'bearerAuth' => ['type' => 'http', 'scheme' => 'bearer'],
+            ],
+            'global_headers' => [['name' => 'Accept-Language', 'required' => false, 'enum' => ['en', 'ar']]],
+        ]])->assertOk();
+
+        $spec = $this->spec();
+        $this->assertSame(['apiKey', 'bearerAuth'], array_keys($spec['components']['securitySchemes']));
+        $headers = array_values(array_filter($spec['paths']['/api/v1/posts']['get']['parameters'], fn (array $p) => $p['in'] === 'header'));
+        $this->assertSame('Accept-Language', $headers[0]['name']);
+        $this->assertSame(['en', 'ar'], $headers[0]['schema']['enum']);
+    }
+
+    public function test_invalid_values_are_rejected_with_field_errors(): void
+    {
+        $this->withSession(self::SESSION)->putJson('/swagger/dashboard/api/settings', ['settings' => [
+            'ui' => 'nope',
+            'versions' => ['all', 'v1'],
+            'default' => 'v9',
+            'servers' => [['url' => 'not a url']],
+            'security_schemes' => ['key' => ['type' => 'apiKey', 'in' => 'header']],
+            'global_headers' => [['name' => 'Bad Header']],
+        ]])->assertStatus(422)->assertJsonValidationErrors(['ui', 'default', 'servers.0.url', 'security_schemes.key.name', 'global_headers.0.name']);
+
+        $this->assertFileDoesNotExist(Settings::path());
+    }
+
+    public function test_layout_hides_and_orders_operations(): void
+    {
+        $this->withSession(self::SESSION)->putJson('/swagger/dashboard/api/settings', [
+            'settings' => [],
+            'layout' => [
+                'tags' => ['Misc', 'Post'],
+                'operations' => ['Post' => ['delete_api_v1_posts_post', 'get_api_v1_posts']],
+                'hidden' => ['post_api_v1_posts'],
+            ],
+        ])->assertOk();
+
+        $spec = $this->spec();
+        $tags = array_column($spec['tags'], 'name');
+        $this->assertSame(['Misc', 'Post'], array_slice($tags, 0, 2));
+        $this->assertArrayNotHasKey('post', $spec['paths']['/api/v1/posts'], 'Hidden operations leave the document');
+
+        // OpenAPI groups operations by path; the exact order is carried by x-order.
+        $postOperations = [];
+        foreach ($spec['paths'] as $operations) {
+            foreach ($operations as $operation) {
+                if (($operation['tags'][0] ?? null) === 'Post') {
+                    $postOperations[$operation['x-order']] = $operation['operationId'];
+                }
+            }
+        }
+        ksort($postOperations);
+        $this->assertSame(['delete_api_v1_posts_post', 'get_api_v1_posts'], array_slice(array_values($postOperations), 0, 2), 'Listed operations come first, in the saved order');
+
+        $state = $this->withSession(self::SESSION)->getJson('/swagger/dashboard/api/settings')->json();
+        $postIds = array_column(array_values(array_filter($state['operations'], fn (array $o) => $o['tag'] === 'Post')), 'id');
+        $this->assertSame(['delete_api_v1_posts_post', 'get_api_v1_posts'], array_slice($postIds, 0, 2), 'The dashboard lists operations in the saved order');
+        $hidden = array_values(array_filter($state['operations'], fn (array $o) => $o['hidden']));
+        $this->assertSame(['post_api_v1_posts'], array_column($hidden, 'id'), 'The dashboard still lists hidden operations');
+    }
+
+    public function test_an_empty_password_keeps_the_docs_password(): void
+    {
+        // As if config/swagger.php had this password when the app booted.
+        config(['swagger.password' => 'docs-pass']);
+        Settings::flush();
+        Settings::apply();
+        $session = $this->withSession(self::SESSION);
+
+        $session->putJson('/swagger/dashboard/api/settings', ['settings' => ['enable_auth' => true, 'password' => '']])->assertOk();
+        $this->assertSame('docs-pass', config('swagger.password'));
+
+        $session->putJson('/swagger/dashboard/api/settings', ['settings' => ['password' => 'new-pass']])->assertOk()->assertJsonPath('settings.password_set', true);
+        $this->assertSame('new-pass', config('swagger.password'));
+    }
+
+    public function test_reset_removes_every_dashboard_change(): void
+    {
+        $session = $this->withSession(self::SESSION);
+        $session->putJson('/swagger/dashboard/api/settings', ['settings' => ['title' => 'Shop API'], 'layout' => ['hidden' => ['get_api_v1_ping']]])->assertOk();
+
+        $session->deleteJson('/swagger/dashboard/api/settings')->assertOk()->assertJsonPath('settings.title', 'Api Documentation');
+
+        $this->assertFileDoesNotExist(Settings::path());
+        $this->assertArrayHasKey('/api/v1/ping', $this->spec()['paths']);
+    }
+
+    public function test_saving_clears_the_cached_document(): void
+    {
+        $this->artisan('swagger:cache')->assertExitCode(0);
+        $this->assertNotNull(CachedSpec::read());
+
+        $this->withSession(self::SESSION)->putJson('/swagger/dashboard/api/settings', ['settings' => ['title' => 'Fresh']])->assertOk();
+
+        $this->assertNull(CachedSpec::read());
+    }
+}

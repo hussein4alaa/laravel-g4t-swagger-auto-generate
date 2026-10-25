@@ -4,7 +4,6 @@ namespace G4T\Swagger\Middleware;
 
 use Closure;
 use G4T\Swagger\Controllers\DashboardController;
-use G4T\Swagger\Support\PageUrl;
 use Illuminate\Http\Request;
 
 /**
@@ -23,6 +22,6 @@ class DashboardAuthenticate
             return response()->json(['message' => 'Your dashboard session has ended. Sign in again.'], 401);
         }
 
-        return redirect()->away(PageUrl::to(DashboardController::url()));
+        return redirect()->to(url(DashboardController::url()));
     }
 }

@@ -98,7 +98,7 @@
             'density' => $g4t['density'],
             'gettingStarted' => $g4t['getting_started'],
             'environments' => $environments ?? [],
-            'jsonUrl' => \G4T\Swagger\Support\PageUrl::to(config('swagger.url') . '/json') . (empty($partner) ? '' : '?key=' . urlencode($partner['key'])),
+            'jsonUrl' => url(config('swagger.url') . '/json') . (empty($partner) ? '' : '?key=' . urlencode($partner['key'])),
             'partner' => empty($partner) ? null : ['name' => $partner['name'], 'sections' => $partner['sections'], 'endpoints' => $partner['endpoints'] ?? 0, 'expires' => $partner['expires']],
         ], JSON_UNESCAPED_SLASHES | JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) !!};
     </script>

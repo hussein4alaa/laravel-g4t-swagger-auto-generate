@@ -3,7 +3,6 @@
 namespace G4T\Swagger\Controllers;
 
 use G4T\Swagger\Support\CachedSpec;
-use G4T\Swagger\Support\PageUrl;
 use G4T\Swagger\Support\PartnerLinks;
 use G4T\Swagger\Swagger;
 use Illuminate\Http\Response;
@@ -65,7 +64,7 @@ class DocumentationController
         }
 
         return view('swagger::documentation', $shared + [
-            'themes_path' => PageUrl::to('g4t/swagger/themes'),
+            'themes_path' => url('g4t/swagger/themes'),
             'themes' => $this->getThemesList(),
             'defaultTheme' => (string) config('swagger.theme', 'default'),
         ]);
@@ -204,7 +203,7 @@ class DocumentationController
 
         return [
             'name' => filled($login['name'] ?? null) ? (string) $login['name'] : 'Login '.($index + 1),
-            'url' => preg_match('#^https?://#i', $url) ? $url : PageUrl::to($url),
+            'url' => preg_match('#^https?://#i', $url) ? $url : url($url),
             'method' => strtoupper((string) ($login['method'] ?? 'POST')),
             'fields' => $fields !== [] ? $fields : ['email' => 'Email', 'password' => 'Password'],
             'tokenPath' => filled($login['token_path'] ?? null) ? (string) $login['token_path'] : null,
@@ -221,7 +220,7 @@ class DocumentationController
         foreach ($config['versions'] as $version) {
             $versions[] = [
                 'name' => $version,
-                'url' => PageUrl::to($config['url'].'/json?version='.urlencode($version).$this->keyQuery()),
+                'url' => url($config['url'].'/json?version='.urlencode($version).$this->keyQuery()),
             ];
         }
 

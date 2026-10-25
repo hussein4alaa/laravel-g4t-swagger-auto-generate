@@ -52,8 +52,8 @@ class UiTest extends TestCase
     {
         $content = $this->get('/swagger/documentation')->getContent();
 
-        $this->assertStringContainsString('"jsonUrl":"/swagger/documentation/json"', $content);
-        $this->assertStringContainsString('"name":"v2","url":"/swagger/documentation/json?version=v2"', $content);
+        $this->assertStringContainsString('"jsonUrl":"http://localhost/swagger/documentation/json"', $content);
+        $this->assertStringContainsString('"name":"v2","url":"http://localhost/swagger/documentation/json?version=v2"', $content);
         $this->assertStringContainsString('"defaultTheme":"default"', $content);
     }
 
@@ -185,7 +185,7 @@ class UiTest extends TestCase
         config(['swagger.auto_login.url' => '/api/v1/login']);
 
         $this->get('/swagger/documentation?ui=g4t')
-            ->assertSee('"autoLogin":{"name":"Login 1","url":"/api/v1/login","method":"POST"', false);
+            ->assertSee('"autoLogin":{"name":"Login 1","url":"http://localhost/api/v1/login","method":"POST"', false);
     }
 
     public function test_several_logins_reach_the_g4t_ui_and_the_first_one_the_other_uis(): void
@@ -203,7 +203,7 @@ class UiTest extends TestCase
         $this->assertSame(['username' => 'Username', 'password' => 'Password'], $settings['autoLogins'][1]['fields']);
         $this->assertSame('Customer', $settings['autoLogin']['name']);
 
-        $this->get('/swagger/documentation?ui=swagger')->assertSee('"url":"/api/v1/login"', false)->assertDontSee('/api/admin/login', false);
+        $this->get('/swagger/documentation?ui=swagger')->assertSee('"url":"http://localhost/api/v1/login"', false)->assertDontSee('/api/admin/login', false);
     }
 
     public function test_login_button_is_rendered_in_both_uis(): void
@@ -214,7 +214,7 @@ class UiTest extends TestCase
             $this->get('/swagger/documentation?ui='.$ui)
                 ->assertSee('g4t-login-toggle', false)
                 ->assertSee('window.G4TAuth', false)
-                ->assertSee('"url":"/api/v1/login"', false);
+                ->assertSee('"url":"http://localhost/api/v1/login"', false);
         }
     }
 
@@ -240,20 +240,5 @@ class UiTest extends TestCase
 
         $this->app['env'] = 'local';
         $this->get('/swagger/documentation')->assertSee('dev@example.test', false);
-    }
-
-    public function test_urls_follow_the_page_when_the_app_forces_https(): void
-    {
-        // An app with URL::forceScheme('https') opened over http (php artisan serve, a local port).
-        \Illuminate\Support\Facades\URL::forceScheme('https');
-        config(['swagger.auto_login.url' => '/api/v1/login']);
-
-        foreach (['g4t', 'swagger', 'scalar'] as $ui) {
-            $this->get('/swagger/documentation?ui='.$ui)
-                ->assertOk()
-                ->assertDontSee('https://localhost', false)
-                ->assertSee('/swagger/documentation/json?version=all', false);
-        }
-        $this->get('/swagger/documentation?ui=swagger')->assertSee('src="/g4t/swagger/js/swagger-ui-bundle.js"', false);
     }
 }

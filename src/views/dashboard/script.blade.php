@@ -46,8 +46,7 @@
         (window.crypto || window.msCrypto).getRandomValues(bytes);
         return btoa(String.fromCharCode.apply(null, bytes)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
     }
-    // Shared outside this browser, so absolute: the docs path resolved against this page's address.
-    function linkUrl(token) { var docs = new URL(D.urls.docs, location.href).href; return docs + (docs.indexOf('?') === -1 ? '?' : '&') + 'key=' + encodeURIComponent(token); }
+    function linkUrl(token) { return D.urls.docs + (D.urls.docs.indexOf('?') === -1 ? '?' : '&') + 'key=' + encodeURIComponent(token); }
     var $ = function (id) { return document.getElementById(id); };
     var els = { nav: $('d-nav'), content: $('d-content'), savebar: $('d-savebar'), toast: $('d-toast') };
 

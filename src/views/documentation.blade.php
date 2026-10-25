@@ -8,8 +8,8 @@
     <title>{{ config('app.name') }} - G4T Swagger</title>
     @include('swagger::partials.favicon')
 
-    <link rel="stylesheet" href="{{ \G4T\Swagger\Support\PageUrl::asset('g4t/swagger/css/swagger-ui.css') }}">
-    <link href="{{ \G4T\Swagger\Support\PageUrl::asset('g4t/swagger/css/bootstrap.min.css') }}" rel="stylesheet"
+    <link rel="stylesheet" href="{{ asset('g4t/swagger/css/swagger-ui.css') }}">
+    <link href="{{ asset('g4t/swagger/css/bootstrap.min.css') }}" rel="stylesheet"
         integrity="sha384-EVSTQN3/azprG1Anm3QDgpJLIm9Nao0Yz1ztcQTwFspd3yD65VohhpuuCOmLASjC" crossorigin="anonymous">
     <style>
         html {
@@ -92,7 +92,7 @@
 
     <!-- Button trigger modal -->
     <button type="button" class="btn btn-secondary theme-btn" data-bs-toggle="modal" data-bs-target="#exampleModal">
-        <img src="{{ \G4T\Swagger\Support\PageUrl::asset('g4t/swagger/images/theme.png') }}" class="theme-png">
+        <img src="{{ asset('g4t/swagger/images/theme.png') }}" class="theme-png">
     </button>
 
     <!-- Modal -->
@@ -124,8 +124,8 @@
 
     @include('swagger::partials.auto-login')
 
-    <script src="{{ \G4T\Swagger\Support\PageUrl::asset('g4t/swagger/js/swagger-ui-bundle.js') }}"></script>
-    <script src="{{ \G4T\Swagger\Support\PageUrl::asset('g4t/swagger/js/swagger-ui-standalone-preset.js') }}"></script>
+    <script src="{{ asset('g4t/swagger/js/swagger-ui-bundle.js') }}"></script>
+    <script src="{{ asset('g4t/swagger/js/swagger-ui-standalone-preset.js') }}"></script>
 
     <script>
         function changeTheme(theme) {
@@ -210,10 +210,10 @@
 
 </body>
 
-<script src="{{ \G4T\Swagger\Support\PageUrl::asset('g4t/swagger/js/popper.min.js') }}"
+<script src="{{ asset('g4t/swagger/js/popper.min.js') }}"
     integrity="sha384-IQsoLXl5PILFhosVNubq5LC7Qb9DXgDA9i+tQ8Zj3iwWAwPtgFTxbJ8NT4GN1R8p" crossorigin="anonymous">
 </script>
-<script src="{{ \G4T\Swagger\Support\PageUrl::asset('g4t/swagger/js/bootstrap.min.js') }}"
+<script src="{{ asset('g4t/swagger/js/bootstrap.min.js') }}"
     integrity="sha384-cVKIPhGWiC2Al4u+LWgxfKTRIcfu0JTxR+EQDz/bgldoEyl4H0zUF0QKbrJ0EcQF" crossorigin="anonymous">
 </script>
 

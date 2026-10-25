@@ -18,7 +18,8 @@
         ['login', 'Try it out logins', ['auto_login']],
         ['generation', 'Generation', ['infer_response_examples', 'infer_error_response_examples', 'response_schemas', 'unwrap_resource_collection_examples', 'include_web_routes', 'spatie_query_builder', 'show_prefix']],
         ['access', 'Access', ['enable', 'enable_auth', 'username', 'password']],
-        ['links', 'Partner links', []]
+        ['links', 'Partner links', []],
+        ['storage', 'Storage', []]
     ];
     var FLAGS = [
         ['infer_response_examples', 'Response examples from controllers', 'response()->json, Resources, models, paginators…'],
@@ -495,6 +496,26 @@
             '<div class="d-note">The dashboard itself is protected by <code class="g4t-mono">SWAGGER_DASHBOARD_USERNAME</code> / <code class="g4t-mono">SWAGGER_DASHBOARD_PASSWORD</code> in your <code class="g4t-mono">.env</code>; it cannot change them.</div>');
     }
 
+    /* Where the saved settings live: the local file or a shared filesystem disk (s3, …). */
+    var storagePick, moving = false;
+    function sStorage() {
+        var st = server.storage, current = st.disk || '', pick = storagePick === undefined ? current : storagePick;
+        var options = [['', 'Local file (this server only)']].concat(st.disks.map(function (d) { return [d, d + ' disk']; }));
+        var body = '<div class="d-note">Saved in <code class="g4t-mono">' + esc(st.path) + '</code>.' + (st.disk ? ' Every server that reads this disk shares the same settings.' : ' Only this server sees them: with several servers or pods (Kubernetes, autoscaling), use a shared disk such as s3.') + '</div>';
+        if (st.locked) {
+            body += '<div class="d-note">The disk is set by <code class="g4t-mono">SWAGGER_DASHBOARD_SETTINGS_DISK</code> (<code class="g4t-mono">dashboard.settings_disk</code>), so it cannot be changed here.</div>';
+        } else {
+            body += '<div class="d-field' + (errors.disk ? ' is-invalid' : '') + '">Keep the settings on' +
+                '<select data-storage-pick aria-label="Storage">' + options.map(function (o) { return '<option value="' + esc(o[0]) + '"' + (o[0] === pick ? ' selected' : '') + '>' + esc(o[1]) + '</option>'; }).join('') + '</select>' +
+                '<span class="d-hint">Disks come from <code class="g4t-mono">config/filesystems.php</code>. Moving copies the saved settings there and checks that they read back.</span>' + errorText('disk') + '</div>' +
+                '<div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap"><button type="button" class="g4t-btn g4t-btn-primary" data-action="storage-move"' + (pick === current || moving || isDirty() ? ' disabled' : '') + '>' + (moving ? 'Moving…' : 'Move settings') + '</button>' +
+                (isDirty() ? '<span class="d-hint">Save or discard your changes first.</span>' : '') + '</div>' +
+                '<div class="d-note"><b>Several servers or pods?</b> Moving to a disk leaves a small <code class="g4t-mono">' + esc(st.local.split(/[\\/]/).pop()) + '</code> in the project root that only says which disk to read. Commit it, or set <code class="g4t-mono">SWAGGER_DASHBOARD_SETTINGS_DISK=' + esc(pick || 's3') + '</code>, so new servers find the disk too; after that, every change made here reaches all of them without a deploy.</div>';
+        }
+
+        return section('storage', 'Storage', 'Where the dashboard keeps what you save.', body);
+    }
+
     /* Endpoint picker of a partner link: search, pick single endpoints, hidden ones included. */
     var linkSearch = {};
     function opHiddenLabel(o) {
@@ -678,7 +699,8 @@
         { id: 'logins', title: 'Try it out logins', group: 'Try it out', section: 'login', render: sLogin },
         { id: 'generation', title: 'Generation', group: 'Generation', section: 'generation', render: sGeneration },
         { id: 'access', title: 'Access', group: 'Access', section: 'access', render: sAccess },
-        { id: 'partner-links', title: 'Partner links', group: 'Access', section: 'links', render: sLinks }
+        { id: 'partner-links', title: 'Partner links', group: 'Access', section: 'links', render: sLinks },
+        { id: 'storage', title: 'Storage', group: 'Access', section: 'storage', render: sStorage }
     ];
     var pageHeader = null;
     var currentPage = PAGES.some(function (p) { return p.id === D.page; }) ? D.page : 'overview';
@@ -688,6 +710,7 @@
     function pageOfKey(key) {
         var root = String(key).split('.')[0];
         if (root === 'links') { return 'partner-links'; }
+        if (root === 'disk') { return 'storage'; }
         var section = SECTIONS.filter(function (s) { return s[2].indexOf(root) !== -1; })[0];
         var page = section && PAGES.filter(function (p) { return p.section === section[0]; })[0];
         return page ? page.id : 'overview';
@@ -954,6 +977,14 @@
                 var again = document.getElementById('d-link-ops-' + model.links[index].id);
                 if (again) { again.scrollTop = pickerScroll; }
                 break;
+            case 'storage-move':
+                if (moving || isDirty()) { break; }
+                moving = true; errors = {}; render();
+                request('PUT', { disk: storagePick || null }, D.urls.storage).then(function (state) {
+                    moving = false;
+                    if (state) { storagePick = undefined; load(state); toast(state.message || 'Settings moved'); } else { render(); }
+                });
+                break;
             case 'link-copy':
                 var copyToken = model.links.filter(function (l) { return l.id === value; }).map(linkToken)[0];
                 if (copyToken && navigator.clipboard) { navigator.clipboard.writeText(linkUrl(copyToken)).then(function () { toast('Link copied'); }, function () { toast('Copy it from the field'); }); }
@@ -1030,6 +1061,7 @@
     document.addEventListener('change', function (e) {
         var el = e.target;
         if (el.getAttribute('data-action-change') === 'default') { model.def = el.value; renderSavebar(); return; }
+        if (el.hasAttribute('data-storage-pick')) { storagePick = el.value; errors = {}; render(); return; }
         if (el.hasAttribute('data-rerender')) { render(); }
     });
     window.addEventListener('beforeunload', function (e) { if (isDirty()) { e.preventDefault(); e.returnValue = ''; } });
@@ -1037,8 +1069,8 @@
     /* ---------- server ---------- */
 
     var originalOrder = { tags: [] }, resetToRouteOrder = false;
-    function request(method, body) {
-        return fetch(D.urls.settings, {
+    function request(method, body, url) {
+        return fetch(url || D.urls.settings, {
             method: method, credentials: 'same-origin',
             headers: { 'Accept': 'application/json', 'Content-Type': 'application/json', 'X-CSRF-TOKEN': csrf, 'X-Requested-With': 'XMLHttpRequest' },
             body: body ? JSON.stringify(body) : undefined

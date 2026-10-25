@@ -300,6 +300,15 @@ return [
         // Where saved settings go, relative to the project root (or an absolute path). Outside public/,
         // so it is never served; commit it to ship the same settings to every server.
         "settings_path" => env("SWAGGER_DASHBOARD_SETTINGS_PATH", "swagger-settings.json"),
+        // Several servers or pods (Kubernetes, autoscaling)? Keep the file on a shared filesystem disk from
+        // config/filesystems.php, e.g. "s3"; settings_path is then its path on that disk. Null: the local file.
+        "settings_disk" => env("SWAGGER_DASHBOARD_SETTINGS_DISK"),
+        // The settings are read on every request, so a disk is read through the cache for this many seconds
+        // (0 reads the disk each time). Saving updates the cache at once; with a shared store (redis,
+        // database) every server sees the change immediately, with a local one within this time.
+        "settings_cache_ttl" => (int) env("SWAGGER_DASHBOARD_SETTINGS_CACHE_TTL", 60),
+        // Cache store for that copy; null uses the default store.
+        "settings_cache_store" => env("SWAGGER_DASHBOARD_SETTINGS_CACHE_STORE"),
         // The dashboard needs sessions and CSRF protection: keep "web".
         "middleware" => ["web"],
     ],

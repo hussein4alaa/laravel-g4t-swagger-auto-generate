@@ -26,7 +26,7 @@ class DashboardController
     private const MAX_ATTEMPTS = 5;
 
     /** Dashboard pages, each at {dashboard}/{page}; the first is the dashboard's own URL. */
-    public const PAGES = ['overview', 'general', 'interface', 'endpoints', 'versions', 'security', 'headers', 'environments', 'logins', 'generation', 'access', 'partner-links'];
+    public const PAGES = ['overview', 'general', 'interface', 'endpoints', 'versions', 'security', 'headers', 'environments', 'logins', 'generation', 'access', 'partner-links', 'storage'];
 
     /** @var array{title: string, description: string, tags: array<string, string>} */
     private array $defaults = ['title' => '', 'description' => '', 'tags' => []];
@@ -62,6 +62,7 @@ class DashboardController
             'urls' => [
                 'base' => url(self::url()),
                 'settings' => url(self::url().'/api/settings'),
+                'storage' => url(self::url().'/api/storage'),
                 'logout' => url(self::url().'/logout'),
                 'docs' => url(trim((string) config('swagger.url'), '/')),
             ],
@@ -125,6 +126,24 @@ class DashboardController
         return response()->json(['message' => 'Settings saved.'] + $this->state($request));
     }
 
+    /**
+     * Moves the saved settings to a filesystem disk (s3, …) or back to the local file.
+     */
+    public function storage(Request $request): JsonResponse
+    {
+        $disk = $request->input('disk');
+        if ($disk !== null && (! is_string($disk) || $disk === '')) {
+            return response()->json(['message' => 'Pick a disk.', 'errors' => ['disk' => ['Pick a disk.']]], 422);
+        }
+
+        $error = Settings::moveTo($disk);
+        if ($error !== null) {
+            return response()->json(['message' => $error, 'errors' => ['disk' => [$error]]], 422);
+        }
+
+        return response()->json(['message' => $disk === null ? 'Settings moved to the local file.' : "Settings moved to the \"{$disk}\" disk."] + $this->state($request));
+    }
+
     public function reset(Request $request): JsonResponse
     {
         if (! Settings::reset()) {
@@ -154,6 +173,7 @@ class DashboardController
             // Generated (code) texts, shown as placeholders next to the dashboard's own.
             'defaults' => $this->defaults,
             'settings_file' => Settings::path(),
+            'storage' => Settings::storage(),
             // Partner links with their address; null when it cannot be decrypted (older links, or a new app key).
             'links' => array_map(fn (array $link) => ['token' => PartnerLinks::token($link)] + array_diff_key($link, ['secret' => true]) + ['expired' => PartnerLinks::expired($link)], Settings::links()),
             'cached_spec' => CachedSpec::read() !== null,
@@ -317,7 +337,8 @@ class DashboardController
             $input['auto_login'] = [$input['auto_login']];
         }
         $name = 'regex:/^[A-Za-z0-9_.-]+$/';
-        $header = 'regex:/^[A-Za-z0-9!#$%&\'*+.^_`|~-]+$/';
+        // "|" written as \x7C: older Laravel splits rules on a literal pipe, even inside a regex.
+        $header = 'regex:/^[A-Za-z0-9!#$%&\'*+.^_`\x7C~-]+$/';
 
         $validator = Validator::make($input, [
             'title' => ['nullable', 'string', 'max:200'],

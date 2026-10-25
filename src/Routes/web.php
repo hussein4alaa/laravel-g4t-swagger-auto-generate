@@ -33,6 +33,7 @@ if (DashboardController::available()) {
             Route::get("/$dashboard/api/settings", [DashboardController::class, 'settings']);
             Route::put("/$dashboard/api/settings", [DashboardController::class, 'save']);
             Route::delete("/$dashboard/api/settings", [DashboardController::class, 'reset']);
+            Route::put("/$dashboard/api/storage", [DashboardController::class, 'storage']);
         });
     });
 }

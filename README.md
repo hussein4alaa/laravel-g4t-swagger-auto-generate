@@ -566,6 +566,21 @@ Saved changes go to `swagger-settings.json` in the project root (`SWAGGER_DASHBO
 - Settings saved by earlier versions in `storage/app/swagger/settings.json` keep working and move to the new file on the next save.
 - Turn the dashboard off with `SWAGGER_DASHBOARD_ENABLED=false`.
 
+#### Several servers, Kubernetes or autoscaling
+
+A local file only lives on one server, and a pod loses it when it restarts. Keep the settings on a shared [filesystem disk](https://laravel.com/docs/filesystem) instead, such as `s3`, so every server reads the same settings and dashboard changes need no deploy:
+
+```env
+SWAGGER_DASHBOARD_SETTINGS_DISK=s3
+```
+
+Or choose the disk on the dashboard's **Storage** page. It copies the saved settings to the disk, checks that they read back, and leaves a small local `swagger-settings.json` that only says which disk to read. Commit that file (or set the variable above) so new servers find the disk too. A disk set in `.env` or the config file can't be changed from the dashboard.
+
+- The settings are read on every request, so a disk is read through the cache for `SWAGGER_DASHBOARD_SETTINGS_CACHE_TTL` seconds (60 by default; `0` reads the disk each time). A save updates the cache at once. With a shared store (Redis, database) every server sees the change immediately; with a local one, within that time. `SWAGGER_DASHBOARD_SETTINGS_CACHE_STORE` picks the store.
+- `SWAGGER_DASHBOARD_SETTINGS_PATH` is then the file's path on the disk.
+- A disk that can't be reached never breaks your app: the config file applies until it's back.
+- S3 needs Laravel's adapter: `composer require league/flysystem-aws-s3-v3 "^3.0"`.
+
 ---
 
 ## ⚙️ Configuration reference
@@ -598,7 +613,7 @@ All keys live in `config/swagger.php`.
 | `middleware` | | `[]` | Extra middleware for the docs routes, e.g. `["web", "auth"]` |
 | `use_cached_spec_when_present` | `SWAGGER_USE_CACHED_SPEC` | `true` | Serve the `swagger:cache` file when it exists |
 | `cached_spec_location` | `SWAGGER_CACHED_SPEC_LOCATION` | `storage` | Where `swagger:cache` writes (`storage` or `public`) |
-| `dashboard` | `SWAGGER_DASHBOARD_*` | off until credentials are set | `enabled`, `url`, `username`, `password`, `settings_path`, `middleware` |
+| `dashboard` | `SWAGGER_DASHBOARD_*` | off until credentials are set | `enabled`, `url`, `username`, `password`, `settings_path`, `settings_disk`, `settings_cache_ttl`, `settings_cache_store`, `middleware` |
 
 ---
 

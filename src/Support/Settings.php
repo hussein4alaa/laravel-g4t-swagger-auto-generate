@@ -2,10 +2,16 @@
 
 namespace G4T\Swagger\Support;
 
+use Illuminate\Contracts\Cache\Repository as CacheRepository;
+use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Storage;
+use Throwable;
+
 /**
  * Settings saved from the dashboard, layered over config/swagger.php.
  *
- * The file (swagger-settings.json in the project root by default) only holds what was changed in the dashboard:
+ * The file (swagger-settings.json in the project root by default, or on a filesystem disk such as s3 with
+ * `dashboard.settings_disk`) only holds what was changed in the dashboard:
  * `config` (overridden swagger.* values), `links` (partner links) and `layout` (tag / operation order, hidden operations
  * and controllers, the English / Arabic texts of the info block, tags and operations, and the status /
  * note of each operation). Keys that were never changed keep following the config file.
@@ -38,11 +44,118 @@ final class Settings
     /** @var array<string, mixed>|null swagger.* before the dashboard overrides were applied */
     private static ?array $baseline = null;
 
+    /** @var string|false|null the disk named in the local file ({"storage": {"disk": "s3"}}); false until read */
+    private static string|false|null $pointer = false;
+
     public static function path(): string
+    {
+        return self::disk() !== null ? self::disk().':'.self::diskPath() : self::localPath();
+    }
+
+    /** The local file: the settings themselves, or only a pointer to the disk that holds them. */
+    public static function localPath(): string
     {
         $path = (string) (config('swagger.dashboard.settings_path') ?: 'swagger-settings.json');
 
         return preg_match('#^([/\\\\]|[A-Za-z]:[/\\\\])#', $path) ? $path : base_path($path);
+    }
+
+    /**
+     * The filesystem disk the settings live on (`s3`, …), shared by every server or pod; null for the local file.
+     * `dashboard.settings_disk` wins; otherwise the disk chosen in the dashboard, which the local file points to.
+     */
+    public static function disk(): ?string
+    {
+        return self::configuredDisk() ?? self::pointedDisk();
+    }
+
+    /** The disk set in the config file or .env; the dashboard cannot change it. */
+    public static function configuredDisk(): ?string
+    {
+        $disk = config('swagger.dashboard.settings_disk');
+
+        return is_string($disk) && $disk !== '' ? $disk : null;
+    }
+
+    private static function pointedDisk(): ?string
+    {
+        if (self::$pointer === false) {
+            $raw = is_file(self::localPath()) ? json_decode((string) file_get_contents(self::localPath()), true) : null;
+            $disk = $raw['storage']['disk'] ?? null;
+            self::$pointer = is_string($disk) && $disk !== '' ? $disk : null;
+        }
+
+        return self::$pointer;
+    }
+
+    /**
+     * Where the settings are and where they can go, for the dashboard.
+     *
+     * @return array{disk: ?string, locked: bool, path: string, local: string, disks: list<string>}
+     */
+    public static function storage(): array
+    {
+        return [
+            'disk' => self::disk(),
+            'locked' => self::configuredDisk() !== null,
+            'path' => self::path(),
+            'local' => self::localPath(),
+            'disks' => array_values(array_map('strval', array_keys((array) config('filesystems.disks', [])))),
+        ];
+    }
+
+    /**
+     * Moves the saved settings to a disk ($disk) or back to the local file (null). The disk gets the settings
+     * and the local file only a pointer to it, so commit that small file (or set dashboard.settings_disk) to
+     * have every server read the same disk. Nothing moves when the write cannot be read back.
+     *
+     * @return string|null null when moved, else why not
+     */
+    public static function moveTo(?string $disk): ?string
+    {
+        if (self::configuredDisk() !== null) {
+            return 'The disk is set by dashboard.settings_disk (SWAGGER_DASHBOARD_SETTINGS_DISK).';
+        }
+        if ($disk !== null && ! array_key_exists($disk, (array) config('filesystems.disks', []))) {
+            return "There is no \"{$disk}\" disk in config/filesystems.php.";
+        }
+        $json = self::encode(self::data());
+        if ($json === null) {
+            return 'The settings could not be encoded.';
+        }
+
+        if ($disk === null) {
+            if (! self::writeLocal($json)) {
+                return 'Could not write '.self::localPath().'.';
+            }
+        } else {
+            try {
+                $storage = Storage::disk($disk);
+                if (! $storage->put(self::diskPath(), $json, ['visibility' => 'private']) || $storage->get(self::diskPath()) !== $json) {
+                    return "Could not write and read back the settings on the \"{$disk}\" disk.";
+                }
+            } catch (Throwable $e) {
+                Debug::log("could not move the settings to the {$disk} disk", $e);
+
+                return self::diskFailure($disk, $e);
+            }
+            if (! self::writeLocal(self::encode(['storage' => ['disk' => $disk]]) ?? '')) {
+                return 'The settings are on the disk, but '.self::localPath().' could not point to it.';
+            }
+        }
+
+        self::$pointer = $disk;
+        if ($disk !== null) {
+            self::cached(fn () => self::cache()->put(self::cacheKey(), $json, self::cacheSeconds()));
+        }
+
+        return null;
+    }
+
+    /** The file's path on the disk. */
+    private static function diskPath(): string
+    {
+        return ltrim((string) (config('swagger.dashboard.settings_path') ?: 'swagger-settings.json'), '/\\');
     }
 
     /** Where releases before the configurable path saved the settings; read until the next save. */
@@ -118,7 +231,7 @@ final class Settings
         }
 
         self::$data = $data;
-        if (self::legacyPath() !== self::path() && is_file(self::legacyPath())) {
+        if (self::disk() === null && self::legacyPath() !== self::localPath() && is_file(self::legacyPath())) {
             @unlink(self::legacyPath());
         }
         foreach (self::EDITABLE as $key) {
@@ -134,10 +247,8 @@ final class Settings
      */
     public static function reset(): bool
     {
-        foreach (array_unique([self::path(), self::legacyPath()]) as $path) {
-            if (is_file($path) && ! unlink($path)) {
-                return false;
-            }
+        if (! self::delete()) {
+            return false;
         }
 
         foreach (self::EDITABLE as $key) {
@@ -178,6 +289,7 @@ final class Settings
     public static function flush(): void
     {
         self::$data = null;
+        self::$pointer = false;
         self::$baseline = null;
     }
 
@@ -190,8 +302,8 @@ final class Settings
             return self::$data;
         }
 
-        $file = is_file(self::path()) ? self::path() : (is_file(self::legacyPath()) ? self::legacyPath() : null);
-        $raw = $file !== null ? json_decode((string) file_get_contents($file), true) : null;
+        $contents = self::read();
+        $raw = $contents !== null ? json_decode($contents, true) : null;
         $config = is_array($raw['config'] ?? null) ? array_intersect_key($raw['config'], array_flip(self::EDITABLE)) : [];
 
         return self::$data = [
@@ -378,7 +490,43 @@ final class Settings
      */
     private static function write(array $data): bool
     {
-        $path = self::path();
+        $json = self::encode($data);
+        if ($json === null) {
+            return false;
+        }
+
+        if (self::disk() !== null) {
+            try {
+                if (! Storage::disk(self::disk())->put(self::diskPath(), $json, ['visibility' => 'private'])) {
+                    return false;
+                }
+            } catch (Throwable $e) {
+                Debug::log('could not write the settings to the '.self::disk().' disk', $e);
+
+                return false;
+            }
+            // Every server sees the save at once when the cache store is shared (redis, database…).
+            self::cached(fn () => self::cache()->put(self::cacheKey(), $json, self::cacheSeconds()));
+
+            return true;
+        }
+
+        return self::writeLocal($json);
+    }
+
+    /**
+     * @param  array<string, mixed>  $data
+     */
+    private static function encode(array $data): ?string
+    {
+        $json = json_encode($data, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+
+        return $json === false ? null : $json;
+    }
+
+    private static function writeLocal(string $json): bool
+    {
+        $path = self::localPath();
         $dir = dirname($path);
         if (! is_dir($dir) && ! mkdir($dir, 0755, true) && ! is_dir($dir)) {
             return false;
@@ -386,10 +534,114 @@ final class Settings
 
         // Atomic: write a temporary file, then rename over the old one.
         $tmp = $path.'.'.bin2hex(random_bytes(4)).'.tmp';
-        if (file_put_contents($tmp, json_encode($data, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE)) === false) {
+        if (file_put_contents($tmp, $json) === false) {
             return false;
         }
 
         return rename($tmp, $path);
+    }
+
+    /**
+     * The stored JSON, or null when nothing is saved. Read on every boot, so a disk is read through the cache
+     * (`dashboard.settings_cache_ttl` seconds), and a disk that cannot be reached means "no settings", never an error.
+     */
+    private static function read(): ?string
+    {
+        if (self::disk() === null) {
+            $file = is_file(self::localPath()) ? self::localPath() : (is_file(self::legacyPath()) ? self::legacyPath() : null);
+
+            return $file !== null ? (string) file_get_contents($file) : null;
+        }
+
+        $load = function (): string {
+            $disk = Storage::disk(self::disk());
+
+            // "" for a missing file is cached too, so an empty disk is not asked again on every request.
+            return $disk->exists(self::diskPath()) ? (string) $disk->get(self::diskPath()) : '';
+        };
+
+        try {
+            $contents = self::cached(fn () => self::cache()->remember(self::cacheKey(), self::cacheSeconds(), $load), $load);
+        } catch (Throwable $e) {
+            Debug::log('could not read the settings from the '.self::disk().' disk', $e);
+
+            return null;
+        }
+
+        return is_string($contents) && $contents !== '' ? $contents : null;
+    }
+
+    /** Why a disk failed, with the fix for the usual causes. */
+    private static function diskFailure(string $disk, Throwable $e): string
+    {
+        $message = $e->getMessage();
+        $driver = (string) config("filesystems.disks.{$disk}.driver");
+        $adapters = ['s3' => 'league/flysystem-aws-s3-v3', 'ftp' => 'league/flysystem-ftp', 'sftp' => 'league/flysystem-sftp-v3'];
+        if (isset($adapters[$driver]) && str_contains($message, 'League\\Flysystem') && str_contains($message, 'not found')) {
+            return "The \"{$disk}\" disk needs the {$adapters[$driver]} package: composer require {$adapters[$driver]} \"^3.0\".";
+        }
+
+        return "The \"{$disk}\" disk failed: {$message}";
+    }
+
+    private static function delete(): bool
+    {
+        if (self::disk() === null) {
+            foreach (array_unique([self::localPath(), self::legacyPath()]) as $path) {
+                if (is_file($path) && ! unlink($path)) {
+                    return false;
+                }
+            }
+
+            return true;
+        }
+
+        try {
+            $disk = Storage::disk(self::disk());
+            if ($disk->exists(self::diskPath()) && ! $disk->delete(self::diskPath())) {
+                return false;
+            }
+        } catch (Throwable $e) {
+            Debug::log('could not remove the settings from the '.self::disk().' disk', $e);
+
+            return false;
+        }
+        self::cached(fn () => self::cache()->forget(self::cacheKey()));
+
+        return true;
+    }
+
+    /**
+     * Runs a cache call; when the cache store fails, $fallback (or nothing) runs instead.
+     */
+    private static function cached(callable $call, ?callable $fallback = null): mixed
+    {
+        if (self::cacheSeconds() <= 0) {
+            return $fallback !== null ? $fallback() : null;
+        }
+        try {
+            return $call();
+        } catch (Throwable $e) {
+            Debug::log('the settings cache failed', $e);
+
+            return $fallback !== null ? $fallback() : null;
+        }
+    }
+
+    private static function cache(): CacheRepository
+    {
+        $store = config('swagger.dashboard.settings_cache_store');
+
+        return Cache::store(is_string($store) && $store !== '' ? $store : null);
+    }
+
+    private static function cacheKey(): string
+    {
+        return 'g4t-swagger:settings:'.md5(self::disk().':'.self::diskPath());
+    }
+
+    private static function cacheSeconds(): int
+    {
+        return (int) config('swagger.dashboard.settings_cache_ttl', 60);
     }
 }

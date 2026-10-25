@@ -254,7 +254,15 @@ trait Helpers
     {
         $authMiddlewares = config('swagger.auth_middlewares') ?? [];
 
-        foreach ($route->gatherMiddleware() as $middleware) {
+        try {
+            // Controller middleware too; older Laravel builds the controller to read it.
+            $middlewares = $route->gatherMiddleware();
+        } catch (Throwable $e) {
+            // A controller the container cannot build: the route's own middleware still tells.
+            $middlewares = (array) $route->middleware();
+        }
+
+        foreach ($middlewares as $middleware) {
             if (! is_string($middleware)) {
                 continue;
             }

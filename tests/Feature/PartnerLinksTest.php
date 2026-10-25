@@ -116,11 +116,11 @@ class PartnerLinksTest extends TestCase
     public function test_the_dashboard_stores_a_hash_and_an_encrypted_token(): void
     {
         $session = $this->withSession(['g4t_swagger_dashboard_user' => 'admin']);
-        $session->putJson('/swagger/dashboard/api/settings', ['settings' => [], 'links' => [
+        $saved = $session->putJson('/swagger/dashboard/api/settings', ['settings' => [], 'links' => [
             ['id' => 'acme', 'name' => 'Acme', 'tags' => ['Misc'], 'expires' => null, 'token' => self::TOKEN],
         ]])->assertOk()->assertJsonPath('links.0.name', 'Acme')
-            ->assertJsonPath('links.0.token', self::TOKEN)
-            ->assertJsonMissingPath('links.0.secret');
+            ->assertJsonPath('links.0.token', self::TOKEN);
+        $this->assertArrayNotHasKey('secret', $saved->json('links.0'), 'The encrypted token never leaves the server');
 
         $file = file_get_contents(Settings::path());
         $this->assertStringNotContainsString(self::TOKEN, $file);
@@ -153,7 +153,7 @@ class PartnerLinksTest extends TestCase
         $this->assertStringNotContainsString('x-hidden-in-code', json_encode($spec));
         $this->assertArrayNotHasKey('PostResource', $spec['components']['schemas'] ?? [], 'Schemas of other sections do not leak');
 
-        $public = $this->withBasicAuth('docs', 'docs-pass')->getJson('/swagger/documentation/json')->json();
+        $public = $this->withHeaders(['Authorization' => 'Basic '.base64_encode('docs:docs-pass')])->getJson('/swagger/documentation/json')->json();
         $this->assertArrayNotHasKey('/api/v1/secret', $public['paths'], 'The public docs still hide them');
         $this->assertArrayNotHasKey('/api/v1/stats', $public['paths']);
     }
@@ -275,7 +275,7 @@ class PartnerLinksTest extends TestCase
         $this->link([], null, [], null, ['environments' => []]);
         $this->get('/swagger/documentation?key='.self::TOKEN)->assertDontSee('Staging box')->assertDontSee('Internal box');
 
-        $this->withBasicAuth('docs', 'docs-pass')->get('/swagger/documentation')->assertSee('Internal box', false);
+        $this->withHeaders(['Authorization' => 'Basic '.base64_encode('docs:docs-pass')])->get('/swagger/documentation')->assertSee('Internal box', false);
     }
 
     public function test_the_dashboard_saves_the_versions_and_environments_of_a_link(): void

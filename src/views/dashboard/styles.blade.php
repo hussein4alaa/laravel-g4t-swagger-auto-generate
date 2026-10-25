@@ -62,6 +62,21 @@
     .d-tag-head strong { font-size: 14px; }
     .d-tag-tools { display: inline-flex; gap: 6px; margin-inline-start: auto; }
     .d-op.has-editor { flex-wrap: wrap; }
+    .d-search input { height: 36px; padding-inline: 10px; border: 1px solid var(--border-strong); border-radius: 8px; background: var(--surface); color: var(--text); font: 13.5px/1.3 inherit; width: 100%; }
+    .d-search input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px color-mix(in oklab, var(--accent) 18%, transparent); }
+    .d-picker { display: grid; max-height: 300px; overflow: auto; border: 1px solid var(--border); border-radius: 10px; background: var(--surface); }
+    .d-pick { display: grid; grid-template-columns: 20px auto minmax(0, 1fr) auto; align-items: center; gap: 10px; padding: 7px 10px; border: 0; border-bottom: 1px solid var(--border); background: none; color: var(--text); font: inherit; font-size: 13px; text-align: start; cursor: pointer; }
+    .d-pick:last-child { border-bottom: 0; }
+    .d-pick:hover { background: var(--surface-2); }
+    .d-pick.is-picked { background: color-mix(in oklab, var(--accent) 8%, transparent); }
+    .d-pick-box { width: 18px; height: 18px; display: grid; place-items: center; border: 1.5px solid var(--border-strong); border-radius: 5px; font-size: 12px; font-weight: 700; color: var(--accent-fg, #fff); }
+    .d-pick.is-picked .d-pick-box { background: var(--accent); border-color: var(--accent); }
+    .d-pick .g4t-method { min-width: 54px; }
+    .d-pick-text { display: grid; min-width: 0; }
+    .d-pick-path { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .d-pick-meta { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; color: var(--text-3); font-weight: 400; }
+    .d-link-scope { font-size: 12.5px; }
+    .d-pick-hidden { text-transform: none; }
     .d-meta { display: grid; gap: 12px; padding: 12px 14px 14px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface-2); }
     .d-meta .d-field input, .d-meta .d-field textarea { background: var(--surface); }
     .d-texts > .d-meta { margin-bottom: 12px; }

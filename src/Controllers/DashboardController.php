@@ -3,6 +3,7 @@
 namespace G4T\Swagger\Controllers;
 
 use G4T\Swagger\Support\CachedSpec;
+use G4T\Swagger\Support\PageUrl;
 use G4T\Swagger\Support\PartnerLinks;
 use G4T\Swagger\Support\Settings;
 use G4T\Swagger\Swagger;
@@ -50,14 +51,14 @@ class DashboardController
     public function show(Request $request)
     {
         if (! self::signedIn($request)) {
-            return response()->view('swagger::dashboard.login', ['action' => url(self::url().'/login')]);
+            return response()->view('swagger::dashboard.login', ['action' => PageUrl::to(self::url().'/login')]);
         }
 
         return response()->view('swagger::dashboard.app', [
             'urls' => [
-                'settings' => url(self::url().'/api/settings'),
-                'logout' => url(self::url().'/logout'),
-                'docs' => url(trim((string) config('swagger.url'), '/')),
+                'settings' => PageUrl::to(self::url().'/api/settings'),
+                'logout' => PageUrl::to(self::url().'/logout'),
+                'docs' => PageUrl::to(trim((string) config('swagger.url'), '/')),
             ],
             'user' => (string) config('swagger.dashboard.username'),
         ]);
@@ -84,7 +85,7 @@ class DashboardController
         $request->session()->regenerate();
         $request->session()->put(self::SESSION_KEY, (string) config('swagger.dashboard.username'));
 
-        return redirect()->to(url(self::url()));
+        return redirect()->away(PageUrl::to(self::url()));
     }
 
     public function logout(Request $request)
@@ -92,7 +93,7 @@ class DashboardController
         $request->session()->forget(self::SESSION_KEY);
         $request->session()->regenerateToken();
 
-        return redirect()->to(url(self::url()));
+        return redirect()->away(PageUrl::to(self::url()));
     }
 
     /**
@@ -186,6 +187,7 @@ class DashboardController
                     'code_status' => array_filter(['status' => $operation['x-status'] ?? null, 'sunset' => $operation['x-sunset'] ?? null, 'replacement' => $operation['x-replaced-by'] ?? null, 'note' => $operation['x-note'] ?? null]),
                     'tag' => (string) ($operation['tags'][0] ?? 'default'),
                     'hidden' => isset($hidden[$id]),
+                    'hidden_in_code' => ! empty($operation['x-hidden-in-code']),
                     'order' => (int) ($operation['x-order'] ?? PHP_INT_MAX),
                 ];
             }
@@ -218,7 +220,7 @@ class DashboardController
     private function loginFailed(Request $request, string $message, int $status)
     {
         return response()->view('swagger::dashboard.login', [
-            'action' => url(self::url().'/login'),
+            'action' => PageUrl::to(self::url().'/login'),
             'error' => $message,
             'username' => (string) $request->input('username', ''),
         ], $status);
@@ -239,6 +241,8 @@ class DashboardController
             'links.*.name' => ['required', 'string', 'max:60'],
             'links.*.tags' => ['array'],
             'links.*.tags.*' => ['string', 'max:200'],
+            'links.*.operations' => ['array', 'max:500'],
+            'links.*.operations.*' => ['string', 'max:200'],
             'links.*.expires' => ['nullable', 'date_format:Y-m-d'],
             'links.*.token' => ['nullable', 'string', 'regex:/^[A-Za-z0-9_-]{24,128}$/'],
             'links.*.hash' => ['nullable', 'string', 'regex:/^[a-f0-9]{64}$/'],
@@ -263,6 +267,7 @@ class DashboardController
                 'name' => $link['name'],
                 'hash' => $hash,
                 'tags' => array_values((array) ($link['tags'] ?? [])),
+                'operations' => array_values(array_unique((array) ($link['operations'] ?? []))),
                 'expires' => $link['expires'] ?? null,
                 'created' => $stored->get($hash)['created'] ?? now()->toDateString(),
             ];

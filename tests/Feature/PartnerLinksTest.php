@@ -33,9 +33,33 @@ class PartnerLinksTest extends TestCase
         $app['config']->set('swagger.password', 'docs-pass');
     }
 
-    private function link(array $tags = ['Misc'], ?string $expires = null): void
+    private function link(array $tags = ['Misc'], ?string $expires = null, array $operations = []): void
     {
-        Settings::saveLinks([['id' => 'acme', 'name' => 'Acme', 'hash' => hash('sha256', self::TOKEN), 'tags' => $tags, 'expires' => $expires, 'created' => '2026-01-01']]);
+        Settings::saveLinks([['id' => 'acme', 'name' => 'Acme', 'hash' => hash('sha256', self::TOKEN), 'tags' => $tags, 'operations' => $operations, 'expires' => $expires, 'created' => '2026-01-01']]);
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function partnerSpec(): array
+    {
+        return $this->getJson('/swagger/documentation/json?key='.self::TOKEN)->assertOk()->json();
+    }
+
+    /**
+     * @return list<string>
+     */
+    private function operationIds(array $spec): array
+    {
+        $ids = [];
+        foreach ($spec['paths'] as $operations) {
+            foreach ($operations as $operation) {
+                $ids[] = $operation['operationId'];
+            }
+        }
+        sort($ids);
+
+        return $ids;
     }
 
     public function test_a_link_opens_the_docs_without_the_password(): void
@@ -99,5 +123,51 @@ class PartnerLinksTest extends TestCase
 
         $session->putJson('/swagger/dashboard/api/settings', ['settings' => [], 'links' => []])->assertOk();
         $this->get('/swagger/documentation?key='.self::TOKEN)->assertStatus(401);
+    }
+
+    public function test_a_link_can_pick_single_endpoints_even_hidden_ones(): void
+    {
+        // Hidden from the public docs: one with the dashboard eye, one with ->hiddenDoc() in code.
+        Settings::save([], ['hidden' => ['get_api_v1_stats']]);
+        $this->link([], null, ['get_api_v1_secret', 'get_api_v1_stats', 'get_api_v1_ping']);
+
+        $spec = $this->partnerSpec();
+
+        $this->assertSame(['get_api_v1_ping', 'get_api_v1_secret', 'get_api_v1_stats'], $this->operationIds($spec));
+        $this->assertSame(['Misc'], array_column($spec['tags'], 'name'), 'Only the sections of the picked endpoints');
+        $this->assertStringNotContainsString('x-hidden-in-code', json_encode($spec));
+        $this->assertArrayNotHasKey('PostResource', $spec['components']['schemas'] ?? [], 'Schemas of other sections do not leak');
+
+        $public = $this->withBasicAuth('docs', 'docs-pass')->getJson('/swagger/documentation/json')->json();
+        $this->assertArrayNotHasKey('/api/v1/secret', $public['paths'], 'The public docs still hide them');
+        $this->assertArrayNotHasKey('/api/v1/stats', $public['paths']);
+    }
+
+    public function test_sections_show_their_visible_endpoints_and_picked_ones_add_to_them(): void
+    {
+        Settings::save([], ['hidden' => ['post_api_v1_posts']]);
+        $this->link(['Post'], null, ['get_api_v1_ping']);
+
+        $ids = $this->operationIds($this->partnerSpec());
+
+        $this->assertContains('get_api_v1_posts', $ids);
+        $this->assertContains('get_api_v1_ping', $ids);
+        $this->assertNotContains('post_api_v1_posts', $ids, 'A whole section keeps its hidden endpoints hidden');
+        $this->assertNotContains('get_api_v1_stats', $ids);
+    }
+
+    public function test_the_dashboard_lists_endpoints_hidden_in_code_and_saves_picked_ones(): void
+    {
+        $session = $this->withSession(['g4t_swagger_dashboard_user' => 'admin']);
+        $state = $session->getJson('/swagger/dashboard/api/settings')->assertOk()->json();
+        $secret = collect($state['operations'])->firstWhere('id', 'get_api_v1_secret');
+        $this->assertTrue($secret['hidden_in_code']);
+
+        $session->putJson('/swagger/dashboard/api/settings', ['settings' => [], 'links' => [
+            ['id' => 'acme', 'name' => 'Acme', 'tags' => [], 'operations' => ['get_api_v1_secret'], 'token' => self::TOKEN],
+        ]])->assertOk();
+
+        $this->assertSame(['get_api_v1_secret'], Settings::links()[0]['operations']);
+        $this->assertSame(['get_api_v1_secret'], $this->operationIds($this->partnerSpec()));
     }
 }

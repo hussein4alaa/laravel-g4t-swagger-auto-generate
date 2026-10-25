@@ -146,6 +146,7 @@ class Swagger
                 'description' => $route->action['description'] ?? '',
                 'summary' => $route->action['summary'] ?? null,
                 'status' => (array) ($route->action['g4t_status'] ?? []),
+                'hidden_in_code' => ! empty($route->action['is_hidden']),
                 'name' => $this->getRouteName($route->uri(), $prefix),
                 'schema_name' => $schemaName,
                 'action' => $action,
@@ -339,7 +340,8 @@ class Swagger
             if (! $isDocumentable || ! is_string($route->getAction('controller'))) {
                 continue;
             }
-            if (ltrim($route->getActionName(), '\\') === 'Closure' || ! empty($route->action['is_hidden'])) {
+            // ->hiddenDoc() routes only reach the dashboard and partner links that pick them (includingHidden()).
+            if (ltrim($route->getActionName(), '\\') === 'Closure' || (! empty($route->action['is_hidden']) && ! $this->includeHidden)) {
                 continue;
             }
             if ($version !== null && ! $this->uriMatchesVersion('/'.ltrim($route->uri(), '/'), $version)) {

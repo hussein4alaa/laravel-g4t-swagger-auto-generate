@@ -526,6 +526,10 @@ abstract class BaseResponse
         if (! empty($route['x_translations'])) {
             $response['x-translations'] = $route['x_translations'];
         }
+        if (! empty($route['hidden_in_code'])) {
+            // Only in includingHidden() documents (dashboard, partner links); never in the public one.
+            $response['x-hidden-in-code'] = true;
+        }
         self::applyStatus($response, (array) ($route['status'] ?? []));
 
         self::applyStoredResponseExamples($response, $route);

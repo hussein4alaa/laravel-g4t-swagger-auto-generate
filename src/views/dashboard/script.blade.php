@@ -46,7 +46,8 @@
         (window.crypto || window.msCrypto).getRandomValues(bytes);
         return btoa(String.fromCharCode.apply(null, bytes)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
     }
-    function linkUrl(token) { return D.urls.docs + (D.urls.docs.indexOf('?') === -1 ? '?' : '&') + 'key=' + encodeURIComponent(token); }
+    // Shared outside this browser, so absolute: the docs path resolved against this page's address.
+    function linkUrl(token) { var docs = new URL(D.urls.docs, location.href).href; return docs + (docs.indexOf('?') === -1 ? '?' : '&') + 'key=' + encodeURIComponent(token); }
     var $ = function (id) { return document.getElementById(id); };
     var els = { nav: $('d-nav'), content: $('d-content'), savebar: $('d-savebar'), toast: $('d-toast') };
 
@@ -187,9 +188,11 @@
         var logins = Array.isArray(s.auto_login) ? s.auto_login : (s.auto_login && typeof s.auto_login === 'object' ? [s.auto_login] : []);
         var tags = [], ops = {}, info = {};
         (state.operations || []).forEach(function (o) {
+            info[o.id] = o;
+            // ->hiddenDoc() routes are only offered to partner links, not ordered or shown under Endpoints.
+            if (o.hidden_in_code) { return; }
             if (!ops[o.tag]) { ops[o.tag] = []; tags.push(o.tag); }
             ops[o.tag].push(o.id);
-            info[o.id] = o;
         });
         var flags = {};
         FLAGS.forEach(function (f) { flags[f[0]] = !!s[f[0]]; });
@@ -219,7 +222,7 @@
             flags: flags,
             showPrefix: (s.show_prefix || []).join(', '),
             access: { enable: !!s.enable, enable_auth: !!s.enable_auth, username: s.username || '', password: '', passwordSet: !!s.password_set },
-            links: (state.links || []).map(function (l) { return { id: l.id, name: l.name, tags: (l.tags || []).slice(), expires: l.expires || '', hash: l.hash, created: l.created, expired: !!l.expired }; }),
+            links: (state.links || []).map(function (l) { return { id: l.id, name: l.name, tags: (l.tags || []).slice(), operations: (l.operations || []).slice(), expires: l.expires || '', hash: l.hash, created: l.created, expired: !!l.expired }; }),
             meta: clone(((state.layout && state.layout.meta && state.layout.meta.operations) && !Array.isArray(state.layout.meta.operations)) ? state.layout.meta.operations : {}),
             texts: normalizeTexts(state.layout && state.layout.texts), defaults: state.defaults || { tags: {} },
             tags: tags, ops: ops, info: info, hidden: ((state.layout && state.layout.hidden) || []).slice(), hiddenTags: ((state.layout && state.layout.hidden_tags) || []).slice()
@@ -272,7 +275,7 @@
         var operations = {};
         m.tags.forEach(function (t) { operations[t] = m.ops[t].slice(); });
         var links = m.links.map(function (l) {
-            var out = { id: l.id, name: l.name, tags: l.tags.slice(), expires: l.expires || null };
+            var out = { id: l.id, name: l.name, tags: l.tags.slice(), operations: l.operations.slice(), expires: l.expires || null };
             if (linkTokens[l.id]) { out.token = linkTokens[l.id]; } else { out.hash = l.hash; }
             return out;
         });
@@ -484,6 +487,39 @@
             '<div class="d-note">The dashboard itself is protected by <code class="g4t-mono">SWAGGER_DASHBOARD_USERNAME</code> / <code class="g4t-mono">SWAGGER_DASHBOARD_PASSWORD</code> in your <code class="g4t-mono">.env</code>; it cannot change them.</div>');
     }
 
+    /* Endpoint picker of a partner link: search, pick single endpoints, hidden ones included. */
+    var linkSearch = {};
+    function opHiddenLabel(o) {
+        if (o.hidden_in_code) { return 'hidden in code'; }
+        if (model.hidden.indexOf(o.id) !== -1 || model.hiddenTags.indexOf(o.tag) !== -1) { return 'hidden in the docs'; }
+        return '';
+    }
+    function linkOpsHtml(i) {
+        var l = model.links[i], q = (linkSearch[l.id] || '').trim().toLowerCase(), words = q.split(/\s+/).filter(Boolean);
+        var all = Object.keys(model.info).map(function (id) { return model.info[id]; });
+        var rows = all.filter(function (o) {
+            var hay = (o.method + ' ' + o.path + ' ' + (o.summary || '') + ' ' + o.tag + ' ' + opHiddenLabel(o)).toLowerCase();
+            return words.every(function (w) { return hay.indexOf(w) !== -1; });
+        }).sort(function (a, b) { return (l.operations.indexOf(b.id) !== -1) - (l.operations.indexOf(a.id) !== -1); });
+        if (!rows.length) { return '<div class="d-hint" style="padding:10px">No endpoint matches “' + esc(q) + '”.</div>'; }
+        return rows.map(function (o) {
+            var picked = l.operations.indexOf(o.id) !== -1, viaSection = !picked && l.tags.indexOf(o.tag) !== -1 && !opHiddenLabel(o), hiddenLabel = opHiddenLabel(o);
+            return '<button type="button" class="d-pick' + (picked ? ' is-picked' : '') + '" role="checkbox" aria-checked="' + picked + '" data-action="link-op" data-index="' + i + '" data-value="' + esc(o.id) + '">' +
+                '<span class="d-pick-box" aria-hidden="true">' + (picked ? '✓' : viaSection ? '•' : '') + '</span><span class="g4t-method m-' + esc(o.method.toLowerCase()) + '">' + esc(o.method) + '</span>' +
+                '<span class="d-pick-text"><span class="g4t-mono d-pick-path">' + esc(o.path) + '</span><span class="d-pick-meta">' + esc(o.summary || '') + ' · ' + esc(o.tag) + '</span></span>' +
+                (hiddenLabel ? '<span class="d-status is-deprecated d-pick-hidden">' + esc(hiddenLabel) + '</span>' : viaSection ? '<span class="d-hint">in a picked section</span>' : '') + '</button>';
+        }).join('');
+    }
+    function renderLinkOps(i) {
+        var box = document.getElementById('d-link-ops-' + model.links[i].id);
+        if (box) { box.innerHTML = linkOpsHtml(i); }
+    }
+    function linkScopeText(l) {
+        var hidden = l.operations.filter(function (id) { return model.info[id] && opHiddenLabel(model.info[id]); }).length;
+        if (!l.tags.length && !l.operations.length) { return 'Nothing picked: every visible section and endpoint.'; }
+        return [l.tags.length ? l.tags.length + ' section' + (l.tags.length > 1 ? 's' : '') : '', l.operations.length ? l.operations.length + ' endpoint' + (l.operations.length > 1 ? 's' : '') + (hidden ? ' (' + hidden + ' hidden from the docs)' : '') : ''].filter(Boolean).join(' + ') + '. Schemas used only by the rest are left out.';
+    }
+
     function sLinks() {
         var list = '<div class="d-list">' + model.links.map(function (l, i) {
             var token = linkTokens[l.id];
@@ -497,10 +533,15 @@
             return '<div class="d-item"><div class="d-item-body">' +
                 '<div class="d-row" style="align-items:start"><label class="d-field' + (errors['links.' + i + '.name'] ? ' is-invalid' : '') + '">Shared with<input data-bind="links.' + i + '.name" value="' + esc(l.name) + '" placeholder="Acme mobile team" autocomplete="off">' + errorText('links.' + i + '.name') + '</label>' +
                 '<label class="d-field">Expires<input type="date" data-bind="links.' + i + '.expires" value="' + esc(l.expires) + '"><span class="d-hint">' + (l.expired ? '<b style="color:var(--err-fg)">Expired</b> · ' : '') + (l.created ? 'created ' + esc(l.created) : 'not saved yet') + (l.expires ? '' : ' · never expires') + '</span></label></div>' +
-                '<div class="d-field">Sections it can see<div class="d-chips">' + chips + '</div><span class="d-hint">' + (l.tags.length ? l.tags.length + ' of ' + model.tags.length + ' sections' : 'None picked: every section') + '. Schemas used only by other sections are left out too.</span></div>' +
+                '<div class="d-field">Whole sections<div class="d-chips">' + chips + '</div><span class="d-hint">Every visible endpoint of a picked section, including ones added later.</span></div>' +
+                '<div class="d-field">Single endpoints' + (l.operations.length ? ' <span class="d-badge">' + l.operations.length + ' picked</span>' : '') +
+                '<div class="d-search"><input type="search" data-link-search="' + i + '" value="' + esc(linkSearch[l.id] || '') + '" placeholder="Search by path, method, summary or section" autocomplete="off" spellcheck="false" aria-label="Search endpoints"></div>' +
+                '<div class="d-picker" id="d-link-ops-' + esc(l.id) + '" role="group" aria-label="Endpoints">' + linkOpsHtml(i) + '</div>' +
+                '<span class="d-hint">Picked endpoints show even when they are hidden from the docs (the eye under Endpoints, or ->hiddenDoc() in code).</span></div>' +
+                '<div class="d-note d-link-scope">' + esc(linkScopeText(l)) + '</div>' +
                 address + errorText('links.' + i + '.token') + '</div>' + removeBtn('links', i, 'link ' + l.name) + '</div>';
         }).join('') + '</div>';
-        return section('links', 'Partner links', 'A secret address per partner or client: it opens the g4t docs without the docs password (even when the docs are turned off) and shows only the sections you pick. Remove a link to revoke it.',
+        return section('links', 'Partner links', 'A secret address per partner or client: it opens the g4t docs without the docs password (even when the docs are turned off) and shows only the sections and endpoints you pick, hidden ones included. Remove a link to revoke it.',
             (model.links.length ? list : '<div class="d-note">No partner links.</div>') + addBtn('links', 'New link'));
     }
 
@@ -562,7 +603,7 @@
         if (name === 'servers') { model.servers.push({ url: '', description: '' }); }
         if (name === 'schemes') { model.schemes.push({ name: 'scheme' + (model.schemes.length + 1), type: 'apiKey', scheme: 'bearer', where: 'header', keyName: 'X-API-Key', bearerFormat: '' }); }
         if (name === 'headers') { model.headers.push({ name: '', description: '', required: false, example: '', default: '', enumText: '' }); }
-        if (name === 'links') { var linkId = 'l' + Date.now().toString(36); linkTokens[linkId] = newToken(); model.links.push({ id: linkId, name: 'Partner ' + (model.links.length + 1), tags: [], expires: '', hash: null, created: null, expired: false }); }
+        if (name === 'links') { var linkId = 'l' + Date.now().toString(36); linkTokens[linkId] = newToken(); model.links.push({ id: linkId, name: 'Partner ' + (model.links.length + 1), tags: [], operations: [], expires: '', hash: null, created: null, expired: false }); }
         if (name === 'logins') { model.logins.push({ name: model.logins.length ? 'Login ' + (model.logins.length + 1) : 'Customer', url: '', method: 'POST', token_path: '', security_scheme: '', fields: [{ key: 'email', label: 'Email' }, { key: 'password', label: 'Password' }], prefill: null }); }
         if (name.indexOf('login-fields:') === 0) { var loginFields = listArray(name); if (loginFields) { loginFields.push({ key: '', label: '' }); } }
         if (name === 'authMiddlewares') { model.authMiddlewares.push(''); }
@@ -641,6 +682,15 @@
                 var linkTags = model.links[index].tags, at2 = linkTags.indexOf(value);
                 if (at2 === -1) { linkTags.push(value); } else { linkTags.splice(at2, 1); }
                 render(); break;
+            case 'link-op':
+                var linkOps = model.links[index].operations, at3 = linkOps.indexOf(value);
+                if (at3 === -1) { linkOps.push(value); } else { linkOps.splice(at3, 1); }
+                // Re-render keeping the scroll position of the list.
+                var pickerBox = el.closest('.d-picker'), pickerScroll = pickerBox ? pickerBox.scrollTop : 0;
+                render();
+                var again = document.getElementById('d-link-ops-' + model.links[index].id);
+                if (again) { again.scrollTop = pickerScroll; }
+                break;
             case 'link-copy':
                 if (linkTokens[value] && navigator.clipboard) { navigator.clipboard.writeText(linkUrl(linkTokens[value])).then(function () { toast('Link copied'); }, function () { toast('Copy it from the field'); }); }
                 break;
@@ -672,6 +722,12 @@
         }
     });
     document.addEventListener('input', function (e) {
+        if (model && e.target.hasAttribute && e.target.hasAttribute('data-link-search')) {
+            var li = Number(e.target.getAttribute('data-link-search'));
+            linkSearch[model.links[li].id] = e.target.value;
+            renderLinkOps(li);
+            return;
+        }
         if (model && e.target.hasAttribute && e.target.hasAttribute('data-meta')) {
             setMeta(e.target.getAttribute('data-key'), e.target.getAttribute('data-meta'), e.target.value);
             if (e.target.getAttribute('data-meta') === 'sunset') { render(); return; }

@@ -3,6 +3,7 @@
 namespace G4T\Swagger\Controllers;
 
 use G4T\Swagger\Support\CachedSpec;
+use G4T\Swagger\Support\PageUrl;
 use G4T\Swagger\Support\PartnerLinks;
 use G4T\Swagger\Swagger;
 use Illuminate\Http\Response;
@@ -59,12 +60,12 @@ class DocumentationController
                 'defaultTheme' => (string) config('swagger.theme', 'default'),
                 'g4t' => $this->g4tSettings(),
                 'environments' => $this->sharedEnvironments(),
-                'partner' => $partner === null ? null : ['name' => $partner['name'], 'key' => $partner['token'], 'sections' => $partner['tags'], 'expires' => $partner['expires']],
+                'partner' => $partner === null ? null : ['name' => $partner['name'], 'key' => $partner['token'], 'sections' => $partner['tags'], 'endpoints' => count($partner['operations']), 'expires' => $partner['expires']],
             ]);
         }
 
         return view('swagger::documentation', $shared + [
-            'themes_path' => url('g4t/swagger/themes'),
+            'themes_path' => PageUrl::to('g4t/swagger/themes'),
             'themes' => $this->getThemesList(),
             'defaultTheme' => (string) config('swagger.theme', 'default'),
         ]);
@@ -203,7 +204,7 @@ class DocumentationController
 
         return [
             'name' => filled($login['name'] ?? null) ? (string) $login['name'] : 'Login '.($index + 1),
-            'url' => preg_match('#^https?://#i', $url) ? $url : url($url),
+            'url' => preg_match('#^https?://#i', $url) ? $url : PageUrl::to($url),
             'method' => strtoupper((string) ($login['method'] ?? 'POST')),
             'fields' => $fields !== [] ? $fields : ['email' => 'Email', 'password' => 'Password'],
             'tokenPath' => filled($login['token_path'] ?? null) ? (string) $login['token_path'] : null,
@@ -220,7 +221,7 @@ class DocumentationController
         foreach ($config['versions'] as $version) {
             $versions[] = [
                 'name' => $version,
-                'url' => url($config['url'].'/json?version='.urlencode($version).$this->keyQuery()),
+                'url' => PageUrl::to($config['url'].'/json?version='.urlencode($version).$this->keyQuery()),
             ];
         }
 
@@ -240,13 +241,16 @@ class DocumentationController
 
     public function showJsonDocumentation()
     {
-        $data = $this->resolveSwaggerSpecification();
+        $partner = PartnerLinks::current(request());
+        // A link that picks single endpoints may pick hidden ones: built with them, then narrowed to the link.
+        $data = $partner !== null && $partner['operations'] !== []
+            ? (new Swagger)->includingHidden()->swagger()
+            : $this->resolveSwaggerSpecification();
         if (request()->filled('version')) {
             $data = $this->filter($data);
         }
-        $partner = PartnerLinks::current(request());
         if ($partner !== null) {
-            $data = PartnerLinks::scope(json_decode(json_encode($data)), $partner['tags']);
+            $data = PartnerLinks::scope(json_decode(json_encode($data)), $partner['tags'], $partner['operations']);
         }
 
         return response()->json($data, 200, [], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);

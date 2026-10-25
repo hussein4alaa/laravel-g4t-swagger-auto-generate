@@ -315,6 +315,8 @@ final class Settings
                 'name' => is_string($link['name'] ?? null) ? mb_substr(trim($link['name']), 0, 60) : 'Partner',
                 'hash' => $link['hash'],
                 'tags' => array_values(array_unique(array_filter((array) ($link['tags'] ?? []), 'is_string'))),
+                // Single endpoints (operation ids), also ones hidden from the public docs.
+                'operations' => array_values(array_unique(array_filter((array) ($link['operations'] ?? []), 'is_string'))),
                 'expires' => $date($link['expires'] ?? null),
                 'created' => $date($link['created'] ?? null),
             ];

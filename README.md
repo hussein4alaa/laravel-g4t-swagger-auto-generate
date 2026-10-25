@@ -314,7 +314,7 @@ Route::get('orders/{order}/invoice', [OrderController::class, 'invoice'])->depre
 Route::post('payments/split', [PaymentController::class, 'split'])->beta();
 ```
 
-**Partner links** give a partner or client a secret address to the docs: it opens the g4t UI without the docs password (even when the docs are turned off with `SWAGGER_ENABLED=false`), shows only the sections you pick (and only the schemas those sections use), and can expire on a date. Only a sha256 of each link is stored in `swagger-settings.json`, so copy the address when you create it; removing the link revokes it. Middleware you add in `swagger.middleware` still applies.
+**Partner links** give a partner or client a secret address to the docs: it opens the g4t UI without the docs password (even when the docs are turned off with `SWAGGER_ENABLED=false`), shows only what you pick (whole sections, single endpoints found with a search, or both, and only the schemas they use), and can expire on a date. A single endpoint is shown even when it is hidden from the public docs, with the dashboard eye or `->hiddenDoc()` in code, so you can share an internal endpoint with one client only. Only a sha256 of each link is stored in `swagger-settings.json`, so copy the address when you create it; removing the link revokes it. Middleware you add in `swagger.middleware` still applies.
 
 The dashboard is off until it has credentials. Add them to `.env`:
 

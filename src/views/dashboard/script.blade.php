@@ -32,6 +32,7 @@
         drag: '<svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><circle cx="9" cy="6" r="1.6"/><circle cx="15" cy="6" r="1.6"/><circle cx="9" cy="12" r="1.6"/><circle cx="15" cy="12" r="1.6"/><circle cx="9" cy="18" r="1.6"/><circle cx="15" cy="18" r="1.6"/></svg>',
         trash: '<svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/></svg>',
         eye: '<svg aria-hidden="true" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg>',
+        check: '<svg aria-hidden="true" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"><path d="m5 12 5 5L20 7"/></svg>',
         pen: '<svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20h4L19 9a2.8 2.8 0 0 0-4-4L4 16z"/><path d="m13.5 6.5 4 4"/></svg>',
         eyeOff: '<svg aria-hidden="true" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3l18 18M10.6 5.1A10.6 10.6 0 0 1 12 5c6.5 0 10 7 10 7a17 17 0 0 1-3.2 4.2M6.6 6.6C3.8 8.4 2 12 2 12s3.5 7 10 7c1.6 0 3-.4 4.3-1"/><path d="M9.9 9.9a3 3 0 0 0 4.2 4.2"/></svg>'
     };
@@ -39,8 +40,10 @@
     var server = null, model = null, originalPayload = null, errors = {}, saving = false, focusAfterRender = null;
     // Open text editors ("op:<id>", "tag:<name>"); view state only, never saved.
     var editingTexts = {};
-    // Partner link tokens created in this page: the server keeps only a hash, so the address is shown until reload.
+    // New partner link tokens made in this page and not saved yet (a new link, or New address on an old one).
     var linkTokens = {};
+    /** The address a link has now: its new unsaved token, else the saved one (null when it cannot be shown). */
+    function linkToken(l) { return linkTokens[l.id] || l.token || null; }
     function newToken() {
         var bytes = new Uint8Array(24);
         (window.crypto || window.msCrypto).getRandomValues(bytes);
@@ -221,7 +224,7 @@
             flags: flags,
             showPrefix: (s.show_prefix || []).join(', '),
             access: { enable: !!s.enable, enable_auth: !!s.enable_auth, username: s.username || '', password: '', passwordSet: !!s.password_set },
-            links: (state.links || []).map(function (l) { return { id: l.id, name: l.name, tags: (l.tags || []).slice(), operations: (l.operations || []).slice(), expires: l.expires || '', hash: l.hash, created: l.created, expired: !!l.expired }; }),
+            links: (state.links || []).map(function (l) { return { id: l.id, name: l.name, tags: (l.tags || []).slice(), operations: (l.operations || []).slice(), token: l.token || null, security: Array.isArray(l.security) ? l.security.slice() : null, versions: Array.isArray(l.versions) ? l.versions.slice() : null, environments: Array.isArray(l.environments) ? l.environments.slice() : null, expires: l.expires || '', hash: l.hash, created: l.created, expired: !!l.expired }; }),
             meta: clone(((state.layout && state.layout.meta && state.layout.meta.operations) && !Array.isArray(state.layout.meta.operations)) ? state.layout.meta.operations : {}),
             texts: normalizeTexts(state.layout && state.layout.texts), defaults: state.defaults || { tags: {} },
             tags: tags, ops: ops, info: info, hidden: ((state.layout && state.layout.hidden) || []).slice(), hiddenTags: ((state.layout && state.layout.hidden_tags) || []).slice()
@@ -275,6 +278,11 @@
         m.tags.forEach(function (t) { operations[t] = m.ops[t].slice(); });
         var links = m.links.map(function (l) {
             var out = { id: l.id, name: l.name, tags: l.tags.slice(), operations: l.operations.slice(), expires: l.expires || null };
+            // null takes every scheme; a list keeps only the schemes that still exist.
+            var keep = function (list, names) { return list === null ? null : list.filter(function (n) { return names.indexOf(n) !== -1; }); };
+            out.security = keep(l.security, m.schemes.map(function (x) { return x.name; }));
+            out.versions = keep(l.versions, m.versions);
+            out.environments = keep(l.environments, m.envs.map(function (e) { return e.name; }));
             if (linkTokens[l.id]) { out.token = linkTokens[l.id]; } else { out.hash = l.hash; }
             return out;
         });
@@ -333,7 +341,8 @@
         var saved = id === 'links' ? server.links.length > 0 : id === 'endpoints'
             ? (server.layout.tags.length || server.layout.hidden.length || server.layout.hidden_tags.length || Object.keys(server.layout.operations).length || Object.keys(normalizeTexts(server.layout.texts).operations).length || Object.keys(normalizeTexts(server.layout.texts).tags).length || Object.keys(((server.layout.meta || {}).operations) || {}).length)
             : keys.some(function (k) { return server.overridden.indexOf(k) !== -1; }) || (id === 'general' && Object.keys(normalizeTexts(server.layout.texts).info).length > 0);
-        return '<section class="d-section" id="sec-' + id + '"><header><h2>' + esc(title) + (saved ? '<span class="d-badge" title="Overrides config/swagger.php">saved in dashboard</span>' : '') + '</h2>' + (description ? '<p>' + description + '</p>' : '') + '</header>' + body + '</section>';
+        pageHeader = { title: title, description: description, saved: !!saved };
+        return '<section class="d-section" id="sec-' + id + '">' + body + '</section>';
     }
 
     /* ---------- sections ---------- */
@@ -519,41 +528,258 @@
         return [l.tags.length ? l.tags.length + ' section' + (l.tags.length > 1 ? 's' : '') : '', l.operations.length ? l.operations.length + ' endpoint' + (l.operations.length > 1 ? 's' : '') + (hidden ? ' (' + hidden + ' hidden from the docs)' : '') : ''].filter(Boolean).join(' + ') + '. Schemas used only by the rest are left out.';
     }
 
+    // Whole-section picker state per link: search text and "picked only".
+    var secSearch = {}, secPickedOnly = {};
+    function sectionInfo(tag) {
+        var tagHidden = model.hiddenTags.indexOf(tag) !== -1, all = model.ops[tag] || [];
+        // A section shares its visible endpoints; hidden ones are shared only when picked one by one.
+        var visible = tagHidden ? [] : all.filter(function (id) { return model.hidden.indexOf(id) === -1; });
+        var methods = {}, order = [];
+        visible.forEach(function (id) { var m = model.info[id].method; if (!methods[m]) { methods[m] = 0; order.push(m); } methods[m]++; });
+        return { tag: tag, hidden: tagHidden, visible: visible.length, total: all.length, methods: methods, order: order, desc: textOf('tag', tag, 'en', 'description') || model.defaults.tags[tag] || '' };
+    }
+    /** The sections the search and "picked only" leave on screen. */
+    function shownSections(l) {
+        var words = (secSearch[l.id] || '').trim().toLowerCase().split(/\s+/).filter(Boolean);
+        return model.tags.filter(function (tag) {
+            if (secPickedOnly[l.id] && l.tags.indexOf(tag) === -1) { return false; }
+            var hay = (tag + ' ' + (model.defaults.tags[tag] || '')).toLowerCase();
+            return words.every(function (w) { return hay.indexOf(w) !== -1; });
+        });
+    }
+    function linkSecRowsHtml(i) {
+        var l = model.links[i], shown = shownSections(l);
+        if (!shown.length) { return '<div class="d-sec-empty">' + (secPickedOnly[l.id] && !l.tags.length ? 'No section picked yet.' : 'No section matches.') + '</div>'; }
+        return shown.map(function (tag) {
+            var info = sectionInfo(tag), on = l.tags.indexOf(tag) !== -1;
+            var count = info.hidden ? '<span class="d-sec-warn" title="Hidden in the docs: a section shares nothing while it is hidden">hidden</span>'
+                : info.visible + (info.total > info.visible ? '<span class="d-sec-of">/' + info.total + '</span>' : '');
+            return '<button type="button" class="d-sec" role="checkbox" aria-checked="' + on + '" data-action="link-tag" data-index="' + i + '" data-value="' + esc(tag) + '" title="' + esc(tag + (info.desc ? ' · ' + info.desc : '')) + '">' +
+                '<span class="d-sec-box">' + (on ? ICON.check : '') + '</span>' +
+                '<span class="d-sec-text"><span class="d-sec-name">' + esc(tag) + '</span>' + (info.desc ? '<span class="d-sec-desc" dir="auto">' + esc(info.desc) + '</span>' : '') + '</span>' +
+                '<span class="d-sec-methods">' + info.order.map(function (m) { return '<span class="g4t-method m-' + esc(m.toLowerCase()) + '" title="' + info.methods[m] + ' ' + esc(m) + '">' + esc(m) + '<b>' + info.methods[m] + '</b></span>'; }).join('') + '</span>' +
+                '<span class="d-sec-count">' + count + '</span></button>';
+        }).join('');
+    }
+    function linkSecSummary(l) {
+        var shared = 0;
+        l.tags.forEach(function (tag) { shared += sectionInfo(tag).visible; });
+        return l.tags.length ? l.tags.length + ' of ' + model.tags.length + ' section' + (model.tags.length === 1 ? '' : 's') + ' · ' + shared + ' endpoint' + (shared === 1 ? '' : 's') : 'No section picked';
+    }
+    function linkSecHeadHtml(i) {
+        var l = model.links[i], filtered = (secSearch[l.id] || '').trim() !== '' || secPickedOnly[l.id];
+        var shown = shownSections(l), allShownPicked = shown.length > 0 && shown.every(function (t) { return l.tags.indexOf(t) !== -1; });
+        return '<span class="d-sec-summary">' + linkSecSummary(l) + '</span>' +
+            '<span class="d-sec-tools"><button type="button" class="g4t-link-btn" data-action="link-tags-all" data-index="' + i + '"' + (allShownPicked || !shown.length ? ' disabled' : '') + '>' + (filtered ? 'Select shown' : 'Select all') + '</button>' +
+            '<button type="button" class="g4t-link-btn" data-action="link-tags-none" data-index="' + i + '"' + (l.tags.length ? '' : ' disabled') + '>Clear</button></span>';
+    }
+    /*
+     * What a link's docs show of a list (security schemes, versions, shared environments): Default (all of them),
+     * only the picked ones, or, where allowed, none. null is Default, a list the picked names, [] none.
+     */
+    var linkChoiceModes = {};
+    var LINK_CHOICES = {
+        security: { label: 'Security schemes', page: 'security', pageTitle: 'Security schemes', empty: 'No schemes yet',
+            names: function () { return model.schemes.map(function (x) { return x.name; }).filter(Boolean); },
+            pickedHint: function (p) { return 'Protected endpoints ask for ' + (p.length === 1 ? p[0] : 'any one of ' + p.join(', ')) + '; the other schemes and their Try it out logins are left out.'; },
+            defaultHint: function (n) { return 'Every scheme of the docs: ' + n.join(', ') + '.'; } },
+        versions: { label: 'Versions', page: 'versions', pageTitle: 'Versions & servers', empty: 'No versions',
+            names: function () { return model.versions.filter(Boolean); },
+            pickedHint: function (p) { return 'Opens ' + p.join(', ') + (p.indexOf(model.def) !== -1 ? ', starting on ' + model.def : ', starting on ' + p[0]) + '. Other versions stay closed.'; },
+            defaultHint: function (n) { return 'Every version (' + n.join(', ') + '), starting on ' + model.def + '.'; } },
+        environments: { label: 'Shared environments', page: 'environments', pageTitle: 'Environments', empty: 'No shared environments yet', none: true,
+            names: function () { return model.envs.map(function (e) { return e.name; }).filter(Boolean); },
+            pickedHint: function (p) { return 'Shows ' + p.join(', ') + '. Readers can still add their own.'; },
+            defaultHint: function (n) { return 'Every shared environment: ' + n.join(', ') + '.'; },
+            noneHint: 'No shared environment (their base URLs and values stay private). Readers can still add their own.' }
+    };
+    function linkChoiceMode(l, kind) {
+        var value = l[kind];
+        if (value === null || value === undefined) { return 'default'; }
+        return value.length || linkChoiceModes[l.id + ':' + kind] === 'custom' || !LINK_CHOICES[kind].none ? 'custom' : 'none';
+    }
+    function linkChoiceHtml(i, l, kind) {
+        var c = LINK_CHOICES[kind], names = c.names(), key = 'links.' + i + '.' + kind, mode = linkChoiceMode(l, kind);
+        if (!names.length) {
+            return '<div class="d-field">' + c.label + '<span class="d-hint">' + c.empty + ': add them under <a href="' + esc(pageUrl(c.page)) + '" data-action="page" data-value="' + c.page + '">' + c.pageTitle + '</a>.</span></div>';
+        }
+        var picked = mode === 'custom' ? l[kind].filter(function (n) { return names.indexOf(n) !== -1; }) : [];
+        var modes = [['default', 'Default'], ['custom', 'Pick']].concat(c.none ? [['none', 'None']] : []);
+        var hint = mode === 'default' ? c.defaultHint(names) : mode === 'none' ? c.noneHint : picked.length ? c.pickedHint(picked) : (c.none ? 'Nothing picked: the same as None.' : 'Pick at least one.');
+        var invalid = Object.keys(errors).some(function (k) { return k === key || k.indexOf(key + '.') === 0; });
+        return '<div class="d-field d-link-choice' + (invalid ? ' is-invalid' : '') + '">' + c.label +
+            '<div class="g4t-seg" role="radiogroup" aria-label="' + esc(c.label) + '" style="grid-template-columns:repeat(' + modes.length + ',1fr);max-width:' + (modes.length * 120) + 'px">' + modes.map(function (m) {
+                return '<button type="button" role="radio" aria-checked="' + (m[0] === mode) + '" data-action="link-choice-mode" data-index="' + i + '" data-key="' + kind + '" data-value="' + m[0] + '">' + m[1] + '</button>';
+            }).join('') + '</div>' +
+            (mode === 'custom' ? '<div class="d-chips" role="group" aria-label="' + esc(c.label) + ' of this link">' + names.map(function (n) {
+                return '<button type="button" class="d-chip" aria-pressed="' + (picked.indexOf(n) !== -1) + '" data-action="link-choice" data-index="' + i + '" data-key="' + kind + '" data-value="' + esc(n) + '"><span class="g4t-mono">' + esc(n) + '</span></button>';
+            }).join('') + '</div>' : '') +
+            '<span class="d-hint">' + esc(hint) + '</span>' +
+            Object.keys(errors).filter(function (k) { return k === key || k.indexOf(key + '.') === 0; }).map(errorText).join('') + '</div>';
+    }
+    function linkChoicesHtml(i, l) {
+        return '<div class="d-link-choices">' + linkChoiceHtml(i, l, 'versions') + linkChoiceHtml(i, l, 'environments') + linkChoiceHtml(i, l, 'security') + '</div>';
+    }
+    /** Whole sections a link shares: a compact, searchable list that stays short with many sections. */
+    function linkSectionsHtml(i, l) {
+        return '<div class="d-field">Whole sections' +
+            '<div class="d-sec-head" id="d-link-sec-head-' + esc(l.id) + '">' + linkSecHeadHtml(i) + '</div>' +
+            (model.tags.length > 6
+                ? '<div class="d-sec-filter"><div class="d-search"><input type="search" data-sec-search="' + i + '" value="' + esc(secSearch[l.id] || '') + '" placeholder="Filter ' + model.tags.length + ' sections" autocomplete="off" spellcheck="false" aria-label="Filter sections"></div>' +
+                  '<button type="button" class="g4t-btn d-sec-only" data-action="link-tags-only" data-index="' + i + '" aria-pressed="' + !!secPickedOnly[l.id] + '">Picked only</button></div>'
+                : '') +
+            '<div class="d-sec-list" id="d-link-secs-' + esc(l.id) + '" role="group" aria-label="Whole sections">' + linkSecRowsHtml(i) + '</div>' +
+            '<span class="d-hint">Every visible endpoint of a picked section, including endpoints added to it later. The number is the endpoints it shares' + '.</span></div>';
+    }
     function sLinks() {
         var list = '<div class="d-list">' + model.links.map(function (l, i) {
-            var token = linkTokens[l.id];
-            var chips = model.tags.map(function (tag) {
-                var on = l.tags.indexOf(tag) !== -1;
-                return '<button type="button" class="d-chip" aria-pressed="' + on + '" data-action="link-tag" data-index="' + i + '" data-value="' + esc(tag) + '">' + esc(tag) + '</button>';
-            }).join('');
-            var address = token
-                ? '<div class="d-link-url"><input class="g4t-mono" readonly value="' + esc(linkUrl(token)) + '" aria-label="Link address" onfocus="this.select()"><button type="button" class="g4t-btn g4t-btn-primary" data-action="link-copy" data-value="' + esc(l.id) + '">Copy</button></div><span class="d-hint">' + (l.hash ? 'Copy it now: only a fingerprint is stored, so the address is shown until you leave this page.' : 'Save to activate it. Copy it now: only a fingerprint is stored, so the address is shown until you leave this page.') + '</span>'
-                : '<div class="d-link-url"><span class="d-hint">The address was shown when the link was created. Lost it? Make a new one; the old address stops working when you save.</span><button type="button" class="g4t-btn" data-action="link-regenerate" data-value="' + esc(l.id) + '">New address</button></div>';
+            var token = linkToken(l), replacing = !!(linkTokens[l.id] && l.hash);
+            var address = '<div class="d-field">Address' +
+                (token
+                    ? '<div class="d-link-url"><input class="g4t-mono" readonly value="' + esc(linkUrl(token)) + '" aria-label="Link address" onfocus="this.select()">' +
+                      '<button type="button" class="g4t-btn g4t-btn-primary" data-action="link-copy" data-value="' + esc(l.id) + '">Copy</button>' +
+                      (l.hash ? (replacing
+                          ? '<button type="button" class="g4t-btn" data-action="link-keep-address" data-value="' + esc(l.id) + '">Keep old address</button>'
+                          : '<button type="button" class="g4t-btn" data-action="link-regenerate" data-value="' + esc(l.id) + '">New address</button>') : '') + '</div>'
+                    : '<div class="d-link-url"><span class="d-hint">This link was made before addresses were kept, so its address cannot be shown. Make a new one to see it here.</span><button type="button" class="g4t-btn" data-action="link-regenerate" data-value="' + esc(l.id) + '">New address</button></div>') +
+                (!l.hash ? '<span class="d-hint">Save to activate it.</span>'
+                    : replacing ? '<span class="d-hint d-link-warn">New address: the old one stops working when you save.</span>'
+                    : token ? '<span class="d-hint">New address makes another one and the current one stops working when you save, for example when it leaked.</span>' : '') +
+                '</div>';
             return '<div class="d-item"><div class="d-item-body">' +
                 '<div class="d-row" style="align-items:start"><label class="d-field' + (errors['links.' + i + '.name'] ? ' is-invalid' : '') + '">Shared with<input data-bind="links.' + i + '.name" value="' + esc(l.name) + '" placeholder="Acme mobile team" autocomplete="off">' + errorText('links.' + i + '.name') + '</label>' +
                 '<label class="d-field">Expires<input type="date" data-bind="links.' + i + '.expires" value="' + esc(l.expires) + '"><span class="d-hint">' + (l.expired ? '<b style="color:var(--err-fg)">Expired</b> · ' : '') + (l.created ? 'created ' + esc(l.created) : 'not saved yet') + (l.expires ? '' : ' · never expires') + '</span></label></div>' +
-                '<div class="d-field">Whole sections<div class="d-chips">' + chips + '</div><span class="d-hint">Every visible endpoint of a picked section, including ones added later.</span></div>' +
+                address + errorText('links.' + i + '.token') +
+                linkSectionsHtml(i, l) +
                 '<div class="d-field">Single endpoints' + (l.operations.length ? ' <span class="d-badge">' + l.operations.length + ' picked</span>' : '') +
                 '<div class="d-search"><input type="search" data-link-search="' + i + '" value="' + esc(linkSearch[l.id] || '') + '" placeholder="Search by path, method, summary or section" autocomplete="off" spellcheck="false" aria-label="Search endpoints"></div>' +
                 '<div class="d-picker" id="d-link-ops-' + esc(l.id) + '" role="group" aria-label="Endpoints">' + linkOpsHtml(i) + '</div>' +
                 '<span class="d-hint">Picked endpoints show even when they are hidden from the docs (the eye under Endpoints, or ->hiddenDoc() in code).</span></div>' +
+                linkChoicesHtml(i, l) +
                 '<div class="d-note d-link-scope">' + esc(linkScopeText(l)) + '</div>' +
-                address + errorText('links.' + i + '.token') + '</div>' + removeBtn('links', i, 'link ' + l.name) + '</div>';
+                '</div>' + removeBtn('links', i, 'link ' + l.name) + '</div>';
         }).join('') + '</div>';
         return section('links', 'Partner links', 'A secret address per partner or client: it opens the g4t docs without the docs password (even when the docs are turned off) and shows only the sections and endpoints you pick, hidden ones included. Remove a link to revoke it.',
             (model.links.length ? list : '<div class="d-note">No partner links.</div>') + addBtn('links', 'New link'));
     }
 
+    /* ---------- pages ---------- */
+
+    // Each page lives at {dashboard}/{id}; unsaved changes stay in memory while you move between them.
+    var PAGES = [
+        { id: 'overview', title: 'Overview', group: '', render: sOverview },
+        { id: 'general', title: 'General', group: 'Documentation', section: 'general', render: sGeneral },
+        { id: 'interface', title: 'Interface', group: 'Documentation', section: 'interface', render: sInterface },
+        { id: 'endpoints', title: 'Endpoints', group: 'Documentation', section: 'endpoints', render: sEndpoints },
+        { id: 'versions', title: 'Versions & servers', group: 'API', section: 'versions', render: sVersions },
+        { id: 'security', title: 'Security schemes', group: 'API', section: 'security', render: sSecurity },
+        { id: 'headers', title: 'Global headers', group: 'API', section: 'headers', render: sHeaders },
+        { id: 'environments', title: 'Environments', group: 'API', section: 'environments', render: sEnvironments },
+        { id: 'logins', title: 'Try it out logins', group: 'Try it out', section: 'login', render: sLogin },
+        { id: 'generation', title: 'Generation', group: 'Generation', section: 'generation', render: sGeneration },
+        { id: 'access', title: 'Access', group: 'Access', section: 'access', render: sAccess },
+        { id: 'partner-links', title: 'Partner links', group: 'Access', section: 'links', render: sLinks }
+    ];
+    var pageHeader = null;
+    var currentPage = PAGES.some(function (p) { return p.id === D.page; }) ? D.page : 'overview';
+    function pageById(id) { return PAGES.filter(function (p) { return p.id === id; })[0] || PAGES[0]; }
+    function pageUrl(id) { return D.urls.base + (id === 'overview' ? '' : '/' + id); }
+    /** The page that edits a setting (or an error's field): "auto_login.0.url" → logins. */
+    function pageOfKey(key) {
+        var root = String(key).split('.')[0];
+        if (root === 'links') { return 'partner-links'; }
+        var section = SECTIONS.filter(function (s) { return s[2].indexOf(root) !== -1; })[0];
+        var page = section && PAGES.filter(function (p) { return p.section === section[0]; })[0];
+        return page ? page.id : 'overview';
+    }
+    /** Pages with unsaved changes, for the dots in the navigation. */
+    function dirtyPages() {
+        var out = {};
+        if (!model || !originalPayload) { return out; }
+        var payload = toPayload(model);
+        Object.keys(changedSettings(payload)).forEach(function (key) { out[pageOfKey(key)] = true; });
+        var layout = payload.layout, before = originalPayload.layout;
+        if (resetToRouteOrder || JSON.stringify([layout.tags, layout.operations, layout.hidden, layout.hidden_tags, layout.meta, layout.texts.tags, layout.texts.operations]) !== JSON.stringify([before.tags, before.operations, before.hidden, before.hidden_tags, before.meta, before.texts.tags, before.texts.operations])) { out.endpoints = true; }
+        if (JSON.stringify(layout.texts.info) !== JSON.stringify(before.texts.info)) { out.general = true; }
+        if (JSON.stringify(payload.links) !== JSON.stringify(originalPayload.links)) { out['partner-links'] = true; }
+        return out;
+    }
+    function goToPage(id, push) {
+        currentPage = pageById(id).id;
+        if (push) { try { history.pushState({ page: currentPage }, '', pageUrl(currentPage)); } catch (e) { } }
+        renderNav();
+        render();
+        window.scrollTo(0, 0);
+        var current = els.nav.querySelector('[aria-current="page"]');
+        if (current && current.scrollIntoView) { current.scrollIntoView({ block: 'nearest', inline: 'nearest' }); }
+        var heading = document.getElementById('d-page-title');
+        if (heading) { heading.focus({ preventScroll: true }); }
+    }
+    window.addEventListener('popstate', function (e) {
+        var id = (e.state && e.state.page) || (location.pathname.replace(/\/+$/, '').split('/').pop());
+        goToPage(PAGES.some(function (p) { return p.id === id; }) ? id : 'overview', false);
+    });
+
+    function statCard(page, title, value, lines) {
+        return '<a class="d-stat" href="' + esc(pageUrl(page)) + '" data-action="page" data-value="' + page + '"><span class="d-stat-title">' + esc(title) + '</span><span class="d-stat-value">' + value + '</span>' +
+            (lines.length ? '<span class="d-stat-lines">' + lines.map(function (l) { return '<span>' + l + '</span>'; }).join('') + '</span>' : '') + '</a>';
+    }
+    function sOverview() {
+        var ops = Object.keys(model.info);
+        var hidden = ops.filter(function (id) { return model.hidden.indexOf(id) !== -1 || model.hiddenTags.indexOf(model.info[id].tag) !== -1; }).length;
+        var statuses = { 'new': 0, beta: 0, deprecated: 0 };
+        ops.forEach(function (id) { var st = metaOf(id, 'status'); if (statuses[st] !== undefined) { statuses[st]++; } });
+        var expired = (server.links || []).filter(function (l) { return l.expired; }).length;
+        var a = model.access, uiNames = { g4t: 'g4t', swagger: 'Swagger UI', scalar: 'Scalar' };
+        var cards = '<div class="d-stats">' +
+            statCard('access', 'Documentation', a.enable ? '<span class="d-on">On</span>' : '<span class="d-off">Off</span>', [a.enable_auth ? 'Basic Auth required' : 'No password', 'Shown with ' + esc(uiNames[model.ui] || model.ui)]) +
+            statCard('endpoints', 'Endpoints', String(ops.length), [hidden + ' hidden', statuses.deprecated + ' deprecated · ' + statuses.beta + ' beta · ' + statuses['new'] + ' new']) +
+            statCard('security', 'Security', String(model.schemes.length) + ' scheme' + (model.schemes.length === 1 ? '' : 's'), [model.logins.length + ' Try it out login' + (model.logins.length === 1 ? '' : 's'), model.headers.length + ' global header' + (model.headers.length === 1 ? '' : 's')]) +
+            statCard('partner-links', 'Partner links', String(model.links.length), [expired ? expired + ' expired' : 'None expired', model.envs.length + ' shared environment' + (model.envs.length === 1 ? '' : 's')]) +
+            '</div>';
+        var saved = {};
+        server.overridden.forEach(function (key) { (saved[pageOfKey(key)] = saved[pageOfKey(key)] || []).push(key); });
+        if (server.layout.tags.length || server.layout.hidden.length || server.layout.hidden_tags.length || Object.keys(server.layout.operations || {}).length) { (saved.endpoints = saved.endpoints || []).push('order and visibility'); }
+        var savedList = Object.keys(saved).length
+            ? '<div class="d-saved">' + PAGES.filter(function (p) { return saved[p.id]; }).map(function (p) {
+                return '<a href="' + esc(pageUrl(p.id)) + '" data-action="page" data-value="' + p.id + '"><b>' + esc(p.title) + '</b><span class="g4t-mono">' + saved[p.id].map(esc).join(', ') + '</span></a>';
+            }).join('') + '</div><div><button type="button" class="g4t-btn g4t-btn-danger" data-action="reset-all">Remove all dashboard changes</button></div>'
+            : '<div class="d-note">Nothing is saved in the dashboard yet: every value follows <code class="g4t-mono">config/swagger.php</code>.</div>';
+        pageHeader = { title: 'Overview', description: 'Settings saved here are layered over <code class="g4t-mono">config/swagger.php</code>: anything you never change keeps following the file.', saved: false };
+        return cards +
+            '<section class="d-section"><header><h2>Saved in the dashboard</h2><p>Stored in <code class="g4t-mono">' + esc(server.settings_file) + '</code>' + (server.cached_spec ? '; saving also clears the cached document (<code class="g4t-mono">swagger:cache</code>)' : '') + '.</p></header>' + savedList + '</section>';
+    }
+
     function render() {
         if (!model) { return; }
         var scrollY = window.scrollY;
-        var errorList = Object.keys(errors);
-        var head = '<div style="display:grid;gap:6px"><h1 style="margin:0;font-size:24px;font-weight:650;letter-spacing:-.02em">Settings</h1>' +
-            '<p style="margin:0;color:var(--text-2);font-size:13.5px">Saved to <code class="g4t-mono" style="font-size:12px">' + esc(server.settings_file) + '</code> and layered over <code class="g4t-mono" style="font-size:12px">config/swagger.php</code>: anything you never change here keeps following the file.' + (server.cached_spec ? ' Saving also clears the cached document (<code class="g4t-mono" style="font-size:12px">swagger:cache</code>).' : '') + '</p>' +
-            (server.overridden.length || server.layout.tags.length || server.layout.hidden.length || server.layout.hidden_tags.length ? '<div><button type="button" class="g4t-btn g4t-btn-danger" data-action="reset-all">Remove all dashboard changes</button></div>' : '') + '</div>' +
-            (errorList.length ? '<div class="d-alert" role="alert"><strong>Some values need fixing:</strong>' + errorList.slice(0, 8).map(function (k) { return '<span>' + esc([].concat(errors[k])[0]) + '</span>'; }).join('') + '</div>' : '');
-        els.content.innerHTML = head + sGeneral() + sInterface() + sEndpoints() + sVersions() + sSecurity() + sHeaders() + sEnvironments() + sLogin() + sGeneration() + sAccess() + sLinks();
+        // Long pickers keep their scroll position when a row is toggled.
+        var listScroll = {};
+        Array.prototype.forEach.call(document.querySelectorAll('.d-sec-list[id], .d-picker[id]'), function (el) { listScroll[el.id] = el.scrollTop; });
+        var focusedSearch = document.activeElement && document.activeElement.getAttribute && document.activeElement.getAttribute('data-sec-search');
+        var page = pageById(currentPage), index = PAGES.indexOf(page);
+        var body = page.render();
+        var header = pageHeader || { title: page.title, description: '', saved: false };
+        // Errors can sit on other pages (a save sends every page's changes): list them with links.
+        var errorKeys = Object.keys(errors);
+        var errorHtml = errorKeys.length ? '<div class="d-alert" role="alert"><strong>Some values need fixing:</strong>' + errorKeys.slice(0, 10).map(function (k) {
+            var where = pageOfKey(k);
+            return '<span>' + esc([].concat(errors[k])[0]) + (where !== currentPage ? ' <a href="' + esc(pageUrl(where)) + '" data-action="page" data-value="' + where + '">' + esc(pageById(where).title) + ' →</a>' : '') + '</span>';
+        }).join('') + '</div>' : '';
+        var prev = PAGES[index - 1], next = PAGES[index + 1];
+        els.content.innerHTML =
+            '<div class="d-page-head">' + (page.group ? '<span class="d-crumb">' + esc(page.group) + '</span>' : '') +
+            '<h1 id="d-page-title" tabindex="-1">' + esc(header.title) + (header.saved ? '<span class="d-badge" title="Overrides config/swagger.php">saved in dashboard</span>' : '') + '</h1>' +
+            (header.description ? '<p>' + header.description + '</p>' : '') + '</div>' +
+            errorHtml + body +
+            '<nav class="d-pager" aria-label="Pages">' +
+            (prev ? '<a href="' + esc(pageUrl(prev.id)) + '" data-action="page" data-value="' + prev.id + '"><span>Previous</span>← ' + esc(prev.title) + '</a>' : '<span></span>') +
+            (next ? '<a class="is-next" href="' + esc(pageUrl(next.id)) + '" data-action="page" data-value="' + next.id + '"><span>Next</span>' + esc(next.title) + ' →</a>' : '<span></span>') + '</nav>';
+        pageHeader = null;
         window.scrollTo(0, scrollY);
+        Object.keys(listScroll).forEach(function (id) { var el = document.getElementById(id); if (el) { el.scrollTop = listScroll[id]; } });
+        if (focusedSearch !== null && focusedSearch !== undefined) { var again = document.querySelector('[data-sec-search="' + focusedSearch + '"]'); if (again) { again.focus(); again.setSelectionRange(again.value.length, again.value.length); } }
+        renderNav();
         renderSavebar();
         if (focusAfterRender) {
             var target = document.querySelector('[data-sortable="' + CSS.escape(focusAfterRender.list) + '"] > [data-sort-index="' + focusAfterRender.index + '"] .d-drag');
@@ -561,11 +787,26 @@
             focusAfterRender = null;
         }
     }
+    function renderNavDots() {
+        var dirty = dirtyPages();
+        Array.prototype.forEach.call(els.nav.querySelectorAll('a[data-value]'), function (a) {
+            var dot = a.querySelector('.d-dot'), want = !!dirty[a.getAttribute('data-value')];
+            if (want && !dot) { a.insertAdjacentHTML('beforeend', '<span class="d-dot" title="Unsaved changes"></span>'); }
+            if (!want && dot) { dot.remove(); }
+        });
+    }
     function renderNav() {
-        els.nav.innerHTML = SECTIONS.map(function (s) { return '<button type="button" data-action="goto" data-value="' + s[0] + '">' + esc(s[1]) + '</button>'; }).join('');
+        var dirty = dirtyPages(), group = null, html = '';
+        PAGES.forEach(function (p) {
+            if (p.group !== group) { html += p.group ? '<div class="d-nav-group">' + esc(p.group) + '</div>' : ''; group = p.group; }
+            html += '<a href="' + esc(pageUrl(p.id)) + '" data-action="page" data-value="' + p.id + '"' + (p.id === currentPage ? ' aria-current="page"' : '') + '><span>' + esc(p.title) + '</span>' +
+                (dirty[p.id] ? '<span class="d-dot" title="Unsaved changes"></span>' : '') + '</a>';
+        });
+        els.nav.innerHTML = html;
     }
     function renderSavebar() {
         var dirty = isDirty();
+        if (model) { renderNavDots(); }
         els.savebar.hidden = !dirty && !saving;
         if (els.savebar.hidden) { return; }
         els.savebar.innerHTML = '<div class="d-savebar-inner"><span>' + (saving ? 'Saving…' : 'You have unsaved changes') + '</span>' +
@@ -602,7 +843,7 @@
         if (name === 'servers') { model.servers.push({ url: '', description: '' }); }
         if (name === 'schemes') { model.schemes.push({ name: 'scheme' + (model.schemes.length + 1), type: 'apiKey', scheme: 'bearer', where: 'header', keyName: 'X-API-Key', bearerFormat: '' }); }
         if (name === 'headers') { model.headers.push({ name: '', description: '', required: false, example: '', default: '', enumText: '' }); }
-        if (name === 'links') { var linkId = 'l' + Date.now().toString(36); linkTokens[linkId] = newToken(); model.links.push({ id: linkId, name: 'Partner ' + (model.links.length + 1), tags: [], operations: [], expires: '', hash: null, created: null, expired: false }); }
+        if (name === 'links') { var linkId = 'l' + Date.now().toString(36); linkTokens[linkId] = newToken(); model.links.push({ id: linkId, name: 'Partner ' + (model.links.length + 1), tags: [], operations: [], token: null, security: null, versions: null, environments: null, expires: '', hash: null, created: null, expired: false }); }
         if (name === 'logins') { model.logins.push({ name: model.logins.length ? 'Login ' + (model.logins.length + 1) : 'Customer', url: '', method: 'POST', token_path: '', security_scheme: '', fields: [{ key: 'email', label: 'Email' }, { key: 'password', label: 'Password' }], prefill: null }); }
         if (name.indexOf('login-fields:') === 0) { var loginFields = listArray(name); if (loginFields) { loginFields.push({ key: '', label: '' }); } }
         if (name === 'authMiddlewares') { model.authMiddlewares.push(''); }
@@ -666,7 +907,10 @@
         if (!el || el.closest('form[method="POST"]') && el.type === 'submit') { return; }
         var action = el.getAttribute('data-action'), value = el.getAttribute('data-value'), list = el.getAttribute('data-list'), index = Number(el.getAttribute('data-index'));
         switch (action) {
-            case 'goto': var target = $('sec-' + value); if (target) { window.scrollTo({ top: target.getBoundingClientRect().top + window.scrollY - 68, behavior: 'smooth' }); } break;
+            case 'page':
+                // Plain links still work with a modifier key (new tab).
+                if (e.metaKey || e.ctrlKey || e.shiftKey || e.button === 1) { return; }
+                e.preventDefault(); goToPage(value, true); break;
             case 'set': setPath(model, el.getAttribute('data-path'), value); render(); break;
             case 'add': addItem(list); render(); break;
             case 'remove':
@@ -677,6 +921,26 @@
                 var at = model.hidden.indexOf(value);
                 if (at === -1) { model.hidden.push(value); } else { model.hidden.splice(at, 1); }
                 render(); break;
+            case 'link-tags-all':
+                // With a filter on, only the sections on screen are added.
+                var linkForAll = model.links[index];
+                shownSections(linkForAll).forEach(function (t) { if (linkForAll.tags.indexOf(t) === -1) { linkForAll.tags.push(t); } });
+                render(); break;
+            case 'link-tags-only': secPickedOnly[model.links[index].id] = !secPickedOnly[model.links[index].id]; render(); break;
+            case 'link-choice-mode':
+                var choiceLink = model.links[index], choiceKind = el.getAttribute('data-key');
+                linkChoiceModes[choiceLink.id + ':' + choiceKind] = value;
+                if (value === 'default') { choiceLink[choiceKind] = null; }
+                else if (value === 'none') { choiceLink[choiceKind] = []; }
+                else if (!choiceLink[choiceKind] || !choiceLink[choiceKind].length) { choiceLink[choiceKind] = LINK_CHOICES[choiceKind].names(); }
+                render(); break;
+            case 'link-choice':
+                var pickLink = model.links[index], pickKind = el.getAttribute('data-key'), pickList = pickLink[pickKind] || [], at4 = pickList.indexOf(value);
+                if (at4 === -1) { pickList.push(value); } else { pickList.splice(at4, 1); }
+                pickLink[pickKind] = pickList;
+                linkChoiceModes[pickLink.id + ':' + pickKind] = 'custom';
+                render(); break;
+            case 'link-tags-none': model.links[index].tags = []; render(); break;
             case 'link-tag':
                 var linkTags = model.links[index].tags, at2 = linkTags.indexOf(value);
                 if (at2 === -1) { linkTags.push(value); } else { linkTags.splice(at2, 1); }
@@ -691,12 +955,13 @@
                 if (again) { again.scrollTop = pickerScroll; }
                 break;
             case 'link-copy':
-                if (linkTokens[value] && navigator.clipboard) { navigator.clipboard.writeText(linkUrl(linkTokens[value])).then(function () { toast('Link copied'); }, function () { toast('Copy it from the field'); }); }
+                var copyToken = model.links.filter(function (l) { return l.id === value; }).map(linkToken)[0];
+                if (copyToken && navigator.clipboard) { navigator.clipboard.writeText(linkUrl(copyToken)).then(function () { toast('Link copied'); }, function () { toast('Copy it from the field'); }); }
                 break;
             case 'link-regenerate':
                 linkTokens[value] = newToken();
-                model.links.forEach(function (l) { if (l.id === value) { l.hash = null; } });
                 render(); toast('New address · save to replace the old one'); break;
+            case 'link-keep-address': delete linkTokens[value]; render(); break;
             case 'set-status':
                 setMeta(el.getAttribute('data-key'), 'status', value);
                 render(); break;
@@ -721,6 +986,15 @@
         }
     });
     document.addEventListener('input', function (e) {
+        if (model && e.target.hasAttribute && e.target.hasAttribute('data-sec-search')) {
+            var si = Number(e.target.getAttribute('data-sec-search')), sl = model.links[si];
+            secSearch[sl.id] = e.target.value;
+            var rows = document.getElementById('d-link-secs-' + sl.id);
+            if (rows) { rows.innerHTML = linkSecRowsHtml(si); }
+            var head = document.getElementById('d-link-sec-head-' + sl.id);
+            if (head) { head.innerHTML = linkSecHeadHtml(si); }
+            return;
+        }
         if (model && e.target.hasAttribute && e.target.hasAttribute('data-link-search')) {
             var li = Number(e.target.getAttribute('data-link-search'));
             linkSearch[model.links[li].id] = e.target.value;
@@ -744,6 +1018,12 @@
         var oldValue = getPath(model, path);
         setPath(model, path, e.target.type === 'checkbox' ? e.target.checked : e.target.value);
         if (path.indexOf('versions.') === 0 && oldValue === model.def) { model.def = e.target.value; }
+        // A renamed scheme, version or environment stays picked by the partner links (and logins) that use it.
+        var renamed = /^schemes\.\d+\.name$/.test(path) ? 'security' : /^versions\.\d+$/.test(path) ? 'versions' : /^envs\.\d+\.name$/.test(path) ? 'environments' : null;
+        if (renamed && oldValue) {
+            model.links.forEach(function (l) { if (l[renamed]) { l[renamed] = l[renamed].map(function (n) { return n === oldValue ? e.target.value : n; }); } });
+            if (renamed === 'security') { model.logins.forEach(function (lg) { if (lg.security_scheme === oldValue) { lg.security_scheme = e.target.value; } }); }
+        }
         if (e.target.type === 'checkbox' && (path === 'access.enable_auth')) { render(); return; }
         renderSavebar();
     });
@@ -791,6 +1071,7 @@
         });
     }
 
+    try { history.replaceState({ page: currentPage }, '', location.href); } catch (e) { }
     renderNav();
     request('GET').then(function (state) { if (state) { load(state); } });
 })();

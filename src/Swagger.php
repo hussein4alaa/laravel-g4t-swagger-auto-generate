@@ -3,6 +3,9 @@
 namespace G4T\Swagger;
 
 use G4T\Swagger\Attributes\SwaggerSection;
+use G4T\Swagger\Extensions\Extension;
+use G4T\Swagger\Extensions\Extensions;
+use G4T\Swagger\Extensions\RouteInfo;
 use G4T\Swagger\Sections\Paths;
 use G4T\Swagger\Sections\Schemas;
 use G4T\Swagger\Sections\Tags;
@@ -25,11 +28,21 @@ class Swagger
      *
      * @return array<string, mixed>
      */
+    /**
+     * Registers an extension (usually from a service provider's boot()).
+     *
+     * @param  Extension|class-string<Extension>  $extension
+     */
+    public static function extend(Extension|string $extension): void
+    {
+        Extensions::add($extension);
+    }
+
     public function swagger(): array
     {
         $generated = $this->generateSwaggerJsonResponse();
 
-        return [
+        return Extensions::document([
             'openapi' => '3.0.3',
             'info' => [
                 'title' => config('swagger.title'),
@@ -51,7 +64,7 @@ class Swagger
                 'schemas' => $generated->schemas === [] ? new stdClass : $generated->schemas,
                 'securitySchemes' => empty($generated->securitySchemes) ? new stdClass : $generated->securitySchemes,
             ],
-        ];
+        ]);
     }
 
     /**
@@ -95,6 +108,10 @@ class Swagger
 
         foreach ($routes as $route) {
             $action = ltrim($route->getActionName(), '\\');
+            // Invokable controllers / action classes: read their __invoke like any other action.
+            if (! str_contains($action, '@') && method_exists($action, '__invoke')) {
+                $action .= '@__invoke';
+            }
             $controllerClass = $this->getControllerPath($route->getAction('controller'));
             $controllerShort = $this->getControllerName($route->getAction('controller'));
             $tag = $tagNames[$controllerClass] ?? $controllerShort;
@@ -110,13 +127,24 @@ class Swagger
             $method = $methods[0] ?? 'GET';
             $hasBody = in_array($method, ['POST', 'PUT', 'PATCH'], true);
 
-            $validations = $this->getRequestClassName($action);
+            // Extensions describe input the FormRequest rules do not (Data objects, actions…); first answer wins.
+            $routeInfo = Extensions::any()
+                ? new RouteInfo($route, $method, $uri, $controllerClass, explode('@', $action, 2)[1] ?? null, $this->generateOperationId($uri, $method), $tag)
+                : null;
+            $requestSpec = $routeInfo !== null ? Extensions::request($routeInfo) : null;
+            $inQuery = $requestSpec !== null && $requestSpec->query;
+
+            $validations = $requestSpec !== null ? ($requestSpec->rules ?? []) : $this->getRequestClassName($action);
             $builder = new SchemaBuilder($validations);
             $schemaName = ($schemaPrefixes[$controllerClass] ?? '').$this->schemaName($action);
 
             $documentedMethod = $method;
             $requestBody = null;
-            if ($hasBody && ! $builder->isEmpty()) {
+            if ($hasBody && ! $inQuery && $requestSpec?->schema !== null) {
+                $schemas[$schemaName] = $requestSpec->schema;
+                $requestBody = ['content' => ['application/json' => ['schema' => ['$ref' => "#/components/schemas/{$schemaName}"]]], 'required' => true]
+                    + array_filter(['description' => $route->action['description'] ?? '']);
+            } elseif ($hasBody && ! $inQuery && ! $builder->isEmpty()) {
                 $extra = [];
                 if ($builder->hasFiles() && $method !== 'POST') {
                     // PHP only parses multipart bodies on POST: Laravel needs method spoofing.
@@ -132,7 +160,7 @@ class Swagger
                 'description' => $this->getSectionAttributeValue($controllerClass),
             ];
 
-            $params = $hasBody ? [] : $builder->queryParameters();
+            $params = $hasBody && ! $inQuery ? [] : $builder->queryParameters();
             $this->spatieSchema($params, $method);
 
             $apiRoutes[] = [
@@ -161,6 +189,7 @@ class Swagger
                 'need_token' => $this->checkIfTokenIsRequired($route),
                 'success_status' => $this->inferSuccessStatus($exampleExtractor, $action, $method),
                 'error_response_examples' => $inferErrorExamples && $exampleExtractor ? ($this->safely(fn () => $exampleExtractor->extractErrorResponseExamples($action), $action) ?? []) : [],
+                'route_info' => $routeInfo,
             ] + $this->successResponse($exampleExtractor, $action, $inferExamples, $responseSchemas);
         }
 

@@ -451,6 +451,22 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Extensions
+    |--------------------------------------------------------------------------
+    |
+    | Classes extending G4T\Swagger\Extensions\Extension that teach the
+    | generator about code it cannot read on its own (Data objects, actions,
+    | JSON:API, your own response helpers). Packages can also register theirs
+    | with G4T\Swagger\Swagger::extend() in a service provider.
+    | Create one with: php artisan make:swagger-extension SpatieData
+    |
+    */
+    "extensions" => [
+        // App\Swagger\SpatieDataExtension::class,
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
     | Spatie Query Builder
     |--------------------------------------------------------------------------
     |

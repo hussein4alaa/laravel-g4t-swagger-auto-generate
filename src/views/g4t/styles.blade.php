@@ -272,6 +272,10 @@
     .g4t-env-menu { width: 280px; gap: 4px; padding: 8px; }
     .g4t-env-menu .g4t-menu-label { padding: 6px 8px 2px; }
     .g4t-env-menu .g4t-btn { justify-content: flex-start; margin-top: 4px; }
+    .g4t-download-menu { width: 270px; gap: 2px; padding: 8px; }
+    .g4t-download-menu .g4t-menu-label { padding: 6px 8px 2px; }
+    .g4t-download-menu .g4t-menu-label:not(:first-child) { margin-top: 6px; padding-top: 10px; border-top: 1px solid var(--border); }
+    .g4t-download-item > svg { flex: none; color: var(--text-3); }
     .g4t-env-item { display: flex; align-items: center; gap: 10px; width: 100%; padding: 8px; border: 0; border-radius: 8px; background: none; color: var(--text); font: inherit; font-size: 13px; text-align: start; cursor: pointer; }
     .g4t-env-item:hover, .g4t-env-item:focus-visible { background: var(--surface-2); }
     .g4t-env-item[aria-checked="true"] { font-weight: 600; }

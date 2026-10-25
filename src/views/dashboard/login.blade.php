@@ -18,6 +18,7 @@
     <main class="d-login">
         <form class="d-login-card" method="POST" action="{{ $action }}" novalidate>
             @csrf
+            <input type="hidden" name="page" value="{{ $page ?? '' }}">
             <div class="d-login-brand">
                 @include('swagger::partials.logo', ['size' => 40])
                 <div>

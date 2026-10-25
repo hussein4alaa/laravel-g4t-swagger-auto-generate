@@ -8,6 +8,7 @@ use G4T\Swagger\Support\Settings;
 use G4T\Swagger\Swagger;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Crypt;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\Facades\Validator;
@@ -23,6 +24,9 @@ class DashboardController
     private const SESSION_KEY = 'g4t_swagger_dashboard_user';
 
     private const MAX_ATTEMPTS = 5;
+
+    /** Dashboard pages, each at {dashboard}/{page}; the first is the dashboard's own URL. */
+    public const PAGES = ['overview', 'general', 'interface', 'endpoints', 'versions', 'security', 'headers', 'environments', 'logins', 'generation', 'access', 'partner-links'];
 
     /** @var array{title: string, description: string, tags: array<string, string>} */
     private array $defaults = ['title' => '', 'description' => '', 'tags' => []];
@@ -47,14 +51,16 @@ class DashboardController
         return is_string($user) && hash_equals((string) config('swagger.dashboard.username'), $user);
     }
 
-    public function show(Request $request)
+    public function show(Request $request, string $page = 'overview')
     {
         if (! self::signedIn($request)) {
-            return response()->view('swagger::dashboard.login', ['action' => url(self::url().'/login')]);
+            return response()->view('swagger::dashboard.login', ['action' => url(self::url().'/login'), 'page' => $page]);
         }
 
         return response()->view('swagger::dashboard.app', [
+            'page' => $page,
             'urls' => [
+                'base' => url(self::url()),
                 'settings' => url(self::url().'/api/settings'),
                 'logout' => url(self::url().'/logout'),
                 'docs' => url(trim((string) config('swagger.url'), '/')),
@@ -84,7 +90,10 @@ class DashboardController
         $request->session()->regenerate();
         $request->session()->put(self::SESSION_KEY, (string) config('swagger.dashboard.username'));
 
-        return redirect()->to(url(self::url()));
+        // Back to the page the sign-in form was shown on.
+        $page = (string) $request->input('page', '');
+
+        return redirect()->to(url(self::url().(in_array($page, self::PAGES, true) && $page !== 'overview' ? '/'.$page : '')));
     }
 
     public function logout(Request $request)
@@ -107,7 +116,7 @@ class DashboardController
     {
         $values = $this->validated($request);
         $layout = (array) $request->input('layout', []);
-        $links = $request->has('links') ? $this->validatedLinks($request) : null;
+        $links = $request->has('links') ? $this->validatedLinks($request, $values) : null;
 
         if (! Settings::save($values, $layout) || ($links !== null && ! Settings::saveLinks($links))) {
             return response()->json(['message' => 'Could not write '.Settings::path().'. Check that its directory is writable.'], 500);
@@ -145,8 +154,8 @@ class DashboardController
             // Generated (code) texts, shown as placeholders next to the dashboard's own.
             'defaults' => $this->defaults,
             'settings_file' => Settings::path(),
-            // Partner links without their tokens: only a hash is stored.
-            'links' => array_map(fn (array $link) => $link + ['expired' => PartnerLinks::expired($link)], Settings::links()),
+            // Partner links with their address; null when it cannot be decrypted (older links, or a new app key).
+            'links' => array_map(fn (array $link) => ['token' => PartnerLinks::token($link)] + array_diff_key($link, ['secret' => true]) + ['expired' => PartnerLinks::expired($link)], Settings::links()),
             'cached_spec' => CachedSpec::read() !== null,
         ];
     }
@@ -222,18 +231,25 @@ class DashboardController
             'action' => url(self::url().'/login'),
             'error' => $message,
             'username' => (string) $request->input('username', ''),
+            'page' => (string) $request->input('page', ''),
         ], $status);
     }
 
     /**
      * Partner links to store: a new link sends its token (hashed here), a kept one its stored hash.
      *
+     * @param  array<string, mixed>  $values
      * @return list<array<string, mixed>>
      */
-    private function validatedLinks(Request $request): array
+    private function validatedLinks(Request $request, array $values): array
     {
         $input = ['links' => (array) $request->input('links', [])];
         $stored = collect(Settings::links())->keyBy('hash');
+        // A link picks among the schemes saved with it (this request may rename or remove some).
+        $current = fn (string $key) => (array) (array_key_exists($key, $values) ? $values[$key] : config('swagger.'.$key, []));
+        $schemes = array_map('strval', array_keys($current('security_schemes')));
+        $versions = array_values(array_map('strval', $current('versions')));
+        $environments = array_values(array_filter(array_map(fn ($env) => is_array($env) ? (string) ($env['name'] ?? '') : '', $current('environments'))));
         $validator = Validator::make($input, [
             'links' => ['array', 'max:100'],
             'links.*.id' => ['required', 'string', 'max:40', 'regex:/^[A-Za-z0-9_-]+$/', 'distinct'],
@@ -242,9 +258,21 @@ class DashboardController
             'links.*.tags.*' => ['string', 'max:200'],
             'links.*.operations' => ['array', 'max:500'],
             'links.*.operations.*' => ['string', 'max:200'],
+            'links.*.security' => ['nullable', 'array', 'min:1'],
+            'links.*.security.*' => ['string', 'distinct', Rule::in($schemes)],
+            'links.*.versions' => ['nullable', 'array', 'min:1'],
+            'links.*.versions.*' => ['string', 'distinct', Rule::in($versions)],
+            'links.*.environments' => ['nullable', 'array'],
+            'links.*.environments.*' => ['string', 'distinct', Rule::in($environments)],
             'links.*.expires' => ['nullable', 'date_format:Y-m-d'],
             'links.*.token' => ['nullable', 'string', 'regex:/^[A-Za-z0-9_-]{24,128}$/'],
             'links.*.hash' => ['nullable', 'string', 'regex:/^[a-f0-9]{64}$/'],
+        ], [
+            'links.*.security.min' => 'Pick at least one security scheme, or use Default.',
+            'links.*.security.*.in' => 'This security scheme does not exist any more.',
+            'links.*.versions.min' => 'Pick at least one version, or use Default.',
+            'links.*.versions.*.in' => 'This version does not exist any more.',
+            'links.*.environments.*.in' => 'This environment does not exist any more.',
         ]);
         $validator->after(function ($validator) use ($input, $stored) {
             foreach ($input['links'] as $index => $link) {
@@ -260,13 +288,18 @@ class DashboardController
 
         return array_map(function (array $link) use ($stored) {
             $hash = filled($link['token'] ?? null) ? hash('sha256', $link['token']) : $link['hash'];
+            $secret = filled($link['token'] ?? null) ? Crypt::encryptString($link['token']) : ($stored->get($hash)['secret'] ?? null);
 
             return [
                 'id' => $link['id'],
                 'name' => $link['name'],
                 'hash' => $hash,
+                'secret' => $secret,
                 'tags' => array_values((array) ($link['tags'] ?? [])),
                 'operations' => array_values(array_unique((array) ($link['operations'] ?? []))),
+                'security' => isset($link['security']) ? array_values((array) $link['security']) : null,
+                'versions' => isset($link['versions']) ? array_values((array) $link['versions']) : null,
+                'environments' => isset($link['environments']) ? array_values((array) $link['environments']) : null,
                 'expires' => $link['expires'] ?? null,
                 'created' => $stored->get($hash)['created'] ?? now()->toDateString(),
             ];

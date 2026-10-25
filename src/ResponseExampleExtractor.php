@@ -2,6 +2,10 @@
 
 namespace G4T\Swagger;
 
+use Closure;
+use G4T\Swagger\Extensions\Extension;
+use G4T\Swagger\Extensions\Extensions;
+use G4T\Swagger\Extensions\ReturnedValue;
 use G4T\Swagger\Inference\CodeScanner;
 use G4T\Swagger\Inference\ExampleGuesser;
 use G4T\Swagger\Inference\LiteralEvaluator;
@@ -13,14 +17,14 @@ use Illuminate\Http\Resources\Json\JsonResource;
 use Illuminate\Http\Resources\Json\ResourceCollection;
 use Illuminate\Http\Resources\MergeValue;
 use Illuminate\Http\Resources\MissingValue;
-use Closure;
 use ReflectionClass;
 use ReflectionFunction;
+use ReflectionFunctionAbstract;
 use ReflectionMethod;
 use ReflectionNamedType;
 use ReflectionProperty;
-use Symfony\Component\HttpKernel\Exception\HttpExceptionInterface;
 use Symfony\Component\HttpFoundation\Response as SymfonyResponse;
+use Symfony\Component\HttpKernel\Exception\HttpExceptionInterface;
 use Throwable;
 
 /**
@@ -74,7 +78,7 @@ class ResponseExampleExtractor
 
     public function __construct()
     {
-        $this->source = new PhpSource();
+        $this->source = new PhpSource;
         $this->models = new ModelInspector(function (string $message, Throwable $e): void {
             $this->debug($message, $e);
         });
@@ -355,13 +359,36 @@ class ResponseExampleExtractor
      */
     private function methodContext(string $class, string $method): ?array
     {
-        $key = $class . '@' . $method;
+        $key = $class.'@'.$method;
         if (array_key_exists($key, $this->contexts)) {
             return $this->contexts[$key];
         }
         $this->contexts[$key] = null;
 
-        $ref = new ReflectionMethod($class, $method);
+        return $this->contexts[$key] = $this->reflectedContext(new ReflectionMethod($class, $method), $method);
+    }
+
+    /**
+     * A global helper function of the project, parsed like a method ({@see methodContext()}); its class is ''.
+     *
+     * @return array<string, mixed>|null
+     */
+    private function functionContext(string $function): ?array
+    {
+        $key = '@'.strtolower($function);
+        if (array_key_exists($key, $this->contexts)) {
+            return $this->contexts[$key];
+        }
+        $this->contexts[$key] = null;
+
+        return $this->contexts[$key] = $this->reflectedContext(new ReflectionFunction($function), $function);
+    }
+
+    /**
+     * @return array<string, mixed>|null
+     */
+    private function reflectedContext(ReflectionFunctionAbstract $ref, string $method): ?array
+    {
         $file = $ref->getFileName();
         if (! $file || $ref->getStartLine() === false || $ref->getEndLine() === false) {
             return null;
@@ -372,7 +399,7 @@ class ResponseExampleExtractor
         }
         [$body, $masked] = $slice;
 
-        $signature = preg_match('/\bfunction\s+&?\s*' . preg_quote($method, '/') . '\s*\(/i', $masked, $fm, PREG_OFFSET_CAPTURE)
+        $signature = preg_match('/\bfunction\s+&?\s*'.preg_quote($ref->getShortName(), '/').'\s*\(/i', $masked, $fm, PREG_OFFSET_CAPTURE)
             ? $fm[0][1] + strlen($fm[0][0]) - 1
             : strpos($masked, '(');
         $paramsClose = $signature === false ? null : CodeScanner::matchClose($masked, $signature);
@@ -389,8 +416,8 @@ class ResponseExampleExtractor
 
         [$eager, $counts] = $this->eagerLoads($body, $masked);
 
-        return $this->contexts[$key] = [
-            'class' => $ref->getDeclaringClass()->getName(),
+        return [
+            'class' => $ref instanceof ReflectionMethod ? $ref->getDeclaringClass()->getName() : '',
             'method' => $method,
             'file' => $file,
             'body' => $body,
@@ -439,6 +466,10 @@ class ResponseExampleExtractor
         foreach ($returns as $return) {
             if ($this->isJsonFactoryExpression($return['masked'])) {
                 continue;
+            }
+            $example = $this->extensionExample($ctx, $return['orig']);
+            if ($example !== null) {
+                return $example;
             }
             $example = $this->resourceExampleFromExpression($ctx, $return['orig'], $return['masked']);
             if ($example !== null) {
@@ -543,15 +574,15 @@ class ResponseExampleExtractor
             return ['data' => [$row], 'path' => $path, 'per_page' => 15, 'next_cursor' => null, 'next_page_url' => null, 'prev_cursor' => null, 'prev_page_url' => null];
         }
 
-        $page = ['current_page' => 1, 'data' => [$row], 'first_page_url' => $path . '?page=1', 'from' => 1];
+        $page = ['current_page' => 1, 'data' => [$row], 'first_page_url' => $path.'?page=1', 'from' => 1];
         if ($type === 'simple') {
             return $page + ['next_page_url' => null, 'path' => $path, 'per_page' => 15, 'prev_page_url' => null, 'to' => 1];
         }
 
         return $page + [
             'last_page' => 1,
-            'last_page_url' => $path . '?page=1',
-            'links' => [['url' => null, 'label' => '&laquo; Previous', 'active' => false], ['url' => $path . '?page=1', 'label' => '1', 'active' => true], ['url' => null, 'label' => 'Next &raquo;', 'active' => false]],
+            'last_page_url' => $path.'?page=1',
+            'links' => [['url' => null, 'label' => '&laquo; Previous', 'active' => false], ['url' => $path.'?page=1', 'label' => '1', 'active' => true], ['url' => null, 'label' => 'Next &raquo;', 'active' => false]],
             'next_page_url' => null,
             'path' => $path,
             'per_page' => 15,
@@ -672,7 +703,7 @@ class ResponseExampleExtractor
 
     private function symfonyStatus(string $constant): ?int
     {
-        $name = SymfonyResponse::class . '::' . $constant;
+        $name = SymfonyResponse::class.'::'.$constant;
 
         return defined($name) && is_int(constant($name)) ? constant($name) : null;
     }
@@ -688,7 +719,7 @@ class ResponseExampleExtractor
         $masked = $ctx['masked'];
         $prefix = substr($masked, 0, $beforeOffset);
         // From the body only: a parameter default in the signature is not an assignment.
-        if (! preg_match_all('/\$' . preg_quote($varName, '/') . '\s*=(?![=>])/', $prefix, $m, PREG_OFFSET_CAPTURE, $ctx['bodyStart'])) {
+        if (! preg_match_all('/\$'.preg_quote($varName, '/').'\s*=(?![=>])/', $prefix, $m, PREG_OFFSET_CAPTURE, $ctx['bodyStart'])) {
             return null;
         }
         $last = end($m[0]);
@@ -735,6 +766,11 @@ class ResponseExampleExtractor
             return $this->payloadExample($ctx, $rhs['orig'], $rhs['masked'], $rhs['offset'], $depth + 1);
         }
 
+        $extended = $this->extensionExample($ctx, $orig);
+        if ($extended !== null) {
+            return $extended;
+        }
+
         $resource = $this->resourceExampleFromExpression($ctx, $orig, $masked);
         if ($resource !== null) {
             return $resource;
@@ -761,11 +797,11 @@ class ResponseExampleExtractor
     {
         $masked = $ctx['masked'];
         $var = preg_quote($varName, '/');
-        if (preg_match('/\$' . $var . '\s*=\s*(?:\[\s*\]|array\s*\(\s*\))\s*;/i', $masked, $im, PREG_OFFSET_CAPTURE) !== 1) {
+        if (preg_match('/\$'.$var.'\s*=\s*(?:\[\s*\]|array\s*\(\s*\))\s*;/i', $masked, $im, PREG_OFFSET_CAPTURE) !== 1) {
             return null;
         }
         $initEnd = $im[0][1] + strlen($im[0][0]);
-        if (preg_match('/\$' . $var . '\s*\[\s*\]\s*=\s*\[/', $masked, $am, PREG_OFFSET_CAPTURE, $initEnd) !== 1) {
+        if (preg_match('/\$'.$var.'\s*\[\s*\]\s*=\s*\[/', $masked, $am, PREG_OFFSET_CAPTURE, $initEnd) !== 1) {
             return null;
         }
         if (stripos(substr($masked, $initEnd, $am[0][1] - $initEnd), 'foreach') === false) {
@@ -797,7 +833,7 @@ class ResponseExampleExtractor
     private function evaluator(array $ctx, bool $withFallback): LiteralEvaluator
     {
         $key = implode('|', [
-            $ctx['class'] . '@' . $ctx['method'],
+            $ctx['class'].'@'.$ctx['method'],
             $ctx['resource'] ?? '',
             $ctx['prefix'] ?? '',
             implode('>', $ctx['stack'] ?? []),
@@ -871,6 +907,8 @@ class ResponseExampleExtractor
             } elseif (preg_match('/^\$this\s*->\s*(\w+)\s*\??->\s*(\w+)\s*\(/', $masked, $m)) {
                 $class = $this->propertyClass($ctx, $m[1]);
                 $method = $m[2];
+            } elseif (preg_match('/^\\\\?([A-Za-z_]\w*)\s*\(/', $masked, $m)) {
+                return $this->followedFunction($ctx, $orig, $masked, $m, $depth);
             } else {
                 return null;
             }
@@ -883,9 +921,9 @@ class ResponseExampleExtractor
                 return null;
             }
 
-            $key = $class . '@' . $method;
-            $stack = array_merge($ctx['followStack'] ?? [], [$ctx['class'] . '@' . $ctx['method']]);
-            if (in_array($key, $stack, true) || $key === $ctx['class'] . '@' . $ctx['method']) {
+            $key = $class.'@'.$method;
+            $stack = array_merge($ctx['followStack'] ?? [], [$ctx['class'].'@'.$ctx['method']]);
+            if (in_array($key, $stack, true) || $key === $ctx['class'].'@'.$ctx['method']) {
                 return null;
             }
             $base = $this->methodContext($class, $method);
@@ -893,35 +931,80 @@ class ResponseExampleExtractor
                 return null;
             }
 
-            $args = CodeScanner::arguments($orig, $masked, $open);
-            $bindings = [];
-            foreach ((new ReflectionMethod($class, $method))->getParameters() as $index => $param) {
-                if ($param->isVariadic()) {
-                    break;
-                }
-                $arg = CodeScanner::argument($args, $index, $param->getName());
-                if ($arg !== null) {
-                    $strict = $this->evaluator($ctx, false)->evaluateStrict($arg['orig']);
-                    $loose = $strict instanceof Unresolved ? $this->evaluateValue($ctx, $arg['orig'], $param->getName()) : $strict;
-                } elseif ($param->isDefaultValueAvailable()) {
-                    $strict = $loose = $param->getDefaultValue();
-                } else {
-                    $strict = $loose = Unresolved::instance();
-                }
-                $bindings[$param->getName()] = ['strict' => $strict, 'loose' => $loose];
-            }
-
-            return [
-                'bindings' => $bindings,
-                'bindingKey' => md5(($ctx['bindingKey'] ?? '') . '>' . $key . '(' . implode(',', array_column($args, 'orig')) . ')'),
-                'followDepth' => $depth + 1,
-                'followStack' => $stack,
-            ] + $base;
+            return $this->boundCall($ctx, $orig, $masked, $open, new ReflectionMethod($class, $method), $key, $stack, $depth) + $base;
         } catch (Throwable $e) {
-            $this->debug('could not follow ' . $orig, $e);
+            $this->debug('could not follow '.$orig, $e);
 
             return null;
         }
+    }
+
+    /**
+     * A call to one of the project's own helper functions ({@code api_success($user)}); functions of
+     * PHP and of packages in vendor/ ({@code response()}, {@code collect()}, …) are left to the other rules.
+     *
+     * @param  array<string, mixed>  $ctx
+     * @param  array<int, string>  $match
+     * @return array<string, mixed>|null
+     */
+    private function followedFunction(array $ctx, string $orig, string $masked, array $match, int $depth): ?array
+    {
+        $name = $match[1];
+        if (! function_exists($name)) {
+            return null;
+        }
+        $function = new ReflectionFunction($name);
+        $file = (string) $function->getFileName();
+        if ($function->isInternal() || $file === '' || str_contains(str_replace('\\', '/', $file), '/vendor/')) {
+            return null;
+        }
+        $open = strlen($match[0]) - 1;
+        if (CodeScanner::matchClose($masked, $open) !== strlen($masked) - 1) {
+            return null;
+        }
+        $key = '@'.strtolower($function->getName());
+        $stack = array_merge($ctx['followStack'] ?? [], [$ctx['class'].'@'.$ctx['method']]);
+        if (in_array($key, $stack, true)) {
+            return null;
+        }
+        $base = $this->functionContext($function->getName());
+
+        return $base === null ? null : $this->boundCall($ctx, $orig, $masked, $open, $function, $key, $stack, $depth) + $base;
+    }
+
+    /**
+     * The callee's parameters bound to the call's arguments (or their defaults).
+     *
+     * @param  array<string, mixed>  $ctx
+     * @param  list<string>  $stack
+     * @return array<string, mixed>
+     */
+    private function boundCall(array $ctx, string $orig, string $masked, int $open, ReflectionFunctionAbstract $callee, string $key, array $stack, int $depth): array
+    {
+        $args = CodeScanner::arguments($orig, $masked, $open);
+        $bindings = [];
+        foreach ($callee->getParameters() as $index => $param) {
+            if ($param->isVariadic()) {
+                break;
+            }
+            $arg = CodeScanner::argument($args, $index, $param->getName());
+            if ($arg !== null) {
+                $strict = $this->evaluator($ctx, false)->evaluateStrict($arg['orig']);
+                $loose = $strict instanceof Unresolved ? $this->evaluateValue($ctx, $arg['orig'], $param->getName()) : $strict;
+            } elseif ($param->isDefaultValueAvailable()) {
+                $strict = $loose = $param->getDefaultValue();
+            } else {
+                $strict = $loose = Unresolved::instance();
+            }
+            $bindings[$param->getName()] = ['strict' => $strict, 'loose' => $loose];
+        }
+
+        return [
+            'bindings' => $bindings,
+            'bindingKey' => md5(($ctx['bindingKey'] ?? '').'>'.$key.'('.implode(',', array_column($args, 'orig')).')'),
+            'followDepth' => $depth + 1,
+            'followStack' => $stack,
+        ];
     }
 
     /**
@@ -949,7 +1032,7 @@ class ResponseExampleExtractor
         if ($constructor === null) {
             return null;
         }
-        $name = preg_match('/\$this\s*->\s*' . preg_quote($property, '/') . '\s*=\s*\$(\w+)\s*;/', $constructor['masked'], $am) ? $am[1] : $property;
+        $name = preg_match('/\$this\s*->\s*'.preg_quote($property, '/').'\s*=\s*\$(\w+)\s*;/', $constructor['masked'], $am) ? $am[1] : $property;
         $type = $constructor['params'][$name] ?? null;
 
         return $type !== null && (class_exists($type) || interface_exists($type)) ? $type : null;
@@ -993,6 +1076,28 @@ class ResponseExampleExtractor
     }
 
     /**
+     * The example an extension gives for this expression ({@see Extension::response()}).
+     *
+     * @param  array<string, mixed>  $ctx
+     */
+    private function extensionExample(array $ctx, string $source): mixed
+    {
+        if (! Extensions::any() || trim($source) === '') {
+            return null;
+        }
+
+        $example = Extensions::response(new ReturnedValue(
+            trim($source),
+            $ctx['class'],
+            $ctx['method'],
+            $ctx['file'],
+            fn (string $name): ?string => $this->resolveClass($ctx, $name),
+        ));
+
+        return $example?->value;
+    }
+
+    /**
      * Placeholder example for a non-literal expression inside a controller payload.
      *
      * @param  array<string, mixed>  $ctx
@@ -1005,9 +1110,29 @@ class ResponseExampleExtractor
             return $this->guess($key);
         }
 
+        $extended = $this->extensionExample($ctx, $orig);
+        if ($extended !== null) {
+            return $extended;
+        }
+
         $resource = $this->resourceExampleFromExpression($ctx, $orig, $masked);
         if ($resource !== null) {
             return $resource;
+        }
+
+        // A model handed on as it is, e.g. Responder::success(Post::findOrFail($id)) or success($post).
+        if (preg_match('/^\$(\w+)$/', $masked, $vm) && $vm[1] !== 'this' && ! isset($ctx['params'][$vm[1]])) {
+            $rhs = $this->assignmentRhs($ctx, $vm[1], strlen($ctx['masked']));
+            if ($rhs !== null && ! preg_match('/^\$\w+$/', $rhs['masked'])) {
+                $assigned = $this->resourceExampleFromExpression($ctx, $rhs['orig'], $rhs['masked']) ?? $this->modelReturnExample($ctx, $rhs['masked']);
+                if ($assigned !== null) {
+                    return $assigned;
+                }
+            }
+        }
+        $model = $this->modelReturnExample($ctx, $masked);
+        if ($model !== null) {
+            return $model;
         }
 
         if (preg_match('/^\$this\s*->\s*getPath\s*\(/', $masked, $gm)) {
@@ -1108,7 +1233,7 @@ class ResponseExampleExtractor
         }
         if (preg_match('/^(?:\\\\?(?:Illuminate\\\\Support\\\\Facades\\\\)?Storage\s*::|\\\\?(?:asset|secure_asset|url|route)\s*\()/', $masked)
             || preg_match('/->\s*(?:url|temporaryUrl|getUrl|getFullUrl|getFirstMediaUrl)\s*\(/', $masked)) {
-            return ExampleGuesser::URL . '/storage/example.jpg';
+            return ExampleGuesser::URL.'/storage/example.jpg';
         }
 
         return Unresolved::instance();
@@ -1171,7 +1296,7 @@ class ResponseExampleExtractor
 
             return null;
         } catch (Throwable $e) {
-            $this->debug('could not infer ' . $controllerClass . '::' . $methodName, $e);
+            $this->debug('could not infer '.$controllerClass.'::'.$methodName, $e);
 
             return null;
         } finally {
@@ -1262,7 +1387,7 @@ class ResponseExampleExtractor
                 }
             }
         } catch (Throwable $e) {
-            $this->debug('could not resolve collected resource of ' . $collectionClass, $e);
+            $this->debug('could not resolve collected resource of '.$collectionClass, $e);
         }
 
         return null;
@@ -1307,7 +1432,7 @@ class ResponseExampleExtractor
             return [[], []];
         }
 
-        $evaluator = new LiteralEvaluator();
+        $evaluator = new LiteralEvaluator;
         foreach ($m as $match) {
             $isCount = in_array($match[1][0], ['withCount', 'loadCount'], true);
             $open = $match[0][1] + strlen($match[0][0]) - 1;
@@ -1358,7 +1483,7 @@ class ResponseExampleExtractor
     private function isRelationIncludedInEagerLoad(string $path, array $eagerLoadPaths): bool
     {
         foreach ($eagerLoadPaths as $e) {
-            if ($e === $path || str_starts_with($e, $path . '.')) {
+            if ($e === $path || str_starts_with($e, $path.'.')) {
                 return true;
             }
         }
@@ -1368,7 +1493,7 @@ class ResponseExampleExtractor
 
     private function buildRelationPath(string $relationPrefix, string $relationName): string
     {
-        return $relationPrefix === '' ? $relationName : $relationPrefix . '.' . $relationName;
+        return $relationPrefix === '' ? $relationName : $relationPrefix.'.'.$relationName;
     }
 
     /**
@@ -1436,10 +1561,10 @@ class ResponseExampleExtractor
             $links = ['first' => null, 'last' => null, 'prev' => null, 'next' => null];
             $meta = ['path' => $path, 'per_page' => 15, 'next_cursor' => null, 'prev_cursor' => null];
         } elseif ($paginationType === 'simple') {
-            $links = ['first' => $path . '?page=1', 'prev' => null, 'next' => null];
+            $links = ['first' => $path.'?page=1', 'prev' => null, 'next' => null];
             $meta = ['current_page' => 1, 'from' => 1, 'path' => $path, 'per_page' => 15, 'to' => 1];
         } else {
-            $links = ['first' => $path . '?page=1', 'last' => $path . '?page=1', 'prev' => null, 'next' => null];
+            $links = ['first' => $path.'?page=1', 'last' => $path.'?page=1', 'prev' => null, 'next' => null];
             $meta = [
                 'current_page' => 1,
                 'from' => 1,
@@ -1487,7 +1612,7 @@ class ResponseExampleExtractor
         try {
             $result = $this->buildResourceExample($resourceClass, $resourceClass, $eagerLoadPaths, $counts, $relationPrefix, $stack, $modelHint);
         } catch (Throwable $e) {
-            $this->debug('could not infer resource example for ' . $resourceClass, $e);
+            $this->debug('could not infer resource example for '.$resourceClass, $e);
             $result = null;
         }
         if (is_array($result) && $result !== [] && ! array_is_list($result)) {
@@ -1749,10 +1874,10 @@ class ResponseExampleExtractor
             case 'whenLoaded':
                 $relation = $literal(0);
                 if (! is_string($relation)) {
-                    return new MissingValue();
+                    return new MissingValue;
                 }
                 if (! $this->shouldIncludeNestedRelation($this->buildRelationPath($ctx['prefix'], $relation), $ctx['eager'], false)) {
-                    return new MissingValue();
+                    return new MissingValue;
                 }
                 if (isset($args[1])) {
                     return $value(1);
@@ -1767,21 +1892,21 @@ class ResponseExampleExtractor
             case 'whenCounted':
                 $relation = $literal(0);
                 if (! is_string($relation) || ! in_array($this->buildRelationPath($ctx['prefix'], $relation), $ctx['counts'], true)) {
-                    return new MissingValue();
+                    return new MissingValue;
                 }
 
                 return isset($args[1]) ? $value(1) : 1;
             case 'whenAggregated':
-                return new MissingValue();
+                return new MissingValue;
             case 'mergeWhen':
             case 'mergeUnless':
             case 'merge':
                 $index = $helper === 'merge' ? 0 : 1;
                 $merged = isset($args[$index]) ? $this->resourceExpressionValue($ctx, $args[$index]['orig'], null) : null;
 
-                return is_array($merged) ? new MergeValue($merged) : new MissingValue();
+                return is_array($merged) ? new MergeValue($merged) : new MissingValue;
             default:
-                return new MissingValue();
+                return new MissingValue;
         }
     }
 
@@ -1806,7 +1931,7 @@ class ResponseExampleExtractor
             $fqcn = $this->collectedResource($fqcn);
             $isCollection = true;
             if ($fqcn === null) {
-                return new MissingValue();
+                return new MissingValue;
             }
         }
 
@@ -1831,14 +1956,14 @@ class ResponseExampleExtractor
         if (is_string($relation) && $relation !== '') {
             $path = $this->buildRelationPath($ctx['prefix'], $relation);
             if (! $this->shouldIncludeNestedRelation($path, $ctx['eager'], $allowWithoutEagerLoad)) {
-                return new MissingValue();
+                return new MissingValue;
             }
             $relatedModel = $ctx['model'] !== null ? ($this->models->relation($ctx['model'], $relation)['class'] ?? null) : null;
         }
 
         $example = $this->resourceExample($fqcn, $ctx['eager'], $ctx['counts'], $path, $ctx['stack'], $relatedModel);
         if ($example === null) {
-            return new MissingValue();
+            return new MissingValue;
         }
 
         return $isCollection ? [$example] : $example;
@@ -1866,7 +1991,7 @@ class ResponseExampleExtractor
             return $guess;
         }
 
-        $typed = $this->typedExpressionExample('$this->' . $attribute . $rest, $key);
+        $typed = $this->typedExpressionExample('$this->'.$attribute.$rest, $key);
         if (! $typed instanceof Unresolved) {
             return $typed;
         }
@@ -1905,17 +2030,17 @@ class ResponseExampleExtractor
             }
             if ($model === null) {
                 $base = preg_replace('/Resource$/', '', $ref->getShortName());
-                $namespaces = array_unique(['App\\Models\\', rtrim(app()->getNamespace(), '\\') . '\\Models\\']);
+                $namespaces = array_unique(['App\\Models\\', rtrim(app()->getNamespace(), '\\').'\\Models\\']);
                 foreach ($namespaces as $namespace) {
-                    if ($base !== '' && $this->models->isModel($namespace . $base)) {
-                        $model = $namespace . $base;
+                    if ($base !== '' && $this->models->isModel($namespace.$base)) {
+                        $model = $namespace.$base;
 
                         break;
                     }
                 }
             }
         } catch (Throwable $e) {
-            $this->debug('could not resolve model for ' . $resourceClass, $e);
+            $this->debug('could not resolve model for '.$resourceClass, $e);
         }
 
         return $this->resourceModels[$resourceClass] = $model;
@@ -2030,7 +2155,7 @@ class ResponseExampleExtractor
 
             return $exception instanceof HttpExceptionInterface ? $exception->getStatusCode() : null;
         } catch (Throwable $e) {
-            $this->debug('could not determine status of ' . $class, $e);
+            $this->debug('could not determine status of '.$class, $e);
 
             return null;
         }
@@ -2056,14 +2181,14 @@ class ResponseExampleExtractor
     {
         $text = SymfonyResponse::$statusTexts[$status] ?? null;
 
-        return $text !== null ? $text . '.' : 'An error occurred.';
+        return $text !== null ? $text.'.' : 'An error occurred.';
     }
 
     private function debug(string $message, Throwable $e): void
     {
         try {
             if (config('app.debug')) {
-                logger()->debug('g4t/swagger: ' . $message, [
+                logger()->debug('g4t/swagger: '.$message, [
                     'action' => $this->currentAction,
                     'exception' => $e,
                 ]);

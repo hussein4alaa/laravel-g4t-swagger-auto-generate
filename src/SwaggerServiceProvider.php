@@ -3,6 +3,7 @@
 namespace G4T\Swagger;
 
 use G4T\Swagger\Commands\GenerateDocsCommand;
+use G4T\Swagger\Commands\MakeExtensionCommand;
 use G4T\Swagger\Commands\PublishSwaggerMockServerCommand;
 use G4T\Swagger\Commands\SwaggerCacheCommand;
 use G4T\Swagger\Support\Settings;
@@ -60,6 +61,7 @@ class SwaggerServiceProvider extends ServiceProvider
             GenerateDocsCommand::class,
             SwaggerCacheCommand::class,
             PublishSwaggerMockServerCommand::class,
+            MakeExtensionCommand::class,
         ]);
     
     

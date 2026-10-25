@@ -19,6 +19,12 @@ class BasicAuthentication
 
     public function handle(Request $request, Closure $next): Response
     {
+        // A link that does not work says why, instead of a password prompt (or the public docs).
+        $problem = PartnerLinks::problem($request);
+        if ($problem !== null) {
+            return $this->brokenLink($request, $problem);
+        }
+
         // A partner link is its own credential.
         if (! config('swagger.enable_auth') || PartnerLinks::current($request) !== null) {
             return $next($request);
@@ -72,6 +78,27 @@ class BasicAuthentication
         [$username, $password] = explode(':', $decoded, 2);
 
         return [$username, $password];
+    }
+
+    /**
+     * 410 for an expired link, 403 for one that is not valid: a page in the browser, JSON for the document URL.
+     *
+     * @param  array{reason: string, expires: ?string}  $problem
+     */
+    private function brokenLink(Request $request, array $problem): Response
+    {
+        $expired = $problem['reason'] === 'expired';
+        $status = $expired ? Response::HTTP_GONE : Response::HTTP_FORBIDDEN;
+        $headers = ['Cache-Control' => 'no-store'];
+
+        if ($request->expectsJson() || $request->routeIs('swagger.json')) {
+            return response()->json([
+                'message' => $expired ? 'This documentation link expired on '.$problem['expires'].'.' : 'This documentation link is not valid.',
+                'reason' => $problem['reason'],
+            ], $status, $headers);
+        }
+
+        return response()->view('swagger::partner-link', ['expired' => $expired, 'expires' => $problem['expires']], $status, $headers);
     }
 
     private function unauthorized(string $message = 'Unauthorized.'): Response

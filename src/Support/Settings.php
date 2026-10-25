@@ -152,7 +152,7 @@ final class Settings
     /**
      * Partner links ({@see PartnerLinks}); only the sha256 of each token is kept.
      *
-     * @return list<array{id: string, name: string, hash: string, tags: list<string>, expires: ?string, created: ?string}>
+     * @return list<array{id: string, name: string, hash: string, secret: ?string, tags: list<string>, operations: list<string>, security: ?list<string>, versions: ?list<string>, environments: ?list<string>, expires: ?string, created: ?string}>
      */
     public static function links(): array
     {
@@ -314,15 +314,37 @@ final class Settings
                 'id' => is_string($link['id'] ?? null) ? mb_substr($link['id'], 0, 40) : substr($link['hash'], 0, 12),
                 'name' => is_string($link['name'] ?? null) ? mb_substr(trim($link['name']), 0, 60) : 'Partner',
                 'hash' => $link['hash'],
+                // The token encrypted with the app key, so the dashboard can show the address again.
+                'secret' => is_string($link['secret'] ?? null) ? $link['secret'] : null,
                 'tags' => array_values(array_unique(array_filter((array) ($link['tags'] ?? []), 'is_string'))),
                 // Single endpoints (operation ids), also ones hidden from the public docs.
                 'operations' => array_values(array_unique(array_filter((array) ($link['operations'] ?? []), 'is_string'))),
+                // Security schemes the link's docs show; null keeps every scheme of the docs.
+                'security' => self::linkNames($link['security'] ?? null),
+                // Versions it can open (null: every version) and shared environments it shows (null: all, []: none).
+                'versions' => self::linkNames($link['versions'] ?? null),
+                'environments' => self::linkNames($link['environments'] ?? null, true),
                 'expires' => $date($link['expires'] ?? null),
                 'created' => $date($link['created'] ?? null),
             ];
         }
 
         return $out;
+    }
+
+    /**
+     * A link's list of names; null when it takes the default (an empty list too, unless $allowEmpty).
+     *
+     * @return list<string>|null
+     */
+    private static function linkNames(mixed $names, bool $allowEmpty = false): ?array
+    {
+        if (! is_array($names)) {
+            return null;
+        }
+        $names = array_values(array_unique(array_filter($names, fn ($name) => is_string($name) && $name !== '')));
+
+        return $names === [] && ! $allowEmpty ? null : $names;
     }
 
     private static function merged(string $key, mixed $value, mixed $base): mixed

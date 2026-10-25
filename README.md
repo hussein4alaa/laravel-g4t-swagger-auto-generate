@@ -80,6 +80,7 @@ flowchart LR
 - [A five-minute tour](#-a-five-minute-tour)
 - [Describing your API](#%EF%B8%8F-describing-your-api)
 - [What is read from your code](#-what-is-read-from-your-code) · [Requests](#requests) · [Responses](#responses) · [Repositories and helpers](#repositories-and-helpers) · [Your own examples](#your-own-examples)
+- [Extensions](#-extensions)
 - [The documentation UI](#%EF%B8%8F-the-documentation-ui) · [Finding things](#finding-things) · [Trying requests](#trying-requests) · [Sharing and code](#sharing-and-code) · [Appearance](#appearance)
 - [Logging in from the docs](#-logging-in-from-the-docs)
 - [Security schemes, headers and environments](#%EF%B8%8F-security-schemes-headers-and-environments)
@@ -290,6 +291,79 @@ For `GET /api/products/{product}` on `ProductController`, that is `storage/swagg
 
 ---
 
+## 🧩 Extensions
+
+Teach the generator about code it cannot read on its own: Spatie Laravel Data, Laravel Actions, JSON:API, your own DTOs or response helpers. An extension is a class with up to four hooks; override only the ones you need.
+
+Response wrappers need no extension. `return ApiResponse::success($user)`, a trait method like `$this->successResponse($data)` and your own helper functions like `api_success($data)` are followed, with the status they pass and the resource or model inside.
+
+```bash
+php artisan make:swagger-extension SpatieData   # app/Swagger/SpatieDataExtension.php
+```
+
+```php
+use G4T\Swagger\Extensions\{Example, Extension, RequestSpec, ReturnedValue, RouteInfo};
+use Spatie\LaravelData\Data;
+use Illuminate\Support\Str;
+
+class SpatieDataExtension extends Extension
+{
+    // public function store(UserData $data)  →  the JSON body
+    public function request(RouteInfo $route): ?RequestSpec
+    {
+        $class = $route->parameterClass(Data::class);
+
+        return $class ? RequestSpec::fromClass($class, fn ($name) => Str::snake($name)) : null;
+    }
+
+    // return UserData::from($user)  →  the example and a reusable UserData schema
+    public function response(ReturnedValue $value): ?Example
+    {
+        return $value->isStaticCallOn(Data::class, 'from')
+            ? Example::fromClass($value->staticCall()['class'], fn ($name) => Str::snake($name))
+            : null;
+    }
+}
+```
+
+Register it in `config/swagger.php`, or from a package's service provider:
+
+```php
+"extensions" => [App\Swagger\SpatieDataExtension::class],
+```
+
+```php
+\G4T\Swagger\Swagger::extend(SpatieDataExtension::class);   // in boot()
+```
+
+| Hook | Called with | Returns |
+|---|---|---|
+| `request(RouteInfo $route)` | Every documented route, before the FormRequest rules are read | A `RequestSpec`, or `null` to let the next extension (then the FormRequest) decide |
+| `response(ReturnedValue $value)` | Every returned expression, and values nested in a `json([...])` payload, in controllers and the repositories / helpers they call | An `Example`, or `null` |
+| `operation(array $operation, RouteInfo $route)` | Every OpenAPI operation, once built | The operation, changed or not (content types, extra responses, headers…) |
+| `document(array $document)` | The whole document, at the end | The document |
+
+**Building blocks**
+
+| | |
+|---|---|
+| `RequestSpec::fromRules($rules)` | Laravel rules, read exactly like a FormRequest: types, enums, files, nested fields |
+| `RequestSpec::fromClass($class, $key)` | A JSON body from a class's public typed properties; `$key` maps names (e.g. snake case) |
+| `RequestSpec::fromSchema($schema)` | An OpenAPI schema, as is |
+| `->asQuery()` | The rules describe query parameters, even on POST |
+| `Example::of($value, $component)` | A literal example; with a component name it becomes a `$ref` schema |
+| `Example::fromClass($class, $key)` / `Example::listOf(...)` | An example from typed properties; the class and nested classes become components |
+| `$example->wrap(fn ($v) => ['data' => $v])` | An envelope around it |
+| `RouteInfo` | `route`, `method`, `uri`, `controller`, `action`, `operationId`, `tag`, `reflection()`, `parameterClass($class)`, `hasMiddleware($name)` |
+| `ReturnedValue` | `source`, `class`, `method`, `staticCall()`, `newObject()`, `isStaticCallOn($class, $method)`, `resolveClass($name)` |
+
+`fromClass()` types `array` and collection properties from a `@var list<X>` / `X[]` doc comment (or `@param` on a promoted constructor parameter), and reads enums and dates.
+
+> [!NOTE]
+> Nothing is executed and an extension cannot break the docs: an exception in a hook is logged (with `APP_DEBUG`) and ignored. Without extensions there is no extra cost.
+
+---
+
 ## 🖥️ The documentation UI
 
 Three interfaces ship with the package. Pick one with `ui`, or with `?ui=` on the URL for one visit:
@@ -471,8 +545,12 @@ A secret address per partner or client, for when you want someone to see part of
 - Opens the g4t UI **without the docs password**, even when the docs are turned off with `SWAGGER_ENABLED=false`.
 - Shows only what you pick: whole sections, single endpoints found with a search, or both, and only the schemas they use.
 - A single endpoint is shown even when it is hidden from the public docs (with the dashboard eye or `->hiddenDoc()`), so you can share an internal endpoint with one client only.
+- Versions, shared environments and security schemes: **Default** (all of them), or only the ones you pick. Environments can also be **None**, which keeps their base URLs and values private.
+  - A link limited to some versions never opens another one, even with `?version=` in the address.
+  - With picked schemes, protected endpoints ask for those schemes, and only their Try it out logins are shown.
 - Can expire on a date. Removing the link revokes it.
-- Only a sha256 of each link is stored, so copy the address when you create it.
+- The address always shows in the dashboard. **New address** makes another one, and the old one stops working when you save, for example when it leaked.
+- Requests are matched on a sha256 of the token. The token itself is kept encrypted with your `APP_KEY` so the dashboard can show it. If the key changes, the links still work but their addresses can't be shown, so make new ones.
 
 > [!NOTE]
 > Middleware you add in `swagger.middleware` still applies to partner links.
@@ -513,6 +591,7 @@ All keys live in `config/swagger.php`.
 | `response_schemas` | `SWAGGER_RESPONSE_SCHEMAS` | `true` | Response schemas and `$ref` components |
 | `unwrap_resource_collection_examples` | | `true` | Non-paginated collections as a top-level array |
 | `spatie_query_builder` | | `false` | Adds `filter`, `sort` and `include` to GET routes |
+| `extensions` | | `[]` | [Extension](#-extensions) classes |
 | `ui` / `g4t` / `theme` / `scalar` | `SWAGGER_UI`, `SWAGGER_THEME` | `g4t` | The [interface and its look](#appearance) |
 | `enable_auth` | `SWAGGER_AUTH_ENABLED` | `false` | Basic Auth on the docs (`SWAGGER_USERNAME`, `SWAGGER_PASSWORD`) |
 | `session_ttl` | `SWAGGER_SESSION_TTL` | `100000` | Basic Auth idle timeout in seconds, when the docs run with a session |
@@ -551,6 +630,7 @@ A short checklist for a public or staging server:
 |---|---|
 | `swagger:cache` | Writes the OpenAPI document to the cache file; `--clear` removes it |
 | `make:swagger` | Older alias of `swagger:cache` |
+| `make:swagger-extension {name}` | Creates an [extension](#-extensions) class in `app/Swagger` |
 | `swagger:mock-server` | Uploads your document to the G4T mock server (experimental) |
 
 <details>

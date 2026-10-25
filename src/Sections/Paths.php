@@ -2,6 +2,8 @@
 
 namespace G4T\Swagger\Sections;
 
+use G4T\Swagger\Extensions\Extensions;
+use G4T\Swagger\Extensions\RouteInfo;
 use G4T\Swagger\Responses\DeleteResponse;
 use G4T\Swagger\Responses\GetResponse;
 use G4T\Swagger\Responses\PatchResponse;
@@ -56,7 +58,14 @@ trait Paths
                     $variantRoute['operation_id'] = $this->generateOperationId($variant['uri'], $method);
                 }
 
-                $groupedData[$variant['uri']][strtolower($method)] = $responders[$method]::index($variantRoute);
+                $operation = $responders[$method]::index($variantRoute);
+                if (($route['route_info'] ?? null) instanceof RouteInfo) {
+                    $info = clone $route['route_info'];
+                    $info->uri = $variant['uri'];
+                    $info->operationId = (string) ($operation['operationId'] ?? $info->operationId);
+                    $operation = Extensions::operation($operation, $info);
+                }
+                $groupedData[$variant['uri']][strtolower($method)] = $operation;
             }
         }
 

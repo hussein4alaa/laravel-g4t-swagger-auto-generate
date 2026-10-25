@@ -96,6 +96,24 @@ class DashboardTest extends TestCase
         $this->assertSame(0, $exitCode, "The dashboard script does not parse:\n".implode("\n", $output));
     }
 
+    public function test_every_page_has_its_own_address(): void
+    {
+        $this->withSession(self::SESSION)->get('/swagger/dashboard/endpoints')->assertOk()->assertSee('"page":"endpoints"', false);
+        $this->withSession(self::SESSION)->get('/swagger/dashboard/partner-links')->assertOk()->assertSee('"page":"partner-links"', false);
+        $this->withSession(self::SESSION)->get('/swagger/dashboard')->assertOk()->assertSee('"page":"overview"', false);
+        $this->withSession(self::SESSION)->get('/swagger/dashboard/nope')->assertNotFound();
+    }
+
+    public function test_signing_in_returns_to_the_page_that_asked_for_it(): void
+    {
+        $this->get('/swagger/dashboard/security')->assertOk()->assertSee('name="page" value="security"', false);
+
+        $this->post('/swagger/dashboard/login', ['username' => 'admin', 'password' => 'secret-password', 'page' => 'security'])
+            ->assertRedirect('/swagger/dashboard/security');
+        $this->post('/swagger/dashboard/login', ['username' => 'admin', 'password' => 'secret-password', 'page' => 'https://evil.test'])
+            ->assertRedirect('/swagger/dashboard');
+    }
+
     public function test_changing_the_dashboard_username_ends_sessions(): void
     {
         config(['swagger.dashboard.username' => 'someone-else']);

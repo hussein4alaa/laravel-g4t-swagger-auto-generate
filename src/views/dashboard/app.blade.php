@@ -34,7 +34,7 @@
         </header>
 
         <div class="d-layout">
-            <nav class="d-nav" id="d-nav" aria-label="Settings sections"></nav>
+            <nav class="d-nav" id="d-nav" aria-label="Settings pages"></nav>
             <main class="d-main">
                 <div class="d-content" id="d-content">
                     <div class="g4t-loading"><span class="g4t-spinner" aria-hidden="true"></span>Loading settings…</div>
@@ -47,7 +47,7 @@
     </div>
 
     <script>
-        window.G4T_DASHBOARD = {!! json_encode(['urls' => $urls, 'user' => $user], JSON_UNESCAPED_SLASHES | JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) !!};
+        window.G4T_DASHBOARD = {!! json_encode(['urls' => $urls, 'user' => $user, 'page' => $page], JSON_UNESCAPED_SLASHES | JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) !!};
     </script>
     @include('swagger::dashboard.script')
 </body>

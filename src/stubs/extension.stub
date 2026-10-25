@@ -1,0 +1,59 @@
+<?php
+
+namespace {{ namespace }};
+
+use G4T\Swagger\Extensions\Example;
+use G4T\Swagger\Extensions\Extension;
+use G4T\Swagger\Extensions\RequestSpec;
+use G4T\Swagger\Extensions\ReturnedValue;
+use G4T\Swagger\Extensions\RouteInfo;
+
+/**
+ * Teaches g4t/swagger about … (describe what this extension reads).
+ *
+ * Register it in config/swagger.php:  "extensions" => [\{{ namespace }}\{{ class }}::class],
+ * Every hook is optional: delete the ones you do not need.
+ */
+class {{ class }} extends Extension
+{
+    /**
+     * The request body (POST / PUT / PATCH) or query parameters of a route.
+     */
+    public function request(RouteInfo $route): ?RequestSpec
+    {
+        // Example: an action parameter typed with a DTO becomes the JSON body.
+        // if ($class = $route->parameterClass(\App\Data\Data::class)) {
+        //     return RequestSpec::fromClass($class);            // or RequestSpec::fromRules($class::rules())
+        // }
+
+        return null;
+    }
+
+    /**
+     * The example of a value a controller returns, e.g. `UserData::from($user)`.
+     */
+    public function response(ReturnedValue $value): ?Example
+    {
+        // if ($value->isStaticCallOn(\App\Data\Data::class, 'from')) {
+        //     return Example::fromClass($value->staticCall()['class']);
+        // }
+
+        return null;
+    }
+
+    /**
+     * One OpenAPI operation, after it is built.
+     */
+    public function operation(array $operation, RouteInfo $route): array
+    {
+        return $operation;
+    }
+
+    /**
+     * The whole OpenAPI document, at the end.
+     */
+    public function document(array $document): array
+    {
+        return $document;
+    }
+}

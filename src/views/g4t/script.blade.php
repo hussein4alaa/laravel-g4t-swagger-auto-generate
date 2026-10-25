@@ -705,13 +705,17 @@
         els.download.hidden = !state.downloadOpen;
         els.downloadBtn.setAttribute('aria-expanded', state.downloadOpen ? 'true' : 'false');
         if (!state.downloadOpen) { return; }
-        els.download.innerHTML = '<div class="g4t-menu-hint" style="font-size:12px">OpenAPI document · ' + esc(state.version) + '</div>' +
-            '<button type="button" role="menuitem" class="g4t-btn" data-action="download" data-value="json">' + ICON.download + 'Download JSON</button>' +
-            '<button type="button" role="menuitem" class="g4t-btn" data-action="download" data-value="yaml">' + ICON.download + 'Download YAML</button>' +
-            '<div class="g4t-menu-hint" style="font-size:12px;margin-top:4px">API clients · requests grouped by section</div>' +
-            '<button type="button" role="menuitem" class="g4t-btn" data-action="export" data-value="postman">' + ICON.download + 'Postman collection</button>' +
-            '<button type="button" role="menuitem" class="g4t-btn" data-action="export" data-value="postman-env">' + ICON.download + 'Postman environment · ' + esc(activeEnv().name) + '</button>' +
-            '<button type="button" role="menuitem" class="g4t-btn" data-action="export" data-value="insomnia">' + ICON.download + 'Insomnia (all environments)</button>';
+        var item = function (action, value, title, sub) {
+            return '<button type="button" role="menuitem" class="g4t-env-item g4t-download-item" data-action="' + action + '" data-value="' + value + '">' + ICON.download +
+                '<span class="g4t-env-item-text"><span>' + esc(title) + '</span><span class="g4t-muted">' + esc(sub) + '</span></span></button>';
+        };
+        els.download.innerHTML = '<div class="g4t-menu-label">OpenAPI document</div>' +
+            item('download', 'json', 'Download JSON', 'Version ' + state.version) +
+            item('download', 'yaml', 'Download YAML', 'Version ' + state.version) +
+            '<div class="g4t-menu-label">API clients</div>' +
+            item('export', 'postman', 'Postman collection', 'Requests grouped by section') +
+            item('export', 'postman-env', 'Postman environment', activeEnv().name) +
+            item('export', 'insomnia', 'Insomnia', 'Requests and all environments');
     }
     function saveFile(name, text, type) {
         var blob = new Blob([text], { type: type });

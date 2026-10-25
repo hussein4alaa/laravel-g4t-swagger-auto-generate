@@ -16,8 +16,31 @@
     .d-header-title { font-weight: 600; font-size: 14px; }
     .d-layout { display: flex; align-items: flex-start; }
     .d-nav { position: sticky; top: 56px; width: 230px; flex: none; height: calc(100vh - 56px); overflow: auto; padding: 18px 12px; border-inline-end: 1px solid var(--border); display: grid; align-content: start; gap: 2px; }
-    .d-nav button { display: flex; align-items: center; justify-content: space-between; gap: 8px; height: 34px; padding-inline: 10px; border: 0; border-radius: 8px; background: transparent; color: var(--text-2); font-size: 13.5px; text-align: start; cursor: pointer; }
-    .d-nav button:hover, .d-nav button[aria-current="true"] { background: var(--surface-2); color: var(--text); }
+    .d-nav a { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 34px; padding-inline: 10px; border-radius: 8px; color: var(--text-2); font-size: 13.5px; text-decoration: none; }
+    .d-nav a:hover { background: var(--surface-2); color: var(--text); }
+    .d-nav a[aria-current="page"] { background: color-mix(in oklab, var(--accent) 12%, transparent); color: var(--accent); font-weight: 600; }
+    .d-nav-group { margin: 14px 10px 4px; font-size: 11px; font-weight: 650; letter-spacing: .06em; text-transform: uppercase; color: var(--text-3); }
+    .d-page-head { display: grid; gap: 6px; }
+    .d-page-head h1 { margin: 0; display: flex; flex-wrap: wrap; align-items: center; gap: 10px; font-size: 24px; font-weight: 650; letter-spacing: -.02em; outline: none; }
+    .d-page-head p { margin: 0; color: var(--text-2); font-size: 13.5px; }
+    .d-crumb { font-size: 12px; font-weight: 600; color: var(--text-3); text-transform: uppercase; letter-spacing: .06em; }
+    .d-pager { display: flex; justify-content: space-between; gap: 12px; margin-top: 8px; }
+    .d-pager a { display: grid; gap: 2px; padding: 10px 14px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface); color: var(--text); font-size: 13.5px; font-weight: 600; text-decoration: none; }
+    .d-pager a:hover { border-color: var(--border-strong); }
+    .d-pager a span { font-size: 11.5px; font-weight: 500; color: var(--text-3); }
+    .d-pager a.is-next { text-align: end; }
+    .d-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 12px; }
+    .d-stat { display: grid; gap: 4px; align-content: start; padding: 16px; border: 1px solid var(--border); border-radius: 14px; background: var(--surface); color: var(--text); text-decoration: none; }
+    .d-stat:hover { border-color: var(--border-strong); }
+    .d-stat-title { font-size: 12.5px; font-weight: 600; color: var(--text-3); }
+    .d-stat-value { font-size: 24px; font-weight: 650; letter-spacing: -.02em; }
+    .d-stat-lines { display: grid; gap: 2px; font-size: 12.5px; color: var(--text-2); }
+    .d-on { color: var(--ok-fg); } .d-off { color: var(--err-fg); }
+    .d-saved { display: grid; gap: 6px; }
+    .d-saved a { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 12px; padding: 10px 12px; border: 1px solid var(--border); border-radius: 10px; color: var(--text); text-decoration: none; font-size: 13.5px; }
+    .d-saved a:hover { border-color: var(--border-strong); }
+    .d-saved a span { font-size: 12px; color: var(--text-3); }
+    .d-alert a { color: inherit; font-weight: 600; }
     .d-nav .d-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--accent); }
     .d-main { flex: 1; min-width: 0; padding: 28px 36px 120px; }
     .d-content { max-width: 860px; margin-inline: auto; display: grid; gap: 22px; }
@@ -85,12 +108,40 @@
     .d-status.is-beta { background: color-mix(in oklab, var(--accent) 14%, transparent); color: var(--accent); }
     .d-status.is-deprecated { background: var(--err-bg); color: var(--err-fg); }
     .d-note-dot { background: var(--warn-bg); color: var(--warn-fg); text-transform: none; }
+    .d-link-choices { display: grid; gap: 14px; padding-top: 12px; border-top: 1px solid var(--border); }
+    .d-sec-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 6px 12px; font-size: 12.5px; font-weight: 500; color: var(--text-2); }
+    .d-sec-tools { display: inline-flex; gap: 12px; }
+    .d-sec-tools .g4t-link-btn { font-size: 12.5px; }
+    .d-sec-tools .g4t-link-btn:disabled { opacity: .4; cursor: default; text-decoration: none; }
+    .d-sec-filter { display: flex; gap: 8px; }
+    .d-sec-filter .d-search { flex: 1; }
+    .d-sec-only { flex: none; height: 36px; }
+    .d-sec-only[aria-pressed="true"] { border-color: var(--accent); color: var(--accent); background: color-mix(in oklab, var(--accent) 8%, var(--surface)); }
+    .d-sec-list { display: grid; max-height: 264px; overflow: auto; border: 1px solid var(--border-strong); border-radius: 10px; background: var(--surface); }
+    .d-sec { display: grid; grid-template-columns: 18px minmax(0, 1fr) auto 44px; align-items: center; gap: 10px; min-height: 44px; padding: 6px 12px; border: 0; border-bottom: 1px solid var(--border); background: none; color: var(--text); font: inherit; font-size: 13px; text-align: start; cursor: pointer; }
+    .d-sec:last-child { border-bottom: 0; }
+    .d-sec:hover { background: var(--surface-2); }
+    .d-sec[aria-checked="true"] { background: color-mix(in oklab, var(--accent) 7%, transparent); }
+    .d-sec-box { display: grid; place-items: center; width: 18px; height: 18px; border: 1.5px solid var(--border-strong); border-radius: 5px; background: var(--surface); color: #fff; }
+    .d-sec[aria-checked="true"] .d-sec-box { border-color: var(--accent); background: var(--accent); }
+    .d-sec-text { display: flex; align-items: baseline; gap: 8px; min-width: 0; }
+    .d-sec-name { flex: none; max-width: 60%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
+    .d-sec-desc { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; color: var(--text-3); }
+    .d-sec-methods { display: inline-flex; gap: 4px; }
+    .d-sec-methods .g4t-method { min-width: 0; padding: 1px 5px; font-size: 9.5px; gap: 3px; }
+    .d-sec-methods .g4t-method b { font-weight: 700; margin-inline-start: 3px; }
+    .d-sec-count { justify-self: end; font: 600 12.5px var(--mono); color: var(--text-2); }
+    .d-sec-of { color: var(--text-3); font-weight: 400; }
+    .d-sec-warn { font: 600 11px var(--sans, inherit); color: var(--warn-fg); }
+    .d-sec-empty { padding: 16px; text-align: center; font-size: 13px; color: var(--text-3); }
+    @media (max-width: 559px) { .d-sec-methods { display: none; } .d-sec { grid-template-columns: 18px minmax(0, 1fr) 44px; } .d-sec-desc { display: none; } }
     .d-chips { display: flex; flex-wrap: wrap; gap: 6px; }
     .d-chip { height: 28px; padding-inline: 10px; border: 1px solid var(--border-strong); border-radius: 999px; background: var(--surface); color: var(--text-2); font: inherit; font-size: 12.5px; cursor: pointer; }
     .d-chip[aria-pressed="true"] { border-color: var(--accent); background: color-mix(in oklab, var(--accent) 12%, transparent); color: var(--accent); font-weight: 600; }
     .d-link-url { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
     .d-link-url input { flex: 1; min-width: 220px; height: 36px; padding-inline: 10px; border: 1px solid var(--border-strong); border-radius: 8px; background: var(--surface-2); color: var(--text); font-size: 12.5px; }
     .d-link-url .d-hint { flex: 1; }
+    .d-hint.d-link-warn { color: var(--warn-fg); font-weight: 500; }
     .d-lang { display: grid; gap: 12px; align-content: start; padding: 12px 14px 14px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface-2); }
     .d-lang-head { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; font-size: 13px; font-weight: 600; }
     .d-lang-head .d-hint { margin-inline-start: auto; }
@@ -125,7 +176,12 @@
     .d-note { padding: 12px 14px; border-radius: 10px; background: var(--surface-2); border: 1px solid var(--border); font-size: 13px; color: var(--text-2); }
 
     @media (max-width: 899px) {
-        .d-nav { display: none; }
+        /* The pages become a scrolling strip under the header. */
+        .d-layout { display: block; }
+        .d-nav { position: sticky; top: 56px; z-index: 5; width: auto; height: auto; display: flex; gap: 4px; overflow-x: auto; padding: 8px 12px; border-inline-end: 0; border-bottom: 1px solid var(--border); background: var(--bg); scrollbar-width: none; }
+        .d-nav::-webkit-scrollbar { display: none; }
+        .d-nav-group { display: none; }
+        .d-nav a { flex: none; white-space: nowrap; }
         .d-main { padding: 22px 16px 120px; }
     }
     @media (max-width: 559px) {

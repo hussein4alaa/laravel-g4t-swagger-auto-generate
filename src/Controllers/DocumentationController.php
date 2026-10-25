@@ -39,6 +39,11 @@ class DocumentationController
         $partner = PartnerLinks::current(request());
 
         $logins = $this->autoLogins();
+        // A link limited to some schemes keeps only the logins that fill one of them.
+        $linkSchemes = $partner !== null ? PartnerLinks::schemes($partner) : null;
+        if ($linkSchemes !== null) {
+            $logins = array_values(array_filter($logins, fn (array $login) => in_array($login['scheme'], $linkSchemes, true)));
+        }
         $shared = [
             'versions' => $this->reformatVersions(),
             // Swagger UI and Scalar have one Login button: the first login.
@@ -140,6 +145,13 @@ class DocumentationController
             ];
         }
 
+        // A partner link shows all, some or none of them.
+        $partner = PartnerLinks::current(request());
+        $names = $partner !== null ? PartnerLinks::environments($partner) : null;
+        if ($names !== null) {
+            $environments = array_values(array_filter($environments, fn (array $environment) => in_array($environment['name'], $names, true)));
+        }
+
         return $environments;
     }
 
@@ -217,7 +229,7 @@ class DocumentationController
     {
         $config = config('swagger');
         $versions = [];
-        foreach ($config['versions'] as $version) {
+        foreach ($this->openVersions() as $version) {
             $versions[] = [
                 'name' => $version,
                 'url' => url($config['url'].'/json?version='.urlencode($version).$this->keyQuery()),
@@ -226,8 +238,29 @@ class DocumentationController
 
         return [
             'versions' => $versions,
-            'default' => $config['default'],
+            'default' => $this->defaultVersion(),
         ];
+    }
+
+    /**
+     * The versions this request may open: a partner link can limit them.
+     *
+     * @return list<string>
+     */
+    private function openVersions(): array
+    {
+        $partner = PartnerLinks::current(request());
+
+        return ($partner !== null ? PartnerLinks::versions($partner) : null) ?? array_values(array_map('strval', (array) config('swagger.versions', [])));
+    }
+
+    /** The configured default when this request may open it, else its first version. */
+    private function defaultVersion(): string
+    {
+        $open = $this->openVersions();
+        $default = (string) config('swagger.default');
+
+        return in_array($default, $open, true) ? $default : (string) ($open[0] ?? $default);
     }
 
     /** "&key=…" for the URLs of a partner page. */
@@ -241,15 +274,22 @@ class DocumentationController
     public function showJsonDocumentation()
     {
         $partner = PartnerLinks::current(request());
+        $version = request()->filled('version') ? (string) request()->query('version') : null;
+        // A link limited to some versions never opens another one (nor everything, without ?version).
+        if ($partner !== null && PartnerLinks::versions($partner) !== null && ! in_array($version, $this->openVersions(), true)) {
+            $version = $this->defaultVersion();
+            // The live build reads the version from the request too.
+            request()->merge(['version' => $version]);
+        }
         // A link that picks single endpoints may pick hidden ones: built with them, then narrowed to the link.
         $data = $partner !== null && $partner['operations'] !== []
             ? (new Swagger)->includingHidden()->swagger()
             : $this->resolveSwaggerSpecification();
-        if (request()->filled('version')) {
-            $data = $this->filter($data);
+        if ($version !== null) {
+            $data = $this->filter($data, $version);
         }
         if ($partner !== null) {
-            $data = PartnerLinks::scope(json_decode(json_encode($data)), $partner['tags'], $partner['operations']);
+            $data = PartnerLinks::scope(json_decode(json_encode($data)), $partner['tags'], $partner['operations'], PartnerLinks::schemes($partner));
         }
 
         return response()->json($data, 200, [], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
@@ -284,10 +324,9 @@ class DocumentationController
      * Keep only paths whose segments contain the requested version (`v1` matches `/api/v1/x`, not `/api/v10/x`)
      * and the tags those paths use.
      */
-    private function filter(array|stdClass $data): stdClass
+    private function filter(array|stdClass $data, string $version): stdClass
     {
         $data = json_decode(json_encode($data));
-        $version = (string) request()->version;
         if ($version === 'all' || ! $data instanceof stdClass) {
             return $data instanceof stdClass ? $data : new stdClass;
         }

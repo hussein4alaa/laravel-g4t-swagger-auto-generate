@@ -23,6 +23,9 @@ if (DashboardController::available()) {
 
     Route::middleware((array) config('swagger.dashboard.middleware', ['web']))->group(function () use ($dashboard) {
         Route::get("/$dashboard", [DashboardController::class, 'show'])->name('swagger.dashboard');
+        Route::get("/$dashboard/{page}", [DashboardController::class, 'show'])
+            ->where('page', implode('|', array_diff(DashboardController::PAGES, ['overview'])))
+            ->name('swagger.dashboard.page');
         Route::post("/$dashboard/login", [DashboardController::class, 'login']);
 
         Route::middleware(DashboardAuthenticate::class)->group(function () use ($dashboard) {

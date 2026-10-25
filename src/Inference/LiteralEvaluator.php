@@ -15,6 +15,9 @@ use UnitEnum;
  * long array syntax (nested, keyed, spread), casts of literals, {@code __('key')} / {@code trans('key')},
  * {@code Foo::class}, class constants and enum cases (BackedEnum → value, pure enum → name).
  *
+ * A variable is resolved through the optional variable resolver (parameters bound to the caller's
+ * arguments when a call is followed); anything it does not know stays non-literal.
+ *
  * Every sub-expression that is not a literal is handed to the optional fallback (source text plus the
  * array key it belongs to), which returns a placeholder example. Without a fallback, {@see Unresolved}
  * is returned instead.
@@ -28,10 +31,12 @@ final class LiteralEvaluator
     /**
      * @param  (Closure(string): ?string)|null  $classResolver  resolves a class reference as written in the source
      * @param  (Closure(string, ?string): mixed)|null  $fallback  example for a non-literal expression and its array key
+     * @param  (Closure(string): mixed)|null  $variableResolver  value of a variable (name without "$"), or {@see Unresolved}
      */
     public function __construct(
         private ?Closure $classResolver = null,
         private ?Closure $fallback = null,
+        private ?Closure $variableResolver = null,
     ) {
     }
 
@@ -161,6 +166,9 @@ final class LiteralEvaluator
         }
         if ($id === T_CONSTANT_ENCAPSED_STRING) {
             return [$this->decodeString($t[1]), $i + 1];
+        }
+        if ($id === T_VARIABLE && $this->variableResolver !== null) {
+            return [($this->variableResolver)(substr($t[1], 1)), $i + 1];
         }
         if ($id === '[') {
             $close = $this->matchClose($tokens, $i);

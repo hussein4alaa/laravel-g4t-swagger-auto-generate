@@ -171,6 +171,7 @@ Without `->summary()`, a readable summary is derived from the action: `index` â†
 | `response()->json([...], 409)` | Error example (several per status become named examples) |
 | `store` returning a resource, `json(..., 201)` | `201 Created`; `noContent()` gives `204` |
 | `$this->whenLoaded('rel')`, `->load()`, `->with()` | Relations are included only when they are loaded |
+| `return $this->repository->store($request)`, `return Helper::responseSuccess('Saved')`, `return $this->respond(...)` | The called method is read too (up to 3 calls deep), with its parameters set from the arguments; repositories typed with an interface use the class bound in the container |
 
 Static analysis has limits. To force an example for a status, add a JSON file under `storage/swagger/{Controller}/{uri}/{status}.json`, where `{Controller}` is the controller name without "Controller" and `{uri}` is the route URI with `/`, `{`, `}` and `?` replaced by `-`:
 

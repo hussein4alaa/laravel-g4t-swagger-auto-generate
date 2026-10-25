@@ -13,9 +13,12 @@ use Illuminate\Http\Resources\Json\JsonResource;
 use Illuminate\Http\Resources\Json\ResourceCollection;
 use Illuminate\Http\Resources\MergeValue;
 use Illuminate\Http\Resources\MissingValue;
+use Closure;
 use ReflectionClass;
+use ReflectionFunction;
 use ReflectionMethod;
 use ReflectionNamedType;
+use ReflectionProperty;
 use Symfony\Component\HttpKernel\Exception\HttpExceptionInterface;
 use Symfony\Component\HttpFoundation\Response as SymfonyResponse;
 use Throwable;
@@ -24,6 +27,8 @@ use Throwable;
  * Derives OpenAPI examples from controller source without executing it: response()->json([...]) / new
  * JsonResponse(...) payloads, foreach-built arrays, plain {@code return [...]} shapes, literal strings, and
  * JsonResource patterns (typed through Eloquent casts), plus error payloads from abort() / HTTP exceptions.
+ * A returned call ({@code $this->repository->store($request)}, {@code Helper::responseSuccess('Saved')}) is
+ * followed into the called method, with its parameters bound to the call's arguments.
  *
  * Source is always searched on a masked copy (comments removed, string contents blanked) so code inside
  * strings or comments is never matched; values are produced by {@see LiteralEvaluator} (no eval()).
@@ -36,6 +41,9 @@ class ResponseExampleExtractor
 
     /** How many times the same resource class may appear among the ancestors of a nested resource. */
     private const MAX_SAME_RESOURCE_ANCESTORS = 1;
+
+    /** How many calls deep a response is followed (controller → repository → helper …). */
+    private const MAX_FOLLOW_DEPTH = 3;
 
     private const RESOURCE_CALL = '/^\(*\s*(?:new\s+(\\\\?[A-Za-z_][\w\\\\]*)\s*\(|(\\\\?[A-Za-z_][\w\\\\]*)\s*::\s*(make|collection)\s*\()/';
 
@@ -158,23 +166,7 @@ class ResponseExampleExtractor
         }
 
         try {
-            $out = [];
-            foreach ($this->jsonCalls($ctx) as $call) {
-                $status = $this->jsonCallStatus($ctx, $call);
-                if ($status === null || $status < 400 || $call['data'] === null) {
-                    continue;
-                }
-                $payload = ResponseSchema::strip($this->payloadExample($ctx, $call['data']['orig'], $call['data']['masked'], $call['offset']));
-                if (is_array($payload) && $payload !== []) {
-                    $out[$status][] = $payload;
-                }
-            }
-
-            foreach ([$this->abortExamples($ctx), $this->thrownExceptionExamples($ctx)] as $examples) {
-                foreach ($examples as [$status, $payload]) {
-                    $out[$status][] = $payload;
-                }
-            }
+            $out = $this->errorExamples($ctx);
 
             foreach ($out as $status => $payloads) {
                 $unique = [];
@@ -194,6 +186,44 @@ class ResponseExampleExtractor
     }
 
     /**
+     * Error payloads of one method, including the ones of the calls it returns.
+     *
+     * @param  array<string, mixed>  $ctx
+     * @return array<int, list<array<string, mixed>>>
+     */
+    private function errorExamples(array $ctx): array
+    {
+        $out = [];
+        foreach ($this->jsonCalls($ctx) as $call) {
+            $status = $this->jsonCallStatus($ctx, $call);
+            if ($status === null || $status < 400 || $call['data'] === null) {
+                continue;
+            }
+            $payload = ResponseSchema::strip($this->payloadExample($ctx, $call['data']['orig'], $call['data']['masked'], $call['offset']));
+            if (is_array($payload) && $payload !== []) {
+                $out[$status][] = $payload;
+            }
+        }
+
+        foreach ([$this->abortExamples($ctx), $this->thrownExceptionExamples($ctx)] as $examples) {
+            foreach ($examples as [$status, $payload]) {
+                $out[$status][] = $payload;
+            }
+        }
+
+        foreach ($this->returnStatements($ctx) as $return) {
+            $callee = $this->followedCall($ctx, $return['orig'], $return['masked']);
+            foreach ($callee === null ? [] : $this->errorExamples($callee) as $status => $payloads) {
+                foreach ($payloads as $payload) {
+                    $out[$status][] = $payload;
+                }
+            }
+        }
+
+        return $out;
+    }
+
+    /**
      * HTTP status of the successful response: 201 for json(..., 201) / Response::HTTP_CREATED / status: 201
      * or a JsonResource returned from a "store" action, 204 for response()->noContent() as the only success
      * return, otherwise 200.
@@ -206,59 +236,89 @@ class ResponseExampleExtractor
         }
 
         try {
-            foreach ($this->jsonCalls($ctx) as $call) {
-                $status = $this->jsonCallStatus($ctx, $call);
-                if ($status !== null && $status < 400) {
-                    return $status;
-                }
-            }
-
-            $noContent = false;
-            $otherSuccess = false;
-            foreach ($this->returnStatements($ctx) as $return) {
-                $m = $return['masked'];
-                if ($this->isJsonFactoryExpression($m)) {
-                    continue;
-                }
-                if (preg_match('/->\s*setStatusCode\s*\(/', $m, $sm, PREG_OFFSET_CAPTURE)) {
-                    $args = CodeScanner::arguments($return['orig'], $m, $sm[0][1] + strlen($sm[0][0]) - 1);
-                    $status = isset($args[0]) ? $this->resolveStatusExpression($ctx, $args[0]['orig'], $args[0]['masked'], $return['offset']) : null;
-                    if ($status !== null && $status < 400) {
-                        return $status;
-                    }
-                }
-                if (preg_match('/^response\s*\(\s*\)\s*->\s*noContent\s*\(/', $m)) {
-                    $noContent = true;
-
-                    continue;
-                }
-                if (preg_match('/^response\s*\(/', $m, $rm)) {
-                    $args = CodeScanner::arguments($return['orig'], $m, strlen($rm[0]) - 1);
-                    $statusArg = CodeScanner::argument($args, 1, 'status');
-                    $status = $statusArg === null ? 200 : $this->resolveStatusExpression($ctx, $statusArg['orig'], $statusArg['masked'], $return['offset']);
-                    if ($status === 204) {
-                        $noContent = true;
-
-                        continue;
-                    }
-                    if ($status !== null && $status < 400) {
-                        return $status;
-                    }
-
-                    continue;
-                }
-                if (strtolower($ctx['method']) === 'store' && $this->resourceCallKind($ctx, $m) === 'single') {
-                    return 201;
-                }
-                $otherSuccess = true;
-            }
-
-            return $noContent && ! $otherSuccess ? 204 : 200;
+            return $this->successStatus($ctx) ?? 200;
         } catch (Throwable $e) {
             $this->debug('success status inference failed', $e);
 
             return 200;
         }
+    }
+
+    /**
+     * Success status of one method, following the calls it returns; null when every path it can see
+     * is an error response (a helper like {@code responseError()}) or it returns nothing.
+     *
+     * @param  array<string, mixed>  $ctx
+     */
+    private function successStatus(array $ctx): ?int
+    {
+        foreach ($this->jsonCalls($ctx) as $call) {
+            $status = $this->jsonCallStatus($ctx, $call);
+            if ($status !== null && $status < 400) {
+                return $status;
+            }
+        }
+
+        $noContent = false;
+        $otherSuccess = false;
+        foreach ($this->returnStatements($ctx) as $return) {
+            $m = $return['masked'];
+            if ($this->isJsonFactoryExpression($m)) {
+                continue;
+            }
+            if (preg_match('/->\s*setStatusCode\s*\(/', $m, $sm, PREG_OFFSET_CAPTURE)) {
+                $args = CodeScanner::arguments($return['orig'], $m, $sm[0][1] + strlen($sm[0][0]) - 1);
+                $status = isset($args[0]) ? $this->resolveStatusExpression($ctx, $args[0]['orig'], $args[0]['masked'], $return['offset']) : null;
+                if ($status !== null && $status < 400) {
+                    return $status;
+                }
+            }
+            if (preg_match('/^response\s*\(\s*\)\s*->\s*noContent\s*\(/', $m)) {
+                $noContent = true;
+
+                continue;
+            }
+            if (preg_match('/^response\s*\(/', $m, $rm)) {
+                $args = CodeScanner::arguments($return['orig'], $m, strlen($rm[0]) - 1);
+                $statusArg = CodeScanner::argument($args, 1, 'status');
+                $status = $statusArg === null ? 200 : $this->resolveStatusExpression($ctx, $statusArg['orig'], $statusArg['masked'], $return['offset']);
+                if ($status === 204) {
+                    $noContent = true;
+
+                    continue;
+                }
+                if ($status !== null && $status < 400) {
+                    return $status;
+                }
+                $otherSuccess = $otherSuccess || $status === null;
+
+                continue;
+            }
+            if (strtolower($ctx['method']) === 'store' && $this->resourceCallKind($ctx, $m) === 'single') {
+                return 201;
+            }
+            $callee = $this->followedCall($ctx, $return['orig'], $m);
+            if ($callee !== null) {
+                $status = $this->successStatus($callee);
+                if ($status === null) {
+                    continue;
+                }
+                if ($status !== 200 && $status !== 204) {
+                    return $status;
+                }
+                $noContent = $noContent || $status === 204;
+                $otherSuccess = $otherSuccess || $status === 200;
+
+                continue;
+            }
+            $otherSuccess = true;
+        }
+
+        if ($noContent && ! $otherSuccess) {
+            return 204;
+        }
+
+        return $otherSuccess || $noContent ? 200 : null;
     }
 
     /**
@@ -383,6 +443,16 @@ class ResponseExampleExtractor
             $example = $this->resourceExampleFromExpression($ctx, $return['orig'], $return['masked']);
             if ($example !== null) {
                 return $example;
+            }
+            $callee = $this->followedCall($ctx, $return['orig'], $return['masked']);
+            if ($callee !== null) {
+                // Skip calls that only produce error responses (responseError(...) and the like).
+                $example = $this->successStatus($callee) === null ? null : $this->successExample($callee);
+                if ($example !== null) {
+                    return $example;
+                }
+
+                continue;
             }
             if (preg_match('/^\$(\w+)$/', $return['masked'], $vm) && $vm[1] !== 'this') {
                 $rhs = $this->assignmentRhs($ctx, $vm[1], $return['offset']);
@@ -582,12 +652,14 @@ class ResponseExampleExtractor
     {
         $masked = trim($masked);
         if (preg_match('/^\$(\w+)$/', $masked, $vm)) {
-            if ($depth > 0) {
-                return null;
-            }
             $rhs = $this->assignmentRhs($ctx, $vm[1], $beforeOffset);
+            if ($rhs === null) {
+                $bound = $this->boundValue($ctx, $vm[1], true);
 
-            return $rhs === null ? null : $this->resolveStatusExpression($ctx, $rhs['orig'], $rhs['masked'], $rhs['offset'], $depth + 1);
+                return is_int($bound) && $bound >= 100 && $bound <= 599 ? $bound : null;
+            }
+
+            return $depth > 0 ? null : $this->resolveStatusExpression($ctx, $rhs['orig'], $rhs['masked'], $rhs['offset'], $depth + 1);
         }
 
         $value = $this->evaluator($ctx, false)->evaluateStrict($orig);
@@ -615,7 +687,8 @@ class ResponseExampleExtractor
     {
         $masked = $ctx['masked'];
         $prefix = substr($masked, 0, $beforeOffset);
-        if (! preg_match_all('/\$' . preg_quote($varName, '/') . '\s*=(?![=>])/', $prefix, $m, PREG_OFFSET_CAPTURE)) {
+        // From the body only: a parameter default in the signature is not an assignment.
+        if (! preg_match_all('/\$' . preg_quote($varName, '/') . '\s*=(?![=>])/', $prefix, $m, PREG_OFFSET_CAPTURE, $ctx['bodyStart'])) {
             return null;
         }
         $last = end($m[0]);
@@ -653,8 +726,13 @@ class ResponseExampleExtractor
                 return $rows;
             }
             $rhs = $this->assignmentRhs($ctx, $vm[1], $offset);
+            if ($rhs === null) {
+                $bound = $this->boundValue($ctx, $vm[1], false);
 
-            return $rhs === null ? null : $this->payloadExample($ctx, $rhs['orig'], $rhs['masked'], $rhs['offset'], $depth + 1);
+                return is_array($bound) || is_string($bound) ? $bound : null;
+            }
+
+            return $this->payloadExample($ctx, $rhs['orig'], $rhs['masked'], $rhs['offset'], $depth + 1);
         }
 
         $resource = $this->resourceExampleFromExpression($ctx, $orig, $masked);
@@ -727,6 +805,7 @@ class ResponseExampleExtractor
             implode(',', $ctx['counts']),
             $ctx['model'] ?? '',
             $withFallback ? '1' : '0',
+            $ctx['bindingKey'] ?? '',
         ]);
         if (isset($this->evaluators[$key])) {
             return $this->evaluators[$key];
@@ -740,7 +819,161 @@ class ResponseExampleExtractor
                 : fn (string $expr, ?string $key): mixed => $this->placeholderValue($ctx, $expr, $key);
         }
 
-        return $this->evaluators[$key] = new LiteralEvaluator($classResolver, $fallback);
+        $variables = isset($ctx['bindings']) ? fn (string $name): mixed => $this->boundValue($ctx, $name, ! $withFallback) : null;
+
+        return $this->evaluators[$key] = new LiteralEvaluator($classResolver, $fallback, $variables);
+    }
+
+    /**
+     * Value a followed call passed for parameter $name: exact (literal) or, when not strict, also an example
+     * for a non-literal argument. {@see Unresolved} for anything else.
+     *
+     * @param  array<string, mixed>  $ctx
+     */
+    private function boundValue(array $ctx, string $name, bool $strict): mixed
+    {
+        $binding = $ctx['bindings'][$name] ?? null;
+        if ($binding === null) {
+            return Unresolved::instance();
+        }
+
+        return $strict ? $binding['strict'] : $binding['loose'];
+    }
+
+    /**
+     * Context of the method that a whole-expression call resolves to, with its parameters bound to the call's
+     * arguments: {@code Helper::responseSuccess('Saved')}, {@code $this->build($x)} or
+     * {@code $this->repository->store($request)} (property typed with a class, or an interface bound in the
+     * container). Models, resources and facades are left to the other rules.
+     *
+     * @param  array<string, mixed>  $ctx
+     * @return array<string, mixed>|null
+     */
+    private function followedCall(array $ctx, string $orig, string $masked): ?array
+    {
+        $depth = $ctx['followDepth'] ?? 0;
+        $masked = trim($masked);
+        $orig = trim($orig);
+        if ($depth >= self::MAX_FOLLOW_DEPTH || ! str_ends_with($masked, ')')) {
+            return null;
+        }
+
+        try {
+            if (preg_match('/^(\\\\?[A-Za-z_][\w\\\\]*)\s*::\s*(\w+)\s*\(/', $masked, $m)) {
+                $class = $this->resolveClass($ctx, $m[1]);
+                $method = $m[2];
+                if ($class !== null && (! class_exists($class) || $this->models->isModel($class) || is_subclass_of($class, JsonResource::class))) {
+                    return null;
+                }
+            } elseif (preg_match('/^\$this\s*->\s*(\w+)\s*\(/', $masked, $m)) {
+                $class = $ctx['class'];
+                $method = $m[1];
+            } elseif (preg_match('/^\$this\s*->\s*(\w+)\s*\??->\s*(\w+)\s*\(/', $masked, $m)) {
+                $class = $this->propertyClass($ctx, $m[1]);
+                $method = $m[2];
+            } else {
+                return null;
+            }
+            $open = strlen($m[0]) - 1;
+            if ($class === null || CodeScanner::matchClose($masked, $open) !== strlen($masked) - 1) {
+                return null;
+            }
+            $class = $this->concreteClass($class);
+            if ($class === null || ! method_exists($class, $method)) {
+                return null;
+            }
+
+            $key = $class . '@' . $method;
+            $stack = array_merge($ctx['followStack'] ?? [], [$ctx['class'] . '@' . $ctx['method']]);
+            if (in_array($key, $stack, true) || $key === $ctx['class'] . '@' . $ctx['method']) {
+                return null;
+            }
+            $base = $this->methodContext($class, $method);
+            if ($base === null) {
+                return null;
+            }
+
+            $args = CodeScanner::arguments($orig, $masked, $open);
+            $bindings = [];
+            foreach ((new ReflectionMethod($class, $method))->getParameters() as $index => $param) {
+                if ($param->isVariadic()) {
+                    break;
+                }
+                $arg = CodeScanner::argument($args, $index, $param->getName());
+                if ($arg !== null) {
+                    $strict = $this->evaluator($ctx, false)->evaluateStrict($arg['orig']);
+                    $loose = $strict instanceof Unresolved ? $this->evaluateValue($ctx, $arg['orig'], $param->getName()) : $strict;
+                } elseif ($param->isDefaultValueAvailable()) {
+                    $strict = $loose = $param->getDefaultValue();
+                } else {
+                    $strict = $loose = Unresolved::instance();
+                }
+                $bindings[$param->getName()] = ['strict' => $strict, 'loose' => $loose];
+            }
+
+            return [
+                'bindings' => $bindings,
+                'bindingKey' => md5(($ctx['bindingKey'] ?? '') . '>' . $key . '(' . implode(',', array_column($args, 'orig')) . ')'),
+                'followDepth' => $depth + 1,
+                'followStack' => $stack,
+            ] + $base;
+        } catch (Throwable $e) {
+            $this->debug('could not follow ' . $orig, $e);
+
+            return null;
+        }
+    }
+
+    /**
+     * Class of {@code $this->$property}: its type, its {@code @var} doc, or the type of the constructor
+     * parameter assigned to it.
+     *
+     * @param  array<string, mixed>  $ctx
+     */
+    private function propertyClass(array $ctx, string $property): ?string
+    {
+        $class = $ctx['class'];
+        if (property_exists($class, $property)) {
+            $ref = new ReflectionProperty($class, $property);
+            $type = $ref->getType();
+            if ($type instanceof ReflectionNamedType && ! $type->isBuiltin()) {
+                return $type->getName();
+            }
+            $doc = (string) $ref->getDocComment();
+            if (preg_match('/@var\s+\??(\\\\?[A-Za-z_][\w\\\\]*)/', $doc, $dm)) {
+                return $this->source->resolveClass($dm[1], (string) $ref->getDeclaringClass()->getFileName());
+            }
+        }
+
+        $constructor = method_exists($class, '__construct') ? $this->methodContext($class, '__construct') : null;
+        if ($constructor === null) {
+            return null;
+        }
+        $name = preg_match('/\$this\s*->\s*' . preg_quote($property, '/') . '\s*=\s*\$(\w+)\s*;/', $constructor['masked'], $am) ? $am[1] : $property;
+        $type = $constructor['params'][$name] ?? null;
+
+        return $type !== null && (class_exists($type) || interface_exists($type)) ? $type : null;
+    }
+
+    /**
+     * The class itself, or for an interface / abstract class the concrete class bound in the container
+     * ({@code $this->app->bind(Contract::class, Implementation::class)}); nothing is instantiated.
+     */
+    private function concreteClass(string $class): ?string
+    {
+        if (class_exists($class) && ! (new ReflectionClass($class))->isAbstract()) {
+            return $class;
+        }
+        if (! interface_exists($class) && ! class_exists($class)) {
+            return null;
+        }
+
+        $concrete = app()->getBindings()[$class]['concrete'] ?? null;
+        if ($concrete instanceof Closure) {
+            $concrete = (new ReflectionFunction($concrete))->getStaticVariables()['concrete'] ?? null;
+        }
+
+        return is_string($concrete) && $concrete !== $class && class_exists($concrete) ? $concrete : null;
     }
 
     /**

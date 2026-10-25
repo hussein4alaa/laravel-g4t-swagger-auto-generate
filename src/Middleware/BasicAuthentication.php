@@ -3,6 +3,7 @@
 namespace G4T\Swagger\Middleware;
 
 use Closure;
+use G4T\Swagger\Support\PartnerLinks;
 use Illuminate\Http\Request;
 use Symfony\Component\HttpFoundation\Response;
 
@@ -18,7 +19,8 @@ class BasicAuthentication
 
     public function handle(Request $request, Closure $next): Response
     {
-        if (! config('swagger.enable_auth')) {
+        // A partner link is its own credential.
+        if (! config('swagger.enable_auth') || PartnerLinks::current($request) !== null) {
             return $next($request);
         }
 

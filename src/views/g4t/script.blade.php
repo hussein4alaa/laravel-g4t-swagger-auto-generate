@@ -4,6 +4,10 @@
     'use strict';
 
     var S = window.G4T_SETTINGS || {};
+    // Feature modules (g4t/js/*) register click actions, overlay views and keyboard shortcuts here.
+    var ACTIONS = {}, OVERLAYS = {}, KEYS = [];
+    // Every configured login (customer, admin, …); S.autoLogin is the first one.
+    var LOGINS = Array.isArray(S.autoLogins) && S.autoLogins.length ? S.autoLogins : (S.autoLogin ? [S.autoLogin] : []);
     var STATUS = { 0: 'Network error', 200: 'OK', 201: 'Created', 202: 'Accepted', 204: 'No Content', 301: 'Moved', 302: 'Found', 304: 'Not Modified', 400: 'Bad Request', 401: 'Unauthorized', 402: 'Payment Required', 403: 'Forbidden', 404: 'Not Found', 405: 'Method Not Allowed', 409: 'Conflict', 410: 'Gone', 413: 'Too Large', 415: 'Unsupported Media', 419: 'Page Expired', 422: 'Unprocessable', 429: 'Too Many Requests', 500: 'Server Error', 502: 'Bad Gateway', 503: 'Unavailable' };
     // Accent per theme name (light, dark). Unknown themes fall back to the default accent.
     var PALETTES = {
@@ -18,6 +22,10 @@
         chevSm: '<svg aria-hidden="true" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="m6 9 6 6 6-6"></path></svg>',
         copy: '<svg aria-hidden="true" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="12" height="12" rx="2"></rect><path d="M5 15V5a2 2 0 0 1 2-2h10"></path></svg>',
         term: '<svg aria-hidden="true" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m5 8 4 4-4 4M12 16h7"></path></svg>',
+        link: '<svg aria-hidden="true" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.5.5l3-3a5 5 0 0 0-7-7l-1.7 1.7"></path><path d="M14 11a5 5 0 0 0-7.5-.5l-3 3a5 5 0 0 0 7 7l1.7-1.7"></path></svg>',
+        search: '<svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"></circle><path d="m20 20-3.5-3.5"></path></svg>',
+        info: '<svg aria-hidden="true" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"></circle><path d="M12 11v5M12 8h.01"></path></svg>',
+        alert: '<svg aria-hidden="true" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"></path><path d="M12 9v4M12 17h.01"></path></svg>',
         clock: '<svg aria-hidden="true" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"></circle><path d="M12 7v5l3 2"></path></svg>',
         reset: '<svg aria-hidden="true" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"></path><path d="M3 3v5h5"></path></svg>',
         download: '<svg aria-hidden="true" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4v11M7 10l5 5 5-5M5 20h14"></path></svg>',
@@ -46,18 +54,19 @@
         mode: store.get('mode', S.mode || 'light'),
         density: store.get('density', S.density || 'comfortable'),
         theme: store.get('theme', S.defaultTheme || 'default'),
+        lang: store.get('lang', 'en') === 'ar' ? 'ar' : 'en',
         drawer: false, appearOpen: false, authMenuOpen: false,
-        loginOpen: false, loggingIn: false, loginError: '', loginValues: {}, loginTab: S.autoLogin ? 'credentials' : 'token',
+        loginOpen: false, loggingIn: false, loginError: '', loginValues: {}, loginTab: S.autoLogin ? 'credentials' : 'token', loginIndex: 0,
         token: readToken(), server: null, active: null,
         expanded: {}, trying: {}, respTab: {}, exTab: {}, respView: {}, ctype: {},
         bodies: {}, inputs: {}, forms: {}, files: {}, busy: {}, results: {},
         codeLang: store.get('codeLang', 'curl'), codeOpen: {}, historyOpen: {},
         envs: [], envId: null, envsOpen: false, envEdit: null, envMenuOpen: false, downloadOpen: false,
-        creds: {}, credDraft: {}
+        creds: {}, credDraft: {}, matches: {}, overlay: null, problems: {}, casesOpen: {}, caseResults: {}
     };
 
     var $ = function (id) { return document.getElementById(id); };
-    var els = { app: document.querySelector('.g4t-app'), version: $('g4t-version'), auth: $('g4t-auth'), appear: $('g4t-appear'), appearBtn: $('g4t-appear-btn'), filter: $('g4t-filter'), nav: $('g4t-nav'), info: $('g4t-info'), ops: $('g4t-ops'), login: $('g4t-login'), toast: $('g4t-toast'), envBtn: $('g4t-env-btn'), envMenu: $('g4t-env-menu'), envs: $('g4t-envs'), download: $('g4t-download'), downloadBtn: $('g4t-download-btn'), scrim: document.querySelector('.g4t-scrim'), drawerBtn: document.querySelector('.g4t-drawer-btn') };
+    var els = { app: document.querySelector('.g4t-app'), version: $('g4t-version'), auth: $('g4t-auth'), appear: $('g4t-appear'), appearBtn: $('g4t-appear-btn'), filter: $('g4t-filter'), nav: $('g4t-nav'), info: $('g4t-info'), ops: $('g4t-ops'), login: $('g4t-login'), toast: $('g4t-toast'), envBtn: $('g4t-env-btn'), envMenu: $('g4t-env-menu'), envs: $('g4t-envs'), overlay: $('g4t-overlay'), download: $('g4t-download'), downloadBtn: $('g4t-download-btn'), scrim: document.querySelector('.g4t-scrim'), drawerBtn: document.querySelector('.g4t-drawer-btn') };
 
     /* ---------- helpers ---------- */
 
@@ -212,9 +221,20 @@
         return s.format === 'binary' || (schemaType(s) === 'array' && s.items && resolve(s.items).schema.format === 'binary');
     }
 
+    /** Text in the reader's language (x-translations from the dashboard), else the document's own. */
+    function tr(obj, fieldName, fallback) {
+        var t = state.lang !== 'en' && obj && obj['x-translations'] && obj['x-translations'][state.lang];
+        return t && typeof t[fieldName] === 'string' && t[fieldName] !== '' ? t[fieldName] : fallback;
+    }
+    function hasTranslations(spec) {
+        if (!spec) { return false; }
+        if ((spec.info || {})['x-translations'] || (spec.tags || []).some(function (t) { return t && t['x-translations']; })) { return true; }
+        return Object.keys(spec.paths || {}).some(function (path) { return METHODS.some(function (m) { return spec.paths[path][m] && spec.paths[path][m]['x-translations']; }); });
+    }
+
     function buildModel(spec) {
         var ops = [], byTag = {}, tagOrder = [], tagDesc = {};
-        (spec.tags || []).forEach(function (t) { if (t && t.name) { tagOrder.push(t.name); tagDesc[t.name] = t.description || ''; } });
+        (spec.tags || []).forEach(function (t) { if (t && t.name) { tagOrder.push(t.name); tagDesc[t.name] = tr(t, 'description', t.description || ''); } });
         var globalSecurity = Array.isArray(spec.security) ? spec.security : [];
         var used = {};
         Object.keys(spec.paths || {}).forEach(function (path) {
@@ -229,7 +249,9 @@
                 var body = o.requestBody && o.requestBody.$ref ? resolveRef(o.requestBody.$ref) : o.requestBody;
                 var op = {
                     id: id, method: m.toUpperCase(), path: path, tag: (o.tags && o.tags[0]) || 'default',
-                    summary: o.summary || '', desc: o.description || '', deprecated: !!o.deprecated, order: o['x-order'],
+                    // x-description is the text without the status lines appended for Swagger UI / Scalar.
+                    summary: tr(o, 'summary', o.summary || ''), desc: tr(o, 'description', o['x-description'] != null ? o['x-description'] : (o.description || '')), deprecated: !!o.deprecated, order: o['x-order'],
+                    status: o['x-status'] || (o.deprecated ? 'deprecated' : ''), sunset: o['x-sunset'] || '', replacedBy: o['x-replaced-by'] || '', note: o['x-note'] || '',
                     security: Array.isArray(o.security) ? o.security : globalSecurity,
                     params: params, body: body && body.content ? body : null, responses: buildResponses(o.responses || {})
                 };
@@ -464,9 +486,10 @@
         }).join('');
     }
 
+    function currentLogin() { return LOGINS[state.loginIndex] || LOGINS[0] || null; }
     function renderLogin() {
         if (!state.loginOpen) { els.login.innerHTML = ''; return; }
-        var auto = S.autoLogin, tokenTab = !auto || state.loginTab === 'token', fieldsHtml = '', intro, submitLabel;
+        var auto = currentLogin(), tokenTab = !auto || state.loginTab === 'token', fieldsHtml = '', intro, submitLabel;
         if (tokenTab) {
             fieldsHtml = credFieldsHtml();
             intro = 'Stored in this browser and sent with protected requests, the way each scheme expects. A leading “Bearer ” is removed from tokens; leave a field empty to remove it.';
@@ -477,8 +500,14 @@
                 var value = state.loginValues[name] != null ? state.loginValues[name] : ((auto.prefill || {})[name] || '');
                 fieldsHtml += '<label>' + esc(auto.fields[name]) + '<input name="' + esc(name) + '" data-bind="login" type="' + (isPassword ? 'password' : isEmail ? 'email' : 'text') + '" autocomplete="' + (isPassword ? 'current-password' : 'username') + '" required value="' + esc(value) + '"' + (i === 0 ? ' data-autofocus' : '') + '></label>';
             });
-            intro = esc(auto.method + ' ' + auto.url.replace(location.origin, '')) + ' — the token is stored in this browser and sent with protected requests.';
-            submitLabel = 'Log in';
+            intro = esc(auto.method + ' ' + auto.url.replace(location.origin, '')) + ' — the token is stored in this browser and sent with ' + (LOGINS.length > 1 ? 'requests that use ' + esc(auto.scheme) : 'protected requests') + '.';
+            submitLabel = LOGINS.length > 1 ? 'Log in as ' + auto.name : 'Log in';
+            if (LOGINS.length > 1) {
+                fieldsHtml = '<div class="g4t-login-picker" role="radiogroup" aria-label="Log in as">' + LOGINS.map(function (login, i) {
+                    var signedIn = !!credOf(login.scheme);
+                    return '<button type="button" role="radio" aria-checked="' + (i === state.loginIndex) + '" data-action="login-pick" data-value="' + i + '"><span class="g4t-dot' + (signedIn ? ' g4t-dot-on' : '') + '" title="' + (signedIn ? 'Signed in' : 'Not signed in') + '"></span><span>' + esc(login.name) + '</span><span class="g4t-muted g4t-mono">' + esc(login.scheme) + '</span></button>';
+                }).join('') + '</div>' + fieldsHtml;
+            }
         }
         var tabs = auto ? '<div class="g4t-seg" role="tablist" aria-label="Sign-in method" style="grid-template-columns:repeat(2,1fr)">' +
             '<button type="button" role="tab" aria-selected="' + !tokenTab + '" data-action="login-tab" data-value="credentials">Log in</button>' +
@@ -492,13 +521,14 @@
     }
     function openLogin(tab) {
         state.loginOpen = true; state.loginError = ''; state.authMenuOpen = false; state.loginValues = {}; state.credDraft = {};
+        state.loginIndex = Math.min(Number(store.get('loginIndex', 0)) || 0, Math.max(LOGINS.length - 1, 0));
         state.loginTab = S.autoLogin ? (tab || 'credentials') : 'token';
         renderAuth(); renderLogin();
     }
 
     function findToken(payload) {
         var paths = ['token', 'access_token', 'accessToken', 'plainTextToken', 'data.token', 'data.access_token', 'data.accessToken', 'data.plainTextToken', 'token.plainTextToken'];
-        if (S.autoLogin && S.autoLogin.tokenPath) { paths.unshift(S.autoLogin.tokenPath); }
+        if (currentLogin() && currentLogin().tokenPath) { paths.unshift(currentLogin().tokenPath); }
         for (var i = 0; i < paths.length; i++) {
             var value = paths[i].split('.').reduce(function (v, k) { return v && typeof v === 'object' ? v[k] : undefined; }, payload);
             if (typeof value === 'string' && value !== '') { return value; }
@@ -526,12 +556,12 @@
             toast('Authorization saved · sent with protected requests');
             return;
         }
-        var body = {};
-        Object.keys(S.autoLogin.fields || {}).forEach(function (name) {
-            body[name] = state.loginValues[name] != null ? state.loginValues[name] : ((S.autoLogin.prefill || {})[name] || '');
+        var body = {}, login = currentLogin();
+        Object.keys(login.fields || {}).forEach(function (name) {
+            body[name] = state.loginValues[name] != null ? state.loginValues[name] : ((login.prefill || {})[name] || '');
         });
         state.loggingIn = true; state.loginError = ''; renderLogin();
-        fetch(S.autoLogin.url, { method: S.autoLogin.method || 'POST', headers: { 'Accept': 'application/json', 'Content-Type': 'application/json', 'X-Requested-With': 'XMLHttpRequest' }, body: JSON.stringify(body) })
+        fetch(login.url, { method: login.method || 'POST', headers: { 'Accept': 'application/json', 'Content-Type': 'application/json', 'X-Requested-With': 'XMLHttpRequest' }, body: JSON.stringify(body) })
             .then(function (response) {
                 return response.json().catch(function () { return null; }).then(function (payload) {
                     if (!response.ok) { throw new Error(loginErrorMessage(payload, response.status)); }
@@ -539,7 +569,14 @@
                     if (!token) { throw new Error('Logged in, but no token was found in the response. Set swagger.auto_login.token_path.'); }
                     state.loggingIn = false; state.loginOpen = false; state.loginValues = {}; state.results = {};
                     renderLogin();
-                    setToken(token, 'Logged in · token applied');
+                    // The first bearer scheme keeps the shared token (also used by Swagger UI / Scalar); others are credentials of their scheme.
+                    if (login.scheme === primaryBearer() || LOGINS.length < 2) {
+                        setToken(token, 'Logged in' + (LOGINS.length > 1 ? ' as ' + login.name : '') + ' · token applied');
+                    } else {
+                        setCred(login.scheme, { value: token });
+                        state.authMenuOpen = false; renderAuth(); renderInfo(); renderOps();
+                        toast('Logged in as ' + login.name + ' · sent with ' + login.scheme + ' requests');
+                    }
                 });
             })
             .catch(function (error) { state.loggingIn = false; state.loginError = error.message; renderLogin(); });
@@ -670,19 +707,174 @@
         if (!state.downloadOpen) { return; }
         els.download.innerHTML = '<div class="g4t-menu-hint" style="font-size:12px">OpenAPI document · ' + esc(state.version) + '</div>' +
             '<button type="button" role="menuitem" class="g4t-btn" data-action="download" data-value="json">' + ICON.download + 'Download JSON</button>' +
-            '<button type="button" role="menuitem" class="g4t-btn" data-action="download" data-value="yaml">' + ICON.download + 'Download YAML</button>';
+            '<button type="button" role="menuitem" class="g4t-btn" data-action="download" data-value="yaml">' + ICON.download + 'Download YAML</button>' +
+            '<div class="g4t-menu-hint" style="font-size:12px;margin-top:4px">API clients · requests grouped by section</div>' +
+            '<button type="button" role="menuitem" class="g4t-btn" data-action="export" data-value="postman">' + ICON.download + 'Postman collection</button>' +
+            '<button type="button" role="menuitem" class="g4t-btn" data-action="export" data-value="postman-env">' + ICON.download + 'Postman environment · ' + esc(activeEnv().name) + '</button>' +
+            '<button type="button" role="menuitem" class="g4t-btn" data-action="export" data-value="insomnia">' + ICON.download + 'Insomnia (all environments)</button>';
+    }
+    function saveFile(name, text, type) {
+        var blob = new Blob([text], { type: type });
+        var a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = name;
+        document.body.appendChild(a); a.click(); a.remove();
+        setTimeout(function () { URL.revokeObjectURL(a.href); }, 1000);
     }
     function downloadSpec(format) {
         if (!state.spec) { toast('The API definition is not loaded yet'); return; }
         var text = format === 'yaml' ? toYaml(state.spec) + '\n' : JSON.stringify(state.spec, null, 2) + '\n';
-        var blob = new Blob([text], { type: format === 'yaml' ? 'application/yaml' : 'application/json' });
-        var a = document.createElement('a');
-        a.href = URL.createObjectURL(blob);
-        a.download = 'openapi-' + slug(state.version) + '.' + format;
-        document.body.appendChild(a); a.click(); a.remove();
-        setTimeout(function () { URL.revokeObjectURL(a.href); }, 1000);
+        var name = 'openapi-' + slug(state.version) + '.' + format;
+        saveFile(name, text, format === 'yaml' ? 'application/yaml' : 'application/json');
         state.downloadOpen = false; renderDownload();
-        toast('Downloaded ' + a.download);
+        toast('Downloaded ' + name);
+    }
+
+    /* ---------- Postman / Insomnia export ---------- */
+
+    // Exports use the documented examples, never the values typed in Try it out, and never credentials:
+    // {{token}}-style variables are left for the client's environment.
+    function exampleOf(p) {
+        var s = resolve(p.schema || {}).schema;
+        var value = p.example !== undefined ? p.example : s.example !== undefined ? s.example : s.default !== undefined ? s.default : s.enum ? s.enum[0] : sample(p.schema || {});
+        value = displayValue(value);
+        return value === 'string' ? '' : value;
+    }
+    function credentialVar(name, scheme) {
+        var kind = schemeKind(scheme);
+        return kind === 'basic' ? null : kind === 'bearer' && name === primaryBearer() ? 'token' : name;
+    }
+    /** The scheme a request uses in an API client: the first one of its first security requirement. */
+    function exportScheme(op) {
+        if (!op.secured) { return null; }
+        var requirement = op.security.filter(function (r) { return r && Object.keys(r).length; })[0] || {};
+        var name = Object.keys(requirement)[0], scheme = schemeOf(name);
+        return scheme ? { name: name, scheme: scheme, kind: schemeKind(scheme), variable: credentialVar(name, scheme) } : null;
+    }
+    function bodyFor(op) {
+        if (!op.body || ['GET', 'HEAD'].indexOf(op.method) !== -1) { return null; }
+        var json = op.ctypes.indexOf('application/json') !== -1, ctype = json ? 'application/json' : op.ctypes[0];
+        var schema = op.body.content[ctype].schema || {};
+        if (!/multipart|form-urlencoded/.test(ctype)) { return { ctype: ctype, text: pretty(sample(schema)) }; }
+        var s = resolve(schema).schema, required = s.required || [];
+        return { ctype: ctype, fields: Object.keys(s.properties || {}).map(function (name) {
+            var prop = s.properties[name], binary = isBinary(prop), value = binary ? '' : displayValue(sample(prop));
+            return { name: name, file: binary, value: value === 'string' ? '' : value, required: required.indexOf(name) !== -1 };
+        }) };
+    }
+    function exportHeaders(op) {
+        return [{ key: 'Accept', value: 'application/json', required: true }].concat(op.params.filter(function (p) { return p.in === 'header'; }).map(function (p) {
+            return { key: p.name, value: exampleOf(p), required: !!p.required, description: p.description || '' };
+        }));
+    }
+    function exportName() { return slug(((state.spec || {}).info || {}).title || 'api').toLowerCase(); }
+
+    function postmanAuth(op) {
+        var x = exportScheme(op);
+        if (!x) { return { type: 'noauth' }; }
+        if (x.kind === 'basic') { return { type: 'basic', basic: [{ key: 'username', value: '{{username}}', type: 'string' }, { key: 'password', value: '{{password}}', type: 'string' }] }; }
+        if (x.kind === 'apiKey') {
+            return { type: 'apikey', apikey: [{ key: 'key', value: x.scheme.name || x.name, type: 'string' }, { key: 'value', value: '{{' + x.variable + '}}', type: 'string' }, { key: 'in', value: x.scheme.in === 'query' ? 'query' : 'header', type: 'string' }] };
+        }
+        return { type: 'bearer', bearer: [{ key: 'token', value: '{{' + x.variable + '}}', type: 'string' }] };
+    }
+    function postmanItem(op) {
+        var segments = op.path.replace(/^\/+/, '').split('/').map(function (seg) { var m = /^\{(\w+)\??\}$/.exec(seg); return m ? ':' + m[1] : seg; });
+        var query = op.params.filter(function (p) { return p.in === 'query'; }).map(function (p) { return { key: p.name, value: exampleOf(p), disabled: !p.required, description: p.description || '' }; });
+        var enabled = query.filter(function (q) { return !q.disabled; });
+        var request = {
+            method: op.method, auth: postmanAuth(op), description: op.desc || '',
+            header: exportHeaders(op).map(function (h) { return { key: h.key, value: h.value, disabled: !h.required, description: h.description || '' }; }),
+            url: {
+                raw: '{{baseUrl}}/' + segments.join('/') + (enabled.length ? '?' + enabled.map(function (q) { return q.key + '=' + q.value; }).join('&') : ''),
+                host: ['{{baseUrl}}'], path: segments, query: query,
+                variable: op.params.filter(function (p) { return p.in === 'path'; }).map(function (p) { return { key: p.name, value: exampleOf(p) || '1', description: p.description || '' }; })
+            }
+        };
+        var body = bodyFor(op);
+        if (body && body.fields) {
+            request.body = { mode: /urlencoded/.test(body.ctype) ? 'urlencoded' : 'formdata' };
+            request.body[request.body.mode] = body.fields.map(function (f) { return f.file ? { key: f.name, type: 'file', src: [], disabled: !f.required } : { key: f.name, value: f.value, type: 'text', disabled: !f.required }; });
+        } else if (body) {
+            request.body = { mode: 'raw', raw: body.text, options: { raw: { language: 'json' } } };
+            request.header.push({ key: 'Content-Type', value: body.ctype });
+        }
+        return { name: op.summary || op.method + ' ' + op.path, request: request };
+    }
+    function credentialVariables() {
+        var names = [];
+        schemeEntries().forEach(function (e) {
+            if (schemeKind(e[1]) === 'basic') { names.push('username', 'password'); } else { names.push(credentialVar(e[0], e[1])); }
+        });
+        return names.filter(function (n, i) { return n && names.indexOf(n) === i; });
+    }
+    function postmanCollection() {
+        var info = state.spec.info || {};
+        return {
+            info: { name: info.title || 'API', description: info.description || '', schema: 'https://schema.getpostman.com/json/collection/v2.1.0/collection.json' },
+            item: state.model.tags.map(function (t) { return { name: t.name, description: t.desc || '', item: t.ops.map(postmanItem) }; }),
+            variable: [{ key: 'baseUrl', value: state.server || location.origin }]
+        };
+    }
+    function envValues(env) {
+        var values = { baseUrl: subst(env.baseUrl || '') || state.server || location.origin };
+        credentialVariables().forEach(function (n) { values[n] = ''; });
+        (env.vars || []).forEach(function (v) { if (v.key) { values[v.key] = v.value; } });
+        return values;
+    }
+    function postmanEnvironment(env) {
+        var values = envValues(env);
+        return {
+            name: env.name, _postman_variable_scope: 'environment',
+            values: Object.keys(values).map(function (k) { return { key: k, value: values[k], type: credentialVariables().indexOf(k) !== -1 ? 'secret' : 'default', enabled: true }; })
+        };
+    }
+    /** Insomnia writes variables as {{ _.name }}. */
+    function insomniaVars(text) { return typeof text === 'string' ? text.replace(VAR_RE, function (m, name) { return '{{ _.' + name + ' }}'; }) : text; }
+    function insomniaAuth(op) {
+        var x = exportScheme(op);
+        if (!x) { return {}; }
+        if (x.kind === 'basic') { return { type: 'basic', username: '{{ _.username }}', password: '{{ _.password }}' }; }
+        if (x.kind === 'apiKey') { return { type: 'apikey', key: x.scheme.name || x.name, value: '{{ _.' + x.variable + ' }}', addTo: x.scheme.in === 'query' ? 'queryParams' : 'header' }; }
+        return { type: 'bearer', token: '{{ _.' + x.variable + ' }}' };
+    }
+    function insomniaExport() {
+        var info = state.spec.info || {}, resources = [], n = 0;
+        resources.push({ _id: 'wrk_g4t', _type: 'workspace', name: info.title || 'API', description: info.description || '', scope: 'collection' });
+        resources.push({ _id: 'env_g4t_base', _type: 'environment', parentId: 'wrk_g4t', name: 'Base Environment', data: envValues({ baseUrl: '', vars: [] }) });
+        state.envs.forEach(function (env, i) { resources.push({ _id: 'env_g4t_' + i, _type: 'environment', parentId: 'env_g4t_base', name: env.name, data: envValues(env) }); });
+        state.model.tags.forEach(function (t, ti) {
+            var folder = 'fld_g4t_' + ti;
+            resources.push({ _id: folder, _type: 'request_group', parentId: 'wrk_g4t', name: t.name, description: t.desc || '' });
+            t.ops.forEach(function (op) {
+                var path = op.path.replace(/\{(\w+)\??\}/g, function (m, name) { var p = op.params.filter(function (x) { return x.in === 'path' && x.name === name; })[0]; return (p && exampleOf(p)) || '1'; });
+                var body = bodyFor(op), request = {
+                    _id: 'req_g4t_' + (++n), _type: 'request', parentId: folder, name: op.summary || op.method + ' ' + op.path, description: op.desc || '',
+                    method: op.method, url: '{{ _.baseUrl }}' + path, authentication: insomniaAuth(op),
+                    headers: exportHeaders(op).map(function (h) { return { name: h.key, value: insomniaVars(h.value), disabled: !h.required }; }),
+                    parameters: op.params.filter(function (p) { return p.in === 'query'; }).map(function (p) { return { name: p.name, value: insomniaVars(exampleOf(p)), disabled: !p.required }; }),
+                    body: {}
+                };
+                if (body && body.fields) {
+                    request.body = { mimeType: body.ctype, params: body.fields.map(function (f) { return f.file ? { name: f.name, type: 'file', fileName: '', disabled: !f.required } : { name: f.name, value: insomniaVars(f.value), disabled: !f.required }; }) };
+                } else if (body) {
+                    request.body = { mimeType: body.ctype, text: insomniaVars(body.text) };
+                    request.headers.push({ name: 'Content-Type', value: body.ctype });
+                }
+                resources.push(request);
+            });
+        });
+        return { _type: 'export', __export_format: 4, __export_date: new Date().toISOString(), __export_source: 'g4t-swagger', resources: resources };
+    }
+    function exportClient(kind) {
+        if (!state.spec || !state.model) { toast('The API definition is not loaded yet'); return; }
+        var name, data;
+        if (kind === 'postman') { data = postmanCollection(); name = exportName() + '.postman_collection.json'; }
+        else if (kind === 'postman-env') { data = postmanEnvironment(activeEnv()); name = slug(activeEnv().name).toLowerCase() + '.postman_environment.json'; }
+        else { data = insomniaExport(); name = exportName() + '.insomnia.json'; }
+        saveFile(name, JSON.stringify(data, null, 2) + '\n', 'application/json');
+        state.downloadOpen = false; renderDownload();
+        toast('Downloaded ' + name + (kind === 'postman' ? ' · import an environment for {{baseUrl}} and the token' : ''));
     }
 
     /* ---------- info, nav, states ---------- */
@@ -702,20 +894,118 @@
         var total = model ? model.ops.length : 0;
         els.info.innerHTML =
             '<div class="g4t-badges">' + (info.version ? '<span class="g4t-badge">' + esc(info.version) + '</span>' : '') + (spec.openapi ? '<span class="g4t-badge">OAS ' + esc(String(spec.openapi).split('.').slice(0, 2).join('.')) + '</span>' : '') +
-            '<a class="g4t-mono" style="font-size:12px" href="' + esc(url) + '" target="_blank" rel="noopener">' + esc(url.replace(location.origin, '')) + '</a></div>' +
-            '<h1>' + esc(info.title || document.title) + '</h1>' +
-            (info.description ? '<p class="g4t-info-desc">' + esc(info.description) + '</p>' : '') +
+            '<a class="g4t-mono" style="font-size:12px" href="' + esc(url) + '" target="_blank" rel="noopener">' + esc(url.replace(location.origin, '')) + '</a>' +
+            (hasTranslations(spec) ? '<span class="g4t-seg g4t-lang" role="radiogroup" aria-label="Language"><button type="button" role="radio" aria-checked="' + (state.lang === 'en') + '" data-action="lang" data-value="en">English</button><button type="button" role="radio" aria-checked="' + (state.lang === 'ar') + '" data-action="lang" data-value="ar" lang="ar">العربية</button></span>' : '') + '</div>' +
+            (S.partner ? '<div class="g4t-partner">' + ICON.link + '<span>Shared with <b>' + esc(S.partner.name) + '</b>' + (S.partner.sections && S.partner.sections.length ? ' · ' + S.partner.sections.length + ' section' + (S.partner.sections.length > 1 ? 's' : '') : '') + (S.partner.expires ? ' · until ' + esc(formatDate(S.partner.expires)) : '') + '</span></div>' : '') +
+            '<h1 dir="auto">' + esc(tr(info, 'title', info.title || document.title)) + '</h1>' +
+            (tr(info, 'description', info.description) ? '<p class="g4t-info-desc" dir="auto">' + esc(tr(info, 'description', info.description)) + '</p>' : '') +
             (model ? '<div class="g4t-info-meta">' + (serverSelect ? '<span><span class="g4t-muted">Server</span>' + serverSelect + '</span>' : '') +
                 (activeEnv().baseUrl ? '<span class="g4t-muted">→ ' + esc(serverUrl()) + ' (' + esc(activeEnv().name) + ')</span>' : '') +
                 '<span><span class="g4t-muted" style="display:inline-flex">' + ICON.lock.replace('width="14" height="14"', 'width="13" height="13"') + '</span>' + esc(schemeLabel()) + ' · ' + securedCount() + ' of ' + total + ' operations protected</span>' +
-                '<button type="button" class="g4t-btn" style="height:28px" data-action="open-token">' + ICON.key + (hasAnyCred() ? (onlyBearer() ? 'Change token' : 'Change credentials') : 'Authorize') + '</button></div>' : '');
+                '<button type="button" class="g4t-btn" style="height:28px" data-action="open-token">' + ICON.key + (hasAnyCred() ? (onlyBearer() ? 'Change token' : 'Change credentials') : 'Authorize') + '</button>' +
+                (Object.keys(((spec.components || {}).schemas) || {}).length ? '<button type="button" class="g4t-btn" style="height:28px" data-action="open-diagram" title="How the response models relate">Models · ' + Object.keys(spec.components.schemas).length + '</button>' : '') + '</div>' : '') +
+            '<div id="g4t-guides"></div>';
+        renderGuides();
+    }
+
+    /* ---------- getting started ---------- */
+
+    function renderGuides() {
+        var holder = document.getElementById('g4t-guides');
+        if (!holder) { return; }
+        holder.innerHTML = state.model && state.model.ops.length ? (S.gettingStarted === false ? '' : guideHtml()) + timingsHtml() : '';
+    }
+    /** First documented (not generated) example of a status across the operations. */
+    function firstExample(code) {
+        var ops = state.model.ops;
+        for (var i = 0; i < ops.length; i++) {
+            var resp = ops[i].responses.filter(function (r) { return r.code === code; })[0];
+            var ex = resp && resp.examples.filter(function (e) { return e.has && !e.generated && e.value !== null; })[0];
+            if (ex) { return { op: ops[i], value: ex.value }; }
+        }
+        return null;
+    }
+    function successExample(op) {
+        var resp = op.responses.filter(function (r) { return r.code === 200; })[0];
+        var ex = resp && resp.examples[0];
+        return ex && ex.has ? ex.value : null;
+    }
+    function paginationOf(op) {
+        if (op.method !== 'GET') { return null; }
+        var ex = successExample(op);
+        if (!ex || typeof ex !== 'object' || Array.isArray(ex) || !ex.meta || typeof ex.meta !== 'object') { return null; }
+        if (ex.meta.next_cursor !== undefined || ex.meta.prev_cursor !== undefined) { return 'cursor'; }
+        if (ex.meta.current_page !== undefined || ex.meta.per_page !== undefined) { return ex.meta.last_page !== undefined || ex.meta.total !== undefined ? 'page' : 'simple'; }
+        return null;
+    }
+    function opChip(op) {
+        return '<button type="button" class="g4t-guide-chip" data-action="goto" data-op="' + esc(op.id) + '"><span class="g4t-method m-' + esc(op.method.toLowerCase()) + '">' + esc(op.method) + '</span><span class="g4t-mono">' + esc(op.path) + '</span></button>';
+    }
+    function guideCode(text) { return '<code class="g4t-mono">' + esc(text) + '</code>'; }
+    function guideHtml() {
+        var model = state.model, sections = [], total = model.ops.length;
+        sections.push(['Base URL', '<p>' + guideCode(serverUrl()) + ' — every path in this reference is relative to it' + (state.envs.length > 1 ? '; the environment menu in the header switches it.' : '.') + '</p>']);
+
+        var secured = securedCount();
+        if (secured) {
+            var how = schemeEntries().map(function (e) {
+                var kind = schemeKind(e[1]), sent = kind === 'bearer' ? guideCode('Authorization: Bearer <token>') : kind === 'basic' ? guideCode('Authorization: Basic base64(username:password)')
+                    : kind === 'apiKey' ? (e[1].in === 'query' ? guideCode('?' + e[1].name + '=<key>') : guideCode(e[1].name + ': <key>')) : esc(schemeDescription(e[1]));
+                return '<li><b>' + esc(e[0]) + '</b> · ' + sent + '</li>';
+            }).join('');
+            var loginLine = function (l) { return guideCode(l.method + ' ' + l.url.replace(location.origin, '')) + ' with ' + Object.keys(l.fields || {}).map(guideCode).join(', ') + '; the token is ' + (l.tokenPath ? 'at ' + guideCode(l.tokenPath) : 'in ' + guideCode('token') + ' / ' + guideCode('access_token')) + ' of the response'; };
+            var login = LOGINS.length > 1
+                ? '<p>Get a token from one of the logins, each for its own scheme:</p><ul>' + LOGINS.map(function (l) { return '<li><b>' + esc(l.name) + '</b> (' + esc(l.scheme) + ') · ' + loginLine(l) + '</li>'; }).join('') + '</ul><p><button type="button" class="g4t-link-btn" data-action="open-login">Log in here</button> and requests send the right token.</p>'
+                : LOGINS.length ? '<p>Get a token with ' + loginLine(LOGINS[0]) + '. <button type="button" class="g4t-link-btn" data-action="open-login">Log in here</button> and every request sends it.</p>'
+                : '<p><button type="button" class="g4t-link-btn" data-action="open-token">Authorize</button> to send credentials from this page.</p>';
+            sections.push(['Authentication', '<p>' + secured + ' of ' + total + ' endpoints need credentials (marked with ' + ICON.lock.replace('width="14" height="14"', 'width="12" height="12"') + '). Send ' + (schemeEntries().length > 1 ? 'one of these' : 'it like this') + ':</p><ul>' + how + '</ul>' + login]);
+        }
+
+        var headerSets = model.ops.map(function (op) { return op.params.filter(function (p) { return p.in === 'header'; }); });
+        var common = (headerSets[0] || []).filter(function (h) { return headerSets.every(function (set) { return set.some(function (x) { return x.name === h.name; }); }); });
+        sections.push(['Headers', '<ul><li>' + guideCode('Accept: application/json') + ' — Laravel then answers errors (401, 404, 422…) as JSON instead of redirecting.</li>' +
+            common.map(function (h) { var ex = exampleOf(h); return '<li>' + guideCode(h.name + ': ' + (ex || '…')) + (h.required ? ' <span class="g4t-req">required</span>' : '') + (h.description ? ' — ' + esc(h.description) : '') + '</li>'; }).join('') + '</ul>']);
+
+        var errors = [401, 403, 404, 422].map(function (code) { return [code, firstExample(code)]; }).filter(function (x) { return x[1]; });
+        if (errors.length) {
+            sections.push(['Errors', '<p>Error responses look like this (see each endpoint for its own messages):</p>' + errors.map(function (x) {
+                return '<details class="g4t-guide-error"><summary><span class="g4t-status ' + statusClass(x[0]) + '">' + x[0] + ' ' + esc(statusText(x[0])) + '</span><span class="g4t-muted">e.g. ' + esc(x[1].op.method + ' ' + x[1].op.path) + '</span></summary><pre class="g4t-code">' + highlight(pretty(x[1].value)) + '</pre></details>';
+            }).join('')]);
+        }
+
+        var paged = model.ops.map(function (op) { return { op: op, kind: paginationOf(op) }; }).filter(function (x) { return x.kind; });
+        if (paged.length) {
+            var kinds = {};
+            paged.forEach(function (x) { kinds[x.kind] = true; });
+            var text = [];
+            if (kinds.page || kinds.simple) { text.push('page-based lists take ' + guideCode('?page=2') + ' and answer with ' + guideCode('data') + ', ' + guideCode('links') + ' and ' + guideCode('meta') + (kinds.page ? ' (' + guideCode('meta.total') + ', ' + guideCode('meta.last_page') + ')' : '')); }
+            if (kinds.cursor) { text.push('cursor lists take ' + guideCode('?cursor=') + ' with ' + guideCode('meta.next_cursor') + ' from the previous page'); }
+            sections.push(['Pagination', '<p>' + text.join('; ') + '.</p><div class="g4t-guide-chips">' + paged.slice(0, 12).map(function (x) { return opChip(x.op); }).join('') + (paged.length > 12 ? '<span class="g4t-muted">+' + (paged.length - 12) + ' more</span>' : '') + '</div>']);
+        }
+
+        var deprecated = model.ops.filter(function (op) { return op.status === 'deprecated'; }).sort(function (a, b) { return (a.sunset || '9999') < (b.sunset || '9999') ? -1 : 1; });
+        if (deprecated.length) {
+            sections.push(['Deprecations', '<p>' + deprecated.length + ' endpoint' + (deprecated.length > 1 ? 's are' : ' is') + ' being retired; move off ' + (deprecated.length > 1 ? 'them' : 'it') + ' before the date:</p><div class="g4t-guide-deprecations">' + deprecated.map(function (op) {
+                var days = op.sunset ? daysUntil(op.sunset) : null;
+                return '<div class="g4t-guide-deprecation">' + opChip(op) + '<span class="g4t-muted">' + (op.sunset ? esc(formatDate(op.sunset)) + (days !== null ? ' · ' + (days < 0 ? 'date passed' : 'in ' + days + ' days') : '') : 'no date yet') + '</span>' + (op.replacedBy ? '<span>→ ' + replacementHtml(op) + '</span>' : '') + '</div>';
+            }).join('') + '</div>']);
+        }
+
+        if (versionNames.length > 1) {
+            sections.push(['Versions', '<p>' + versionNames.map(guideCode).join(' ') + ' — switch the definition with the selector next to the title.</p>']);
+        }
+
+        return '<details class="g4t-guide" data-remember="guide"' + (store.get('guide', 'open') === 'open' ? ' open' : '') + '><summary><span class="g4t-guide-title">Getting started</span><span class="g4t-muted">Base URL, authentication, headers, errors' + (paged.length ? ', pagination' : '') + (deprecated.length ? ', deprecations' : '') + '</span></summary>' +
+            '<div class="g4t-guide-body">' + sections.map(function (x) { return '<section><h3>' + esc(x[0]) + '</h3>' + x[1] + '</section>'; }).join('') + '</div></details>';
     }
 
     function filteredTags() {
         if (!state.model) { return []; }
         var q = state.filter.trim().toLowerCase();
+        state.matches = {};
         return state.model.tags.map(function (t) {
-            var ops = t.ops.filter(function (o) { return !q || (o.method + ' ' + o.path + ' ' + o.summary + ' ' + t.name).toLowerCase().indexOf(q) !== -1; });
+            // Matches the path / summary, a field of the request or response, or a description / example.
+            var ops = t.ops.filter(function (o) { var m = searchMatch(o, t.name, q); if (m.hit && q) { state.matches[o.id] = m; } return m.hit; });
             return { name: t.name, desc: t.desc, anchor: t.anchor, ops: ops };
         }).filter(function (t) { return t.ops.length; });
     }
@@ -730,7 +1020,7 @@
             return '<div class="g4t-nav-group"><button type="button" class="g4t-nav-tag" data-action="goto-tag" data-anchor="' + esc(t.anchor) + '"><span>' + esc(t.name) + '</span><span>' + t.ops.length + '</span></button>' +
                 t.ops.map(function (o) {
                     var m = o.method.toLowerCase();
-                    return '<button type="button" class="g4t-nav-op" data-action="goto" data-op="' + esc(o.id) + '"' + (state.active === o.id ? ' aria-current="true"' : '') + '><span class="g4t-nav-method m-' + esc(m) + '">' + (o.method === 'DELETE' ? 'DEL' : esc(o.method)) + '</span><span class="g4t-nav-summary">' + esc(o.summary || o.path) + '</span></button>';
+                    return '<button type="button" class="g4t-nav-op" data-action="goto" data-op="' + esc(o.id) + '"' + (state.active === o.id ? ' aria-current="true"' : '') + '><span class="g4t-nav-method m-' + esc(m) + '">' + (o.method === 'DELETE' ? 'DEL' : esc(o.method)) + '</span><span class="g4t-nav-summary' + (o.status === 'deprecated' ? ' is-deprecated' : '') + '" dir="auto">' + esc(o.summary || o.path) + '</span>' + statusBadge(o, true) + '</button>';
                 }).join('') + '</div>';
         }).join('');
     }
@@ -856,13 +1146,15 @@
      * The request as data: url, headers, and either `parts` (multipart fields/files) or `json`.
      * `body` is what fetch() sends; code samples are generated from the rest.
      */
-    function buildRequest(op) {
+    function buildRequest(op, variant) {
+        // variant (error cases): { noAuth, params: {name: value}, omit: field, set: {field: value}, emptyBody }
+        variant = variant || {};
         var missingVars = [], missing = [];
         var path = op.path, query = [], headers = { 'Accept': 'application/json', 'X-Requested-With': 'XMLHttpRequest' };
         // Environment headers first, so documented header parameters and credentials can override them.
         (activeEnv().headers || []).forEach(function (h) { if (h.key) { headers[h.key] = subst(h.value, missingVars); } });
         op.params.forEach(function (p) {
-            var value = subst(paramValue(op, p), missingVars);
+            var value = variant.params && variant.params[p.name] != null ? String(variant.params[p.name]) : subst(paramValue(op, p), missingVars);
             if (p.in === 'path') {
                 if (value === '') { missing.push(p.name); }
                 path = path.replace('{' + p.name + '}', encodeURIComponent(value));
@@ -874,12 +1166,17 @@
             }
         });
         if (missing.length) { return { error: 'Fill in the path parameter' + (missing.length > 1 ? 's ' : ' ') + missing.join(', ') }; }
-        applyAuth(op, headers, query);
+        if (!variant.noAuth) { applyAuth(op, headers, query); }
         var req = { method: op.method, url: serverUrl() + path + (query.length ? '?' + query.join('&') : ''), headers: headers, body: undefined, parts: null, json: undefined, missingVars: missingVars };
         if (op.body && ['GET', 'HEAD'].indexOf(op.method) === -1) {
             if (isMultipart(op)) {
                 var form = new FormData(), parts = [];
                 formFields(op).forEach(function (f) {
+                    if (variant.emptyBody || variant.omit === f.name) { return; }
+                    if (variant.set && Object.prototype.hasOwnProperty.call(variant.set, f.name)) {
+                        form.append(f.name, variant.set[f.name]); parts.push({ name: f.name, value: variant.set[f.name] });
+                        return;
+                    }
                     if (f.binary) {
                         var files = f.multiple ? fileSlots(op.id, f.name).filter(Boolean) : Array.prototype.slice.call((state.files[op.id] || {})[f.name] || []);
                         files.forEach(function (file) { form.append(f.name, file); parts.push({ name: f.name, file: file.name }); });
@@ -897,6 +1194,11 @@
             } else {
                 var json;
                 try { json = JSON.parse(subst(bodyText(op), missingVars)); } catch (e) { return { error: 'Request body isn’t valid JSON' }; }
+                if (variant.emptyBody) { json = {}; }
+                if (json && typeof json === 'object' && !Array.isArray(json)) {
+                    if (variant.omit) { delete json[variant.omit]; }
+                    if (variant.set) { Object.keys(variant.set).forEach(function (k) { json[k] = variant.set[k]; }); }
+                }
                 headers['Content-Type'] = currentCtype(op) || 'application/json';
                 req.json = json;
                 req.body = JSON.stringify(json);
@@ -915,8 +1217,9 @@
 
     /* ---------- code samples ---------- */
 
-    var CODE_LANGS = [['curl', 'cURL'], ['js', 'JavaScript'], ['dart', 'Dart (Dio)'], ['php', 'PHP (Laravel)']];
+    var CODE_LANGS = [['curl', 'cURL'], ['js', 'JavaScript'], ['dart', 'Dart (Dio)'], ['flutter', 'Flutter (model + repository)'], ['php', 'PHP (Laravel)']];
     function codeFor(op, lang) {
+        if (lang === 'flutter') { return codeFlutter(op); }
         var req = sampleRequest(op);
         return ({ curl: codeCurl, js: codeJs, dart: codeDart, php: codePhp }[lang] || codeCurl)(req);
     }
@@ -1021,7 +1324,11 @@
     }
     function curl(op) { return codeFor(op, 'curl'); }
 
-    function execute(op) {
+    function execute(op, options) {
+        options = options || {};
+        // Checked against the documented rules first; "Send anyway" skips it.
+        state.problems[op.id] = options.skipValidation ? null : validateRequest(op);
+        if (state.problems[op.id] && state.problems[op.id].length) { renderOp(op.id); return; }
         var req = buildRequest(op);
         if (req.error) { toast(req.error); return; }
         if (req.missingVars.length) {
@@ -1044,7 +1351,7 @@
             .then(function () {
                 var res = state.results[op.id];
                 addHistory(op, { at: Date.now(), code: res.code, text: res.text, ms: res.ms, method: req.method, url: req.url, env: activeEnv().name, input: snapshot(op.id), files: (req.parts || []).filter(function (p) { return p.file !== undefined; }).map(function (p) { return p.file; }) });
-                state.busy[op.id] = false; renderOp(op.id);
+                state.busy[op.id] = false; renderOp(op.id); renderGuides();
             });
     }
 
@@ -1080,13 +1387,83 @@
         persistInputs();
     }
     var HISTORY_LIMIT = 10;
-    function historyOf(id) { var all = loadJson('history', {}); return (all && all[id]) || []; }
+    var historyCache = null;
+    function allHistory() { return historyCache || (historyCache = loadJson('history', {}) || {}); }
+    function historyOf(id) { return allHistory()[id] || []; }
     function addHistory(op, entry) {
-        var all = loadJson('history', {}) || {};
+        var all = allHistory();
         all[op.id] = [entry].concat(all[op.id] || []).slice(0, HISTORY_LIMIT);
         saveJson('history', all);
     }
-    function clearHistory(id) { var all = loadJson('history', {}) || {}; delete all[id]; saveJson('history', all); }
+    function clearHistory(id) { var all = allHistory(); delete all[id]; saveJson('history', all); }
+
+    /* ---------- response times (from this browser's Try it out history) ---------- */
+
+    function timingOf(id) {
+        var runs = historyOf(id).filter(function (h) { return h.code > 0 && typeof h.ms === 'number'; });
+        if (!runs.length) { return null; }
+        var ms = runs.map(function (h) { return h.ms; });
+        return { avg: Math.round(ms.reduce(function (a, b) { return a + b; }, 0) / ms.length), max: Math.max.apply(null, ms), count: ms.length };
+    }
+    function timingClass(ms) { return ms < 300 ? 'is-fast' : ms < 1000 ? 'is-ok' : 'is-slow'; }
+    function timingBadge(id) {
+        var t = timingOf(id);
+        return t ? '<span class="g4t-timing ' + timingClass(t.avg) + '" title="Average of your last ' + t.count + ' request' + (t.count > 1 ? 's' : '') + ' (slowest ' + t.max + ' ms)">' + t.avg + ' ms</span>' : '';
+    }
+    function timingsHtml() {
+        var rows = (state.model ? state.model.ops : []).map(function (op) { return { op: op, t: timingOf(op.id) }; }).filter(function (r) { return r.t; })
+            .sort(function (a, b) { return b.t.avg - a.t.avg; });
+        if (!rows.length) { return ''; }
+        return '<details class="g4t-guide" data-remember="timings"' + (store.get('timings', 'closed') === 'open' ? ' open' : '') + '><summary><span class="g4t-guide-title">Response times</span><span class="g4t-muted">' + rows.length + ' endpoint' + (rows.length > 1 ? 's' : '') + ' measured from your Try it out requests · slowest first</span></summary>' +
+            '<div class="g4t-guide-body"><div class="g4t-timings">' + rows.slice(0, 15).map(function (r) {
+                return '<button type="button" class="g4t-timing-row" data-action="goto" data-op="' + esc(r.op.id) + '"><span class="g4t-method m-' + esc(r.op.method.toLowerCase()) + '">' + esc(r.op.method) + '</span><span class="g4t-mono g4t-timing-path">' + esc(r.op.path) + '</span>' +
+                    '<span class="g4t-timing-bar"><span class="' + timingClass(r.t.avg) + '" style="width:' + Math.max(4, Math.round(r.t.avg / rows[0].t.avg * 100)) + '%"></span></span><span class="g4t-timing ' + timingClass(r.t.avg) + '">' + r.t.avg + ' ms</span><span class="g4t-muted" style="font-size:12px">×' + r.t.count + '</span></button>';
+            }).join('') + '</div><p class="g4t-muted" style="margin:0;font-size:12px">Kept in this browser only (last ' + HISTORY_LIMIT + ' requests per endpoint). Network time to the server is included.</p></div></details>';
+    }
+
+    /* ---------- share links ---------- */
+
+    // Values whose name looks like a credential never go into a link.
+    var SECRET_NAME = /authorization|token|password|passwd|secret|api[-_]?key|cookie/i;
+    function base64UrlEncode(text) { return base64Utf8(text).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, ''); }
+    function base64UrlDecode(text) {
+        text = text.replace(/-/g, '+').replace(/_/g, '/');
+        while (text.length % 4) { text += '='; }
+        return decodeURIComponent(escape(atob(text)));
+    }
+    function withoutSecrets(value) {
+        if (Array.isArray(value)) { return value.map(withoutSecrets); }
+        if (!value || typeof value !== 'object') { return value; }
+        var out = {};
+        Object.keys(value).forEach(function (k) { out[k] = SECRET_NAME.test(k) ? '' : withoutSecrets(value[k]); });
+        return out;
+    }
+    function shareUrl(op) {
+        var snap = snapshot(op.id), body = snap.body;
+        if (body != null) { try { body = pretty(withoutSecrets(JSON.parse(body))); } catch (e) { } }
+        var data = { o: op.id, v: state.version, i: withoutSecrets(snap.inputs), f: withoutSecrets(snap.forms), b: body, c: snap.ctype };
+        if (activeEnv().shared) { data.e = activeEnv().id; }
+        var url = new URL(location.href);
+        url.searchParams.set('try', base64UrlEncode(JSON.stringify(data)));
+        url.hash = 'op-' + op.id;
+        return url.toString();
+    }
+    var sharedRequest = (function () {
+        try { var raw = new URL(location.href).searchParams.get('try'); return raw ? JSON.parse(base64UrlDecode(raw)) : null; } catch (e) { return null; }
+    })();
+    function openSharedRequest() {
+        var data = sharedRequest;
+        sharedRequest = null;
+        try { var url = new URL(location.href); url.searchParams.delete('try'); history.replaceState(null, '', url.toString()); } catch (e) { }
+        if (!data || typeof data !== 'object') { return; }
+        if (!opById(data.o)) { toast('The shared endpoint is not in this API definition'); return; }
+        applySnapshot(data.o, { inputs: data.i, forms: data.f, body: data.b, ctype: data.c });
+        if (data.e && state.envs.some(function (e) { return e.id === data.e; })) { state.envId = data.e; saveEnvs(); renderEnvButton(); }
+        state.trying[data.o] = true;
+        persistInputs();
+        gotoOp(data.o);
+        toast('Shared request loaded · check the values, then Execute');
+    }
     function ago(ts) {
         var sec = Math.max(0, Math.round((Date.now() - ts) / 1000));
         if (sec < 60) { return sec + 's ago'; }
@@ -1125,7 +1502,7 @@
 
     function rowsHtml(rows) {
         return '<div class="g4t-table">' + rows.map(function (r) {
-            return '<div class="g4t-row"><div class="g4t-row-name' + (r.level ? ' is-nested' : '') + '"' + (r.level > 1 ? ' style="margin-inline-start:' + ((r.level - 1) * 12) + 'px"' : '') + '><div class="g4t-field"><span class="g4t-field-name">' + esc(r.name) + '</span>' + (r.req ? '<span class="g4t-req">required</span>' : '') + '</div><div class="g4t-type">' + esc(r.type) + (r.in ? ' · ' + esc(r.in) : '') + '</div></div><div class="g4t-note">' + esc(r.note) + '</div></div>';
+            return '<div class="g4t-row"><div class="g4t-row-name' + (r.level ? ' is-nested' : '') + '"' + (r.level > 1 ? ' style="margin-inline-start:' + ((r.level - 1) * 12) + 'px"' : '') + '><div class="g4t-field"><button type="button" class="g4t-field-name g4t-field-link" data-action="field-usage" data-value="' + esc(r.name) + '" title="Where is ' + esc(r.name) + ' used?">' + esc(r.name) + '</button>' + (r.req ? '<span class="g4t-req">required</span>' : '') + '</div><div class="g4t-type">' + esc(r.type) + (r.in ? ' · ' + esc(r.in) : '') + '</div></div><div class="g4t-note">' + esc(r.note) + '</div></div>';
         }).join('') + '</div>';
     }
 
@@ -1208,8 +1585,11 @@
         var env = activeEnv();
         html += '<div class="g4t-try"><div class="g4t-try-title"><h3 style="margin:0;font-size:13px;font-weight:600">Try it out</h3><span>→ ' + esc(server) + (env.id !== 'default' || state.envs.length > 1 ? ' · ' + esc(env.name) : '') + '</span>' +
             '<span class="g4t-try-tools"><button type="button" class="g4t-btn" data-action="toggle-history" data-op="' + esc(op.id) + '" aria-pressed="' + histOpen + '">' + ICON.clock + 'History' + (historyCount ? ' <span class="g4t-count">' + historyCount + '</span>' : '') + '</button>' +
+            '<button type="button" class="g4t-btn" data-action="toggle-cases" data-op="' + esc(op.id) + '" aria-pressed="' + !!state.casesOpen[op.id] + '" title="Send invalid requests on purpose and compare the statuses">' + ICON.alert.replace('width="15" height="15"', 'width="13" height="13"') + 'Error cases</button>' +
+            '<button type="button" class="g4t-btn" data-action="share-request" data-op="' + esc(op.id) + '" title="Copy a link that opens this request with these values (credentials are never included)">' + ICON.link + 'Share</button>' +
             '<button type="button" class="g4t-btn" data-action="reset-inputs" data-op="' + esc(op.id) + '" title="Forget the values saved for this endpoint">' + ICON.reset + 'Reset</button></span></div>';
         if (histOpen) { html += historyHtml(op); }
+        if (state.casesOpen[op.id]) { html += casesHtml(op); }
         if (op.secured && !opAuthReady(op)) {
             html += '<div class="g4t-hint">' + ICON.lock + '<span>Needs ' + esc(requirementLabel(op)) + '. Requests will return 401 until you add it.</span><button type="button" data-action="' + (S.autoLogin ? 'open-login' : 'open-token') + '">' + (S.autoLogin ? 'Log in' : 'Authorize') + '</button></div>';
         }
@@ -1243,13 +1623,14 @@
                 html += '<div class="g4t-try-section"><div class="g4t-try-label">Body ' + ctypeTabs + '</div><textarea class="g4t-textarea" data-bind="body" data-op="' + esc(op.id) + '" rows="' + Math.min(14, text.split('\n').length + 1) + '" spellcheck="false" aria-label="Request body">' + esc(text) + '</textarea></div>';
             }
         }
+        html += problemsHtml(op);
         var busy = !!state.busy[op.id], res = state.results[op.id];
         html += '<div class="g4t-actions"><button type="button" class="g4t-btn g4t-btn-primary" data-action="execute" data-op="' + esc(op.id) + '"' + (busy ? ' disabled' : '') + '>' + (busy ? spinner() + 'Sending…' : 'Execute') + '</button>' +
             (res ? '<button type="button" class="g4t-btn g4t-btn-ghost" data-action="clear-result" data-op="' + esc(op.id) + '">Clear</button>' : '') + '</div>';
         if (res) {
             var hasJson = res.json !== undefined && res.json !== null;
             var bodyHtml = res.code === 204 || res.raw === '' ? 'No content' : hasJson ? highlight(pretty(res.json)) : esc(res.raw.length > 20000 ? res.raw.slice(0, 20000) + '\n…' : res.raw);
-            html += '<div class="g4t-result" aria-live="polite"><div class="g4t-actions"><span style="font-size:13px;font-weight:600">Response</span><span class="g4t-status ' + statusClass(res.code) + '">' + (res.code || '—') + ' ' + esc(res.text) + '</span><span class="g4t-muted" style="font-size:12px">' + res.ms + ' ms' + (res.ctype ? ' · ' + esc(res.ctype) : '') + '</span></div>' +
+            html += '<div class="g4t-result" aria-live="polite"><div class="g4t-actions"><span style="font-size:13px;font-weight:600">Response</span><span class="g4t-status ' + statusClass(res.code) + '">' + (res.code || '—') + ' ' + esc(res.text) + '</span><span class="g4t-muted" style="font-size:12px">' + res.ms + ' ms' + (timingOf(op.id) && timingOf(op.id).count > 1 ? ' · avg ' + timingOf(op.id).avg + ' ms' : '') + (res.ctype ? ' · ' + esc(res.ctype) : '') + '</span></div>' +
                 (res.unauth ? '<div style="font-size:13px;color:var(--text-2)">The request went out without a token. <button type="button" class="g4t-link-btn" data-action="open-login">Log in</button> and execute again.</div>' : '') +
                 '<div class="g4t-code-wrap"><pre class="g4t-code">' + bodyHtml + '</pre>' + (res.raw ? '<button type="button" class="g4t-copy" aria-label="Copy response" data-action="copy-result" data-op="' + esc(op.id) + '">' + ICON.copy + '</button>' : '') + '</div>' +
                 '<div style="display:grid;gap:6px;min-width:0"><span class="g4t-muted" style="font-size:12px">Request as code</span>' + codePanelHtml(op) + '</div></div>';
@@ -1284,15 +1665,60 @@
         return html + '<div class="g4t-code-wrap"><pre class="g4t-code">' + body + '</pre>' + (ex.has ? '<button type="button" class="g4t-copy" aria-label="Copy example" data-action="copy-example" data-op="' + esc(op.id) + '">' + ICON.copy + '</button>' : '') + '</div></div>';
     }
 
+    /* ---------- status (new / beta / deprecated) and notes ---------- */
+
+    function daysUntil(date) {
+        var d = new Date(date + 'T00:00:00'), today = new Date();
+        today.setHours(0, 0, 0, 0);
+        return isNaN(d) ? null : Math.round((d - today) / 86400000);
+    }
+    function formatDate(date) {
+        var d = new Date(date + 'T00:00:00');
+        return isNaN(d) ? date : d.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
+    }
+    function statusBadge(op, compact) {
+        if (!op.status || op.status === 'stable') { return ''; }
+        var label = { 'new': 'New', beta: 'Beta', deprecated: 'Deprecated' }[op.status] || op.status;
+        var days = op.status === 'deprecated' && op.sunset ? daysUntil(op.sunset) : null;
+        var title = op.status === 'deprecated' ? (op.sunset ? (days < 0 ? 'Removal date passed: ' : 'Removed on ') + formatDate(op.sunset) : 'Deprecated') : label;
+        return '<span class="g4t-badge-status is-' + esc(op.status) + '" title="' + esc(title) + '">' + esc(compact ? label.toLowerCase() : label) + (!compact && days !== null ? ' · ' + (days < 0 ? 'past' : days + 'd') : '') + '</span>';
+    }
+    /** "POST /api/v2/tickets" → the documented operation, when there is one. */
+    function opByLabel(label) {
+        var m = /^\s*([A-Za-z]+)\s+(\S+)\s*$/.exec(label || '');
+        return m && state.model ? state.model.ops.filter(function (o) { return o.method === m[1].toUpperCase() && o.path === m[2]; })[0] || null : null;
+    }
+    function replacementHtml(op) {
+        var target = opByLabel(op.replacedBy);
+        return target ? '<button type="button" class="g4t-link-btn g4t-mono" data-action="goto" data-op="' + esc(target.id) + '">' + esc(op.replacedBy) + '</button>' : '<code class="g4t-mono">' + esc(op.replacedBy) + '</code>';
+    }
+    function noticesHtml(op) {
+        var html = '';
+        if (op.status === 'deprecated') {
+            var days = op.sunset ? daysUntil(op.sunset) : null;
+            var when = op.sunset ? (days < 0 ? ' The removal date (' + esc(formatDate(op.sunset)) + ') has passed.' : ' It will be removed on <b>' + esc(formatDate(op.sunset)) + '</b> (' + (days === 0 ? 'today' : 'in ' + days + ' day' + (days === 1 ? '' : 's')) + ').') : '';
+            html += '<div class="g4t-notice is-deprecated" role="note">' + ICON.alert + '<span><b>Deprecated.</b>' + when + (op.replacedBy ? ' Use ' + replacementHtml(op) + ' instead.' : '') + '</span></div>';
+        } else if (op.status === 'beta') {
+            html += '<div class="g4t-notice is-beta" role="note">' + ICON.info + '<span><b>Beta.</b> This endpoint may still change without notice.</span></div>';
+        } else if (op.status === 'new') {
+            html += '<div class="g4t-notice is-new" role="note">' + ICON.info + '<span><b>New.</b> Recently added to the API.</span></div>';
+        }
+        if (op.note) {
+            html += '<div class="g4t-notice is-note" role="note">' + ICON.info + '<span dir="auto">' + esc(op.note).replace(/\n/g, '<br>') + '</span></div>';
+        }
+        return html;
+    }
+
     function opHtml(op) {
         var open = !!state.expanded[op.id], trying = !!state.trying[op.id], m = op.method.toLowerCase();
         var html = '<article id="op-' + esc(op.id) + '" class="g4t-op' + (open ? ' is-open' : '') + (op.deprecated ? ' g4t-deprecated' : '') + '">' +
             '<button type="button" class="g4t-op-head" data-action="toggle-op" data-op="' + esc(op.id) + '" aria-expanded="' + open + '">' +
-            '<span class="g4t-method m-' + esc(m) + '">' + esc(op.method) + '</span><span class="g4t-path">' + esc(op.path) + '</span><span class="g4t-op-summary">' + esc(op.summary) + '</span>' +
-            '<span class="g4t-op-tail">' + (op.secured ? '<span class="g4t-lock' + (opAuthReady(op) ? ' is-ready' : '') + '" title="' + esc(opAuthReady(op) ? 'Credentials will be sent' : 'Requires ' + requirementLabel(op)) + '">' + ICON.lock + '</span>' : '') + ICON.chev + '</span></button>';
+            '<span class="g4t-method m-' + esc(m) + '">' + esc(op.method) + '</span><span class="g4t-path">' + esc(op.path) + '</span><span class="g4t-op-summary" dir="auto">' + esc(op.summary) + '</span>' + statusBadge(op) + (state.filter ? matchHtml(op) : '') +
+            '<span class="g4t-op-tail">' + timingBadge(op.id) + (op.secured ? '<span class="g4t-lock' + (opAuthReady(op) ? ' is-ready' : '') + '" title="' + esc(opAuthReady(op) ? 'Credentials will be sent' : 'Requires ' + requirementLabel(op)) + '">' + ICON.lock + '</span>' : '') + ICON.chev + '</span></button>';
         if (!open) { return html + '</article>'; }
 
-        html += '<div class="g4t-op-body"><div class="g4t-op-intro"><p class="g4t-op-desc">' + esc(op.desc || op.summary || 'No description.') + '</p><div style="display:flex;gap:8px;flex:none">' +
+        html += '<div class="g4t-op-body">' + noticesHtml(op) + '<div class="g4t-op-intro"><p class="g4t-op-desc" dir="auto">' + esc(op.desc || op.summary || 'No description.') + '</p><div style="display:flex;gap:8px;flex:none">' +
+            '<button type="button" class="g4t-btn g4t-present-btn" data-action="present" data-op="' + esc(op.id) + '" title="Present this endpoint full screen">Present</button>' +
             '<button type="button" class="g4t-btn" data-action="toggle-code" data-op="' + esc(op.id) + '" aria-pressed="' + !!state.codeOpen[op.id] + '">' + ICON.term + 'Code</button>' +
             '<button type="button" class="g4t-try-toggle" data-action="toggle-try" data-op="' + esc(op.id) + '" aria-pressed="' + trying + '">' + (trying ? 'Cancel' : 'Try it out') + '</button></div></div>';
         if (state.codeOpen[op.id]) { html += codePanelHtml(op); }
@@ -1316,6 +1742,7 @@
     }
 
     function renderOp(id) {
+        if (state.overlay && state.overlay.kind === 'present' && state.overlay.id === id) { renderOverlay(); }
         var op = opById(id), el = document.getElementById('op-' + id);
         if (!op || !el) { return; }
         var holder = document.createElement('div');
@@ -1346,7 +1773,7 @@
             return;
         }
         els.ops.innerHTML = tags.map(function (t) {
-            return '<section id="' + esc(t.anchor) + '" class="g4t-section"><div class="g4t-section-head"><h2>' + esc(t.name) + '</h2><span>' + esc(t.desc) + '</span></div><div class="g4t-op-list">' + t.ops.map(opHtml).join('') + '</div></section>';
+            return '<section id="' + esc(t.anchor) + '" class="g4t-section"><div class="g4t-section-head"><h2>' + esc(t.name) + '</h2><span dir="auto">' + esc(t.desc) + '</span></div><div class="g4t-op-list">' + t.ops.map(opHtml).join('') + '</div></section>';
         }).join('');
     }
 
@@ -1398,7 +1825,8 @@
                 state.loading = false;
                 renderAll();
                 var hash = decodeURIComponent((location.hash || '').replace(/^#/, ''));
-                if (hash.indexOf('op-') === 0 && opById(hash.slice(3))) { gotoOp(hash.slice(3), true); }
+                if (sharedRequest) { openSharedRequest(); }
+                else if (hash.indexOf('op-') === 0 && opById(hash.slice(3))) { gotoOp(hash.slice(3), true); }
             })
             .catch(function (error) {
                 state.loading = false;
@@ -1408,12 +1836,48 @@
             });
     }
 
+    /* ---------- overlay (field usage, palette, present mode, diagram, QR) ---------- */
+
+    function setLang(lang) {
+        state.lang = lang === 'ar' ? 'ar' : 'en'; store.set('lang', state.lang);
+        if (state.spec) { state.model = buildModel(state.spec); }
+        renderAll();
+    }
+    function renderOverlay() {
+        var view = state.overlay && OVERLAYS[state.overlay.kind];
+        els.overlay.innerHTML = view ? '<div class="g4t-modal' + (state.overlay.full ? ' is-full' : '') + '" data-action="close-overlay-backdrop">' + view(state.overlay) + '</div>' : '';
+        var focus = els.overlay.querySelector('[data-autofocus]');
+        if (focus) { setTimeout(function () { focus.focus(); }, 20); }
+    }
+    function openOverlay(overlay) { state.overlay = overlay; state.envMenuOpen = false; state.downloadOpen = false; renderEnvMenu(); renderDownload(); renderOverlay(); }
+    function closeOverlay() {
+        if (!state.overlay) { return; }
+        var wasFull = state.overlay.full;
+        state.overlay = null; renderOverlay();
+        if (wasFull && document.fullscreenElement && document.exitFullscreen) { document.exitFullscreen().catch(function () { }); }
+    }
+    ACTIONS['close-overlay'] = function () { closeOverlay(); };
+    ACTIONS['close-overlay-backdrop'] = function (el, e) { if (e.target === el) { closeOverlay(); } };
+    OVERLAYS.usage = function (o) { return usageHtml(o.name); };
+    ACTIONS['field-usage'] = function (el, e, op, value) { openOverlay({ kind: 'usage', name: value }); };
+
+@endverbatim
+@include('swagger::g4t.js.search')
+@include('swagger::g4t.js.palette')
+@include('swagger::g4t.js.validate')
+@include('swagger::g4t.js.present')
+@include('swagger::g4t.js.flutter')
+@include('swagger::g4t.js.diagram')
+@include('swagger::g4t.js.qr')
+@verbatim
+
     /* ---------- events ---------- */
 
     document.addEventListener('click', function (e) {
         var el = e.target.closest('[data-action]');
         if (!el) { return; }
         var action = el.getAttribute('data-action'), id = el.getAttribute('data-op'), value = el.getAttribute('data-value'), op = id ? opById(id) : null;
+        if (ACTIONS[action]) { ACTIONS[action](el, e, op, value); return; }
         switch (action) {
             case 'toggle-drawer': setDrawer(!state.drawer); break;
             case 'close-drawer': setDrawer(false); break;
@@ -1441,7 +1905,7 @@
                 break;
             case 'close-login': state.loginOpen = false; renderLogin(); break;
             case 'close-login-backdrop': if (e.target === el) { state.loginOpen = false; renderLogin(); } break;
-            case 'goto': if (op) { gotoOp(op.id); } break;
+            case 'goto': if (op) { closeOverlay(); gotoOp(op.id); } break;
             case 'goto-tag': setDrawer(false); scrollToId(value || el.getAttribute('data-anchor')); break;
             case 'toggle-op':
                 state.expanded[id] = !state.expanded[id]; state.active = id;
@@ -1500,8 +1964,12 @@
                 }
                 break;
             case 'reset-inputs': resetInputs(id); renderOp(id); toast('Saved values cleared'); break;
+            case 'share-request': openOverlay({ kind: 'share', url: shareUrl(opById(id)), title: 'Share this request', hint: 'Opens Try it out with these values, for someone to press Execute. Credentials are never included.' }); break;
             case 'toggle-download': state.downloadOpen = !state.downloadOpen; state.appearOpen = false; state.authMenuOpen = false; renderDownload(); renderAppear(); renderAuth(); break;
             case 'download': downloadSpec(value); break;
+            case 'export': exportClient(value); break;
+            case 'login-pick': state.loginIndex = Number(value) || 0; store.set('loginIndex', String(state.loginIndex)); state.loginValues = {}; state.loginError = ''; renderLogin(); break;
+            case 'lang': setLang(value); break;
             case 'toggle-env-menu': state.envMenuOpen = !state.envMenuOpen; state.downloadOpen = false; state.appearOpen = false; state.authMenuOpen = false; renderEnvMenu(); renderDownload(); renderAppear(); renderAuth(); break;
             case 'env-switch': switchEnv(value); break;
             case 'open-envs':
@@ -1598,6 +2066,12 @@
         if (['param', 'form', 'form-item'].indexOf(bind) !== -1) { persistInputs(); }
     });
 
+    // <details> toggle does not bubble: listen while capturing.
+    document.addEventListener('toggle', function (e) {
+        var key = e.target && e.target.getAttribute && e.target.getAttribute('data-remember');
+        if (key) { store.set(key, e.target.open ? 'open' : 'closed'); }
+    }, true);
+
     document.addEventListener('submit', function (e) {
         if (e.target && e.target.id === 'g4t-login-form') { e.preventDefault(); submitLogin(); }
     });
@@ -1607,6 +2081,8 @@
         if (e.key === '/' && ['input', 'textarea', 'select'].indexOf(tag) === -1 && !e.target.isContentEditable) {
             e.preventDefault(); setDrawer(window.innerWidth < 900 ? true : state.drawer); els.filter.focus();
         }
+        for (var k = 0; k < KEYS.length; k++) { if (KEYS[k](e) === true) { return; } }
+        if (e.key === 'Escape' && state.overlay) { closeOverlay(); return; }
         if (e.key === 'Escape') {
             var changed = state.appearOpen || state.authMenuOpen || state.loginOpen || state.drawer || state.downloadOpen || state.envsOpen || state.envMenuOpen;
             var envsWereOpen = state.envsOpen;
@@ -1638,6 +2114,7 @@
         if (e.key === tokenKey) { state.token = e.newValue; renderAuth(); renderInfo(); renderOps(); }
     });
 
+    if (sharedRequest && versionNames.indexOf(sharedRequest.v) !== -1) { state.version = sharedRequest.v; }
     loadEnvs();
     state.creds = loadJson('creds', {}) || {};
     restoreInputs();

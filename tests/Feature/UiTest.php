@@ -185,7 +185,25 @@ class UiTest extends TestCase
         config(['swagger.auto_login.url' => '/api/v1/login']);
 
         $this->get('/swagger/documentation?ui=g4t')
-            ->assertSee('"autoLogin":{"url":"http://localhost/api/v1/login","method":"POST"', false);
+            ->assertSee('"autoLogin":{"name":"Login 1","url":"http://localhost/api/v1/login","method":"POST"', false);
+    }
+
+    public function test_several_logins_reach_the_g4t_ui_and_the_first_one_the_other_uis(): void
+    {
+        config(['swagger.auto_login' => [
+            ['name' => 'Customer', 'url' => '/api/v1/login'],
+            ['name' => 'Admin', 'url' => '/api/admin/login', 'fields' => ['username' => 'Username', 'password' => 'Password']],
+            ['name' => 'Disabled', 'url' => null],
+        ]]);
+
+        $page = $this->get('/swagger/documentation?ui=g4t')->getContent();
+        preg_match('/window\.G4T_SETTINGS = (\{.*?\});\n/s', $page, $match);
+        $settings = json_decode($match[1], true);
+        $this->assertSame(['Customer', 'Admin'], array_column($settings['autoLogins'], 'name'), 'Logins without a URL are left out');
+        $this->assertSame(['username' => 'Username', 'password' => 'Password'], $settings['autoLogins'][1]['fields']);
+        $this->assertSame('Customer', $settings['autoLogin']['name']);
+
+        $this->get('/swagger/documentation?ui=swagger')->assertSee('"url":"http://localhost/api/v1/login"', false)->assertDontSee('/api/admin/login', false);
     }
 
     public function test_login_button_is_rendered_in_both_uis(): void

@@ -32,6 +32,17 @@ class SwaggerServiceProvider extends ServiceProvider
             return $this;
         });
 
+        // ->deprecated('2026-12-31', 'POST /api/v2/tickets') / ->beta(): shown in the docs; the dashboard can override them.
+        Route::macro('deprecated', function ($sunset = null, $replacement = null) {
+            $this->action['g4t_status'] = array_filter(['status' => 'deprecated', 'sunset' => $sunset, 'replacement' => $replacement]);
+            return $this;
+        });
+
+        Route::macro('beta', function () {
+            $this->action['g4t_status'] = ['status' => 'beta'];
+            return $this;
+        });
+
         Route::macro('hiddenDoc', function () {
             $this->action['is_hidden'] = true;
             return $this;

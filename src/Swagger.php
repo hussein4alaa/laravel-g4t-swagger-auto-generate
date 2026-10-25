@@ -43,7 +43,7 @@ class Swagger
                     'url' => 'https://github.com/hussein4alaa',
                 ],
                 'version' => config('swagger.version'),
-            ],
+            ] + $this->infoTranslations(),
             'servers' => config('swagger.servers'),
             'tags' => $generated->tags,
             'paths' => $generated->paths === [] ? new stdClass : $generated->paths,
@@ -145,6 +145,7 @@ class Swagger
                 'uri' => $uri,
                 'description' => $route->action['description'] ?? '',
                 'summary' => $route->action['summary'] ?? null,
+                'status' => (array) ($route->action['g4t_status'] ?? []),
                 'name' => $this->getRouteName($route->uri(), $prefix),
                 'schema_name' => $schemaName,
                 'action' => $action,
@@ -176,6 +177,33 @@ class Swagger
     /**
      * Keep operations hidden from the dashboard in the document (the dashboard lists them all).
      */
+    /**
+     * The document without the dashboard's text changes (the dashboard shows the generated texts).
+     */
+    public function withoutTextChanges(bool $without = true): static
+    {
+        $this->rawTexts = $without;
+
+        return $this;
+    }
+
+    /**
+     * English replaces the title / description; other languages travel as x-translations.
+     *
+     * @return array<string, mixed>
+     */
+    private function infoTranslations(): array
+    {
+        $info = $this->rawTexts ? [] : Settings::layout()['texts']['info'];
+        $translations = array_diff_key($info, ['en' => true]);
+
+        return array_filter([
+            'title' => $info['en']['title'] ?? null,
+            'description' => $info['en']['description'] ?? null,
+            'x-translations' => $translations === [] ? null : $translations,
+        ], fn ($value) => $value !== null);
+    }
+
     public function includingHidden(bool $include = true): static
     {
         $this->includeHidden = $include;
@@ -185,6 +213,8 @@ class Swagger
 
     /** @var bool */
     private $includeHidden = false;
+
+    private $rawTexts = false;
 
     /**
      * Dashboard layout: drop hidden operations and order tags and operations (unlisted ones keep
@@ -203,6 +233,25 @@ class Swagger
             $apiRoutes = array_values(array_filter($apiRoutes, fn (array $route) => ! isset($hidden[$route['operation_id']]) && ! isset($hiddenTags[$route['controller']])));
             $used = array_flip(array_map(fn (array $route) => $route['controller'], $apiRoutes));
             $controllers = array_filter($controllers, fn (array $controller, $tag) => isset($used[$tag]), ARRAY_FILTER_USE_BOTH);
+        }
+
+        if (! $this->rawTexts) {
+            [$apiRoutes, $controllers] = $this->applyTexts($apiRoutes, $controllers, $layout['texts']);
+            foreach ($apiRoutes as $index => $route) {
+                // Dashboard status / note replace the ones set in code with ->deprecated() / ->beta().
+                $meta = $layout['meta']['operations'][$route['operation_id']] ?? null;
+                if ($meta === null) {
+                    continue;
+                }
+                $status = array_replace($route['status'], $meta);
+                if (($status['status'] ?? null) !== 'deprecated') {
+                    unset($status['sunset'], $status['replacement']);
+                }
+                if (($status['status'] ?? null) === 'stable') {
+                    unset($status['status']);
+                }
+                $apiRoutes[$index]['status'] = $status;
+            }
         }
 
         $tagRank = array_flip($layout['tags']);
@@ -234,6 +283,43 @@ class Swagger
         }
 
         return [$apiRoutes, $ordered];
+    }
+
+    /**
+     * Dashboard texts: English replaces the generated summary / description, other languages are added as
+     * x-translations for the g4t UI's language switch.
+     *
+     * @param  array<string, mixed>  $texts
+     * @return array{0: list<array<string, mixed>>, 1: array<string, array<string, mixed>>}
+     */
+    private function applyTexts(array $apiRoutes, array $controllers, array $texts): array
+    {
+        foreach ($apiRoutes as $index => $route) {
+            $languages = $texts['operations'][$route['operation_id']] ?? [];
+            if (isset($languages['en']['summary'])) {
+                $apiRoutes[$index]['summary'] = $languages['en']['summary'];
+            }
+            if (isset($languages['en']['description'])) {
+                $apiRoutes[$index]['description'] = $languages['en']['description'];
+            }
+            unset($languages['en']);
+            if ($languages !== []) {
+                $apiRoutes[$index]['x_translations'] = $languages;
+            }
+        }
+
+        foreach ($controllers as $tag => $controller) {
+            $languages = $texts['tags'][$tag] ?? [];
+            if (isset($languages['en'])) {
+                $controllers[$tag]['description'] = $languages['en'];
+            }
+            unset($languages['en']);
+            if ($languages !== []) {
+                $controllers[$tag]['x_translations'] = array_map(fn (string $description) => ['description' => $description], $languages);
+            }
+        }
+
+        return [$apiRoutes, $controllers];
     }
 
     /**

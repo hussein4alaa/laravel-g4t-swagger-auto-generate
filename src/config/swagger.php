@@ -327,6 +327,8 @@ return [
         "mode" => env("SWAGGER_G4T_MODE", "light"),
         // comfortable | compact
         "density" => env("SWAGGER_G4T_DENSITY", "comfortable"),
+        // A "Getting started" card above the endpoints: base URL, authentication, headers, errors, pagination.
+        "getting_started" => env("SWAGGER_G4T_GETTING_STARTED", true),
     ],
 
     "theme" => env("SWAGGER_THEME", "default"),
@@ -364,6 +366,14 @@ return [
     |   the common paths (token, access_token, data.token, ...) are tried.
     | "security_scheme": key in "security_schemes" that receives the token.
     | "prefill": values to pre-fill the form, only used in the local env.
+    |
+    | Several logins (customer, admin, …) are a list; the Log in dialog then
+    | lets the reader pick one, and each fills its own "security_scheme":
+    |
+    |   "auto_login" => [
+    |       ["name" => "Customer", "url" => "/api/v1/auth/login", "security_scheme" => "bearerAuth"],
+    |       ["name" => "Admin", "url" => "/api/admin/login", "fields" => ["username" => "Username", "password" => "Password"], "security_scheme" => "adminAuth"],
+    |   ],
     |
     */
     "auto_login" => [

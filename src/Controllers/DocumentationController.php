@@ -3,6 +3,7 @@
 namespace G4T\Swagger\Controllers;
 
 use G4T\Swagger\Support\CachedSpec;
+use G4T\Swagger\Support\PartnerLinks;
 use G4T\Swagger\Swagger;
 use Illuminate\Http\Response;
 use Illuminate\Support\Facades\File;
@@ -17,25 +18,36 @@ class DocumentationController
      */
     public function getSwaggerData()
     {
-        if (! config('swagger.enable')) {
-            abort(Response::HTTP_FORBIDDEN);
-        }
+        $this->abortUnlessEnabled();
 
         return (new Swagger)->swagger();
     }
 
-    public function showViewDocumentation()
+    /**
+     * The docs are on, or the request carries a partner link (which works even with the docs turned off).
+     */
+    private function abortUnlessEnabled(): void
     {
-        if (! config('swagger.enable')) {
+        if (! config('swagger.enable') && PartnerLinks::current(request()) === null) {
             abort(Response::HTTP_FORBIDDEN);
         }
+    }
 
+    public function showViewDocumentation()
+    {
+        $this->abortUnlessEnabled();
+        $partner = PartnerLinks::current(request());
+
+        $logins = $this->autoLogins();
         $shared = [
             'versions' => $this->reformatVersions(),
-            'autoLogin' => $this->autoLoginSettings(),
+            // Swagger UI and Scalar have one Login button: the first login.
+            'autoLogin' => $logins[0] ?? null,
+            'autoLogins' => $logins,
         ];
 
-        $ui = $this->selectedUi();
+        // Partner links only open the g4t UI (the other UIs would drop the key).
+        $ui = $partner !== null ? 'g4t' : $this->selectedUi();
         if ($ui === 'scalar') {
             return view('swagger::scalar', $shared + [
                 'scalar' => $this->scalarSettings(),
@@ -47,6 +59,7 @@ class DocumentationController
                 'defaultTheme' => (string) config('swagger.theme', 'default'),
                 'g4t' => $this->g4tSettings(),
                 'environments' => $this->sharedEnvironments(),
+                'partner' => $partner === null ? null : ['name' => $partner['name'], 'key' => $partner['token'], 'sections' => $partner['tags'], 'expires' => $partner['expires']],
             ]);
         }
 
@@ -74,7 +87,7 @@ class DocumentationController
     }
 
     /**
-     * @return array{mode: string, density: string}
+     * @return array{mode: string, density: string, getting_started: bool}
      */
     private function g4tSettings(): array
     {
@@ -85,6 +98,7 @@ class DocumentationController
         return [
             'mode' => in_array($mode, ['light', 'dark', 'system'], true) ? $mode : 'light',
             'density' => in_array($density, ['comfortable', 'compact'], true) ? $density : 'comfortable',
+            'getting_started' => (bool) ($settings['getting_started'] ?? true),
         ];
     }
 
@@ -151,13 +165,33 @@ class DocumentationController
     }
 
     /**
-     * Settings for the Login button, or null when no login URL is configured.
+     * Every configured login: swagger.auto_login is one login or a list of them (customer, admin, …).
+     * Logins without a URL are left out.
      *
-     * @return array{url: string, method: string, fields: array<string, string>, tokenPath: ?string, scheme: string, prefill: array<string, string>}|null
+     * @return list<array{name: string, url: string, method: string, fields: array<string, string>, tokenPath: ?string, scheme: string, prefill: array<string, string>}>
      */
-    private function autoLoginSettings(): ?array
+    private function autoLogins(): array
     {
-        $login = (array) config('swagger.auto_login', []);
+        $config = (array) config('swagger.auto_login', []);
+        $logins = [];
+        foreach (array_is_list($config) ? $config : [$config] as $index => $login) {
+            $settings = is_array($login) ? $this->autoLoginSettings($login, $index) : null;
+            if ($settings !== null) {
+                $logins[] = $settings;
+            }
+        }
+
+        return $logins;
+    }
+
+    /**
+     * Settings for one Login button, or null when it has no URL.
+     *
+     * @param  array<string, mixed>  $login
+     * @return array{name: string, url: string, method: string, fields: array<string, string>, tokenPath: ?string, scheme: string, prefill: array<string, string>}|null
+     */
+    private function autoLoginSettings(array $login, int $index): ?array
+    {
         if (blank($login['url'] ?? null)) {
             return null;
         }
@@ -168,6 +202,7 @@ class DocumentationController
         $fields = array_filter((array) ($login['fields'] ?? []), 'is_string');
 
         return [
+            'name' => filled($login['name'] ?? null) ? (string) $login['name'] : 'Login '.($index + 1),
             'url' => preg_match('#^https?://#i', $url) ? $url : url($url),
             'method' => strtoupper((string) ($login['method'] ?? 'POST')),
             'fields' => $fields !== [] ? $fields : ['email' => 'Email', 'password' => 'Password'],
@@ -185,7 +220,7 @@ class DocumentationController
         foreach ($config['versions'] as $version) {
             $versions[] = [
                 'name' => $version,
-                'url' => url($config['url'].'/json?version='.urlencode($version)),
+                'url' => url($config['url'].'/json?version='.urlencode($version).$this->keyQuery()),
             ];
         }
 
@@ -195,11 +230,23 @@ class DocumentationController
         ];
     }
 
+    /** "&key=…" for the URLs of a partner page. */
+    private function keyQuery(): string
+    {
+        $partner = PartnerLinks::current(request());
+
+        return $partner === null ? '' : '&'.PartnerLinks::PARAM.'='.urlencode($partner['token']);
+    }
+
     public function showJsonDocumentation()
     {
         $data = $this->resolveSwaggerSpecification();
         if (request()->filled('version')) {
             $data = $this->filter($data);
+        }
+        $partner = PartnerLinks::current(request());
+        if ($partner !== null) {
+            $data = PartnerLinks::scope(json_decode(json_encode($data)), $partner['tags']);
         }
 
         return response()->json($data, 200, [], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
@@ -213,9 +260,7 @@ class DocumentationController
      */
     public function resolveSwaggerSpecification(): array|stdClass
     {
-        if (! config('swagger.enable')) {
-            abort(Response::HTTP_FORBIDDEN);
-        }
+        $this->abortUnlessEnabled();
 
         if (config('swagger.load_from_json') || config('swagger.use_cached_spec_when_present', true)) {
             $cached = CachedSpec::read();

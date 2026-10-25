@@ -6,8 +6,9 @@ namespace G4T\Swagger\Support;
  * Settings saved from the dashboard, layered over config/swagger.php.
  *
  * The file (swagger-settings.json in the project root by default) only holds what was changed in the dashboard:
- * `config` (overridden swagger.* values) and `layout` (tag / operation order, hidden operations
- * and hidden controllers). Keys that were never changed keep following the config file.
+ * `config` (overridden swagger.* values), `links` (partner links) and `layout` (tag / operation order, hidden operations
+ * and controllers, the English / Arabic texts of the info block, tags and operations, and the status /
+ * note of each operation). Keys that were never changed keep following the config file.
  */
 final class Settings
 {
@@ -22,10 +23,16 @@ final class Settings
         'unwrap_resource_collection_examples', 'include_web_routes', 'show_prefix', 'spatie_query_builder',
     ];
 
+    /** Languages the dashboard writes texts in; English replaces the generated text. */
+    public const LANGUAGES = ['en', 'ar'];
+
+    /** Statuses an operation can be marked with; "stable" clears one set in code. */
+    public const STATUSES = ['stable', 'new', 'beta', 'deprecated'];
+
     /** Keys whose value is an associative array merged over the config file value (one level). */
     private const MERGED = ['g4t', 'scalar', 'auto_login'];
 
-    /** @var array{config: array<string, mixed>, layout: array{tags: list<string>, operations: array<string, list<string>>, hidden: list<string>, hidden_tags: list<string>}}|null */
+    /** @var array{config: array<string, mixed>, links: list<array<string, mixed>>, layout: array{tags: list<string>, operations: array<string, list<string>>, hidden: list<string>, hidden_tags: list<string>, texts: array<string, mixed>, meta: array<string, mixed>}}|null */
     private static ?array $data = null;
 
     /** @var array<string, mixed>|null swagger.* before the dashboard overrides were applied */
@@ -74,7 +81,7 @@ final class Settings
     }
 
     /**
-     * @return array{tags: list<string>, operations: array<string, list<string>>, hidden: list<string>, hidden_tags: list<string>}
+     * @return array{tags: list<string>, operations: array<string, list<string>>, hidden: list<string>, hidden_tags: list<string>, texts: array<string, mixed>, meta: array<string, mixed>}
      */
     public static function layout(): array
     {
@@ -85,7 +92,7 @@ final class Settings
      * Stores the given effective values: only keys that differ from the config file are kept.
      *
      * @param  array<string, mixed>  $values  editable swagger.* keys
-     * @param  array{tags?: list<string>, operations?: array<string, list<string>>, hidden?: list<string>, hidden_tags?: list<string>}  $layout
+     * @param  array{tags?: list<string>, operations?: array<string, list<string>>, hidden?: list<string>, hidden_tags?: list<string>, texts?: array<string, mixed>, meta?: array<string, mixed>}  $layout
      */
     public static function save(array $values, array $layout): bool
     {
@@ -105,7 +112,7 @@ final class Settings
             }
         }
 
-        $data = ['config' => $overrides, 'layout' => self::cleanLayout($layout)];
+        $data = ['config' => $overrides, 'layout' => self::cleanLayout($layout), 'links' => self::links()];
         if (! self::write($data)) {
             return false;
         }
@@ -142,6 +149,31 @@ final class Settings
         return true;
     }
 
+    /**
+     * Partner links ({@see PartnerLinks}); only the sha256 of each token is kept.
+     *
+     * @return list<array{id: string, name: string, hash: string, tags: list<string>, expires: ?string, created: ?string}>
+     */
+    public static function links(): array
+    {
+        return self::data()['links'];
+    }
+
+    /**
+     * @param  list<array<string, mixed>>  $links
+     */
+    public static function saveLinks(array $links): bool
+    {
+        $data = self::data();
+        $data['links'] = self::cleanLinks($links);
+        if (! self::write($data)) {
+            return false;
+        }
+        self::$data = $data;
+
+        return true;
+    }
+
     /** Clears the in-memory copy (tests, long-running workers). */
     public static function flush(): void
     {
@@ -150,7 +182,7 @@ final class Settings
     }
 
     /**
-     * @return array{config: array<string, mixed>, layout: array{tags: list<string>, operations: array<string, list<string>>, hidden: list<string>, hidden_tags: list<string>}}
+     * @return array{config: array<string, mixed>, links: list<array<string, mixed>>, layout: array{tags: list<string>, operations: array<string, list<string>>, hidden: list<string>, hidden_tags: list<string>, texts: array<string, mixed>, meta: array<string, mixed>}}
      */
     private static function data(): array
     {
@@ -165,12 +197,13 @@ final class Settings
         return self::$data = [
             'config' => $config,
             'layout' => self::cleanLayout(is_array($raw['layout'] ?? null) ? $raw['layout'] : []),
+            'links' => self::cleanLinks(is_array($raw['links'] ?? null) ? $raw['links'] : []),
         ];
     }
 
     /**
      * @param  array<string, mixed>  $layout
-     * @return array{tags: list<string>, operations: array<string, list<string>>, hidden: list<string>, hidden_tags: list<string>}
+     * @return array{tags: list<string>, operations: array<string, list<string>>, hidden: list<string>, hidden_tags: list<string>, texts: array<string, mixed>, meta: array<string, mixed>}
      */
     private static function cleanLayout(array $layout): array
     {
@@ -188,12 +221,112 @@ final class Settings
             'hidden' => $strings($layout['hidden'] ?? []),
             // Whole controllers, so endpoints added to them later stay hidden too.
             'hidden_tags' => $strings($layout['hidden_tags'] ?? []),
+            'texts' => self::cleanTexts(is_array($layout['texts'] ?? null) ? $layout['texts'] : []),
+            'meta' => self::cleanMeta(is_array($layout['meta'] ?? null) ? $layout['meta'] : []),
         ];
+    }
+
+    /**
+     * Status (new / beta / deprecated with a sunset date and a replacement) and a note per operation.
+     *
+     * @param  array<string, mixed>  $meta
+     * @return array{operations: array<string, array{status?: string, sunset?: string, replacement?: string, note?: string}>}
+     */
+    private static function cleanMeta(array $meta): array
+    {
+        $operations = [];
+        foreach ((array) ($meta['operations'] ?? []) as $id => $values) {
+            if (! is_string($id) || ! is_array($values)) {
+                continue;
+            }
+            $status = in_array($values['status'] ?? null, self::STATUSES, true) ? $values['status'] : null;
+            // A sunset / replacement belongs to a deprecation (set here or in code with ->deprecated()).
+            $deprecated = $status === 'deprecated' || $status === null;
+            $clean = array_filter([
+                'status' => $status,
+                'sunset' => $deprecated && is_string($values['sunset'] ?? null) && preg_match('/^\d{4}-\d{2}-\d{2}$/', $values['sunset']) ? $values['sunset'] : null,
+                'replacement' => $deprecated && is_string($values['replacement'] ?? null) && trim($values['replacement']) !== '' ? mb_substr(trim($values['replacement']), 0, 200) : null,
+                'note' => is_string($values['note'] ?? null) && trim($values['note']) !== '' ? mb_substr(trim($values['note']), 0, 2000) : null,
+            ], fn ($value) => $value !== null);
+            if ($clean !== []) {
+                $operations[$id] = $clean;
+            }
+        }
+
+        return ['operations' => $operations];
+    }
+
+    /**
+     * Only non-empty strings are kept, so the file stays small and an emptied field falls back to the code.
+     *
+     * @param  array<string, mixed>  $texts
+     * @return array{info: array<string, array<string, string>>, tags: array<string, array<string, string>>, operations: array<string, array<string, array<string, string>>>}
+     */
+    private static function cleanTexts(array $texts): array
+    {
+        $text = fn ($value, int $max): ?string => is_string($value) && trim($value) !== '' ? mb_substr(trim($value), 0, $max) : null;
+        $fields = function ($value) use ($text): array {
+            $value = is_array($value) ? $value : [];
+
+            return array_filter(['summary' => $text($value['summary'] ?? null, 200), 'title' => $text($value['title'] ?? null, 200), 'description' => $text($value['description'] ?? null, 5000)], fn ($v) => $v !== null);
+        };
+
+        $out = ['info' => [], 'tags' => [], 'operations' => []];
+        foreach (self::LANGUAGES as $language) {
+            $info = array_intersect_key($fields($texts['info'][$language] ?? null), ['title' => true, 'description' => true]);
+            if ($info !== []) {
+                $out['info'][$language] = $info;
+            }
+        }
+        foreach ((array) ($texts['tags'] ?? []) as $tag => $languages) {
+            foreach (self::LANGUAGES as $language) {
+                $description = is_string($tag) ? $text($languages[$language] ?? null, 2000) : null;
+                if ($description !== null) {
+                    $out['tags'][$tag][$language] = $description;
+                }
+            }
+        }
+        foreach ((array) ($texts['operations'] ?? []) as $id => $languages) {
+            foreach (self::LANGUAGES as $language) {
+                $values = is_string($id) ? array_intersect_key($fields($languages[$language] ?? null), ['summary' => true, 'description' => true]) : [];
+                if ($values !== []) {
+                    $out['operations'][$id][$language] = $values;
+                }
+            }
+        }
+
+        return $out;
+    }
+
+    /**
+     * @param  array<mixed>  $links
+     * @return list<array{id: string, name: string, hash: string, tags: list<string>, expires: ?string, created: ?string}>
+     */
+    private static function cleanLinks(array $links): array
+    {
+        $date = fn ($value) => is_string($value) && preg_match('/^\d{4}-\d{2}-\d{2}$/', $value) ? $value : null;
+        $out = [];
+        foreach ($links as $link) {
+            if (! is_array($link) || ! is_string($link['hash'] ?? null) || ! preg_match('/^[a-f0-9]{64}$/', $link['hash'])) {
+                continue;
+            }
+            $out[] = [
+                'id' => is_string($link['id'] ?? null) ? mb_substr($link['id'], 0, 40) : substr($link['hash'], 0, 12),
+                'name' => is_string($link['name'] ?? null) ? mb_substr(trim($link['name']), 0, 60) : 'Partner',
+                'hash' => $link['hash'],
+                'tags' => array_values(array_unique(array_filter((array) ($link['tags'] ?? []), 'is_string'))),
+                'expires' => $date($link['expires'] ?? null),
+                'created' => $date($link['created'] ?? null),
+            ];
+        }
+
+        return $out;
     }
 
     private static function merged(string $key, mixed $value, mixed $base): mixed
     {
-        if (in_array($key, self::MERGED, true) && is_array($value) && is_array($base)) {
+        // Lists (several auto_login entries) replace the config value; maps are merged into it.
+        if (in_array($key, self::MERGED, true) && is_array($value) && is_array($base) && ! array_is_list($value) && ! array_is_list($base)) {
             return array_replace($base, $value);
         }
 

@@ -4,7 +4,7 @@
     .d-login-card { width: min(380px, 100%); display: grid; gap: 14px; padding: 26px; background: var(--surface); border: 1px solid var(--border); border-radius: 16px; box-shadow: var(--shadow); }
     .d-login-brand { display: flex; align-items: center; gap: 12px; }
     .d-login-title { font-size: 18px; font-weight: 650; letter-spacing: -.01em; }
-    .d-field { display: grid; gap: 5px; font-size: 13px; font-weight: 500; min-width: 0; }
+    .d-field { display: grid; gap: 5px; align-content: start; font-size: 13px; font-weight: 500; min-width: 0; }
     .d-field > span.d-hint, .d-hint { font-size: 12px; font-weight: 400; color: var(--text-3); }
     .d-field input, .d-field select, .d-field textarea, .d-input { height: 36px; padding-inline: 10px; border: 1px solid var(--border-strong); border-radius: 8px; background: var(--surface); color: var(--text); font: 13.5px/1.3 inherit; min-width: 0; width: 100%; }
     .d-field textarea { height: auto; padding-block: 8px; resize: vertical; }
@@ -60,7 +60,32 @@
     .d-tag.is-dragging { opacity: .45; }
     .d-tag-head { display: flex; align-items: center; gap: 8px; padding: 8px 10px; background: var(--surface-2); border-bottom: 1px solid var(--border); }
     .d-tag-head strong { font-size: 14px; }
-    .d-tag-eye { margin-inline-start: auto; }
+    .d-tag-tools { display: inline-flex; gap: 6px; margin-inline-start: auto; }
+    .d-op.has-editor { flex-wrap: wrap; }
+    .d-meta { display: grid; gap: 12px; padding: 12px 14px 14px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface-2); }
+    .d-meta .d-field input, .d-meta .d-field textarea { background: var(--surface); }
+    .d-texts > .d-meta { margin-bottom: 12px; }
+    .d-status, .d-note-dot { padding: 1px 7px; border-radius: 999px; font-size: 11px; font-weight: 600; text-transform: capitalize; }
+    .d-status.is-new { background: var(--ok-bg); color: var(--ok-fg); }
+    .d-status.is-beta { background: color-mix(in oklab, var(--accent) 14%, transparent); color: var(--accent); }
+    .d-status.is-deprecated { background: var(--err-bg); color: var(--err-fg); }
+    .d-note-dot { background: var(--warn-bg); color: var(--warn-fg); text-transform: none; }
+    .d-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+    .d-chip { height: 28px; padding-inline: 10px; border: 1px solid var(--border-strong); border-radius: 999px; background: var(--surface); color: var(--text-2); font: inherit; font-size: 12.5px; cursor: pointer; }
+    .d-chip[aria-pressed="true"] { border-color: var(--accent); background: color-mix(in oklab, var(--accent) 12%, transparent); color: var(--accent); font-weight: 600; }
+    .d-link-url { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+    .d-link-url input { flex: 1; min-width: 220px; height: 36px; padding-inline: 10px; border: 1px solid var(--border-strong); border-radius: 8px; background: var(--surface-2); color: var(--text); font-size: 12.5px; }
+    .d-link-url .d-hint { flex: 1; }
+    .d-lang { display: grid; gap: 12px; align-content: start; padding: 12px 14px 14px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface-2); }
+    .d-lang-head { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; font-size: 13px; font-weight: 600; }
+    .d-lang-head .d-hint { margin-inline-start: auto; }
+    .d-lang-code { padding: 2px 6px; border-radius: 5px; background: color-mix(in oklab, var(--accent) 14%, transparent); color: var(--accent); font: 600 10.5px/1.4 var(--mono); letter-spacing: .04em; }
+    .d-lang .d-field input, .d-lang .d-field textarea { background: var(--surface); }
+    .d-lang-cols { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 12px; }
+    .d-texts { flex-basis: 100%; display: grid; gap: 6px; padding: 10px 2px 4px; }
+    .d-tag > .d-texts { padding: 10px 12px; border-bottom: 1px solid var(--border); background: var(--surface); }
+    .d-icon-btn.has-texts { color: var(--accent); border-color: color-mix(in oklab, var(--accent) 40%, var(--border)); }
+    .d-icon-btn[aria-expanded="true"] { background: var(--surface-2); }
     .d-tag.is-hidden .d-tag-head strong { opacity: .55; text-decoration: line-through; }
     .d-icon-btn:disabled { opacity: .4; cursor: not-allowed; }
     .d-ops { display: grid; }

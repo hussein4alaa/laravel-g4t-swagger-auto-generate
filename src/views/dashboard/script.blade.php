@@ -15,9 +15,10 @@
         ['security', 'Security schemes', ['security_schemes', 'auth_middlewares']],
         ['headers', 'Global headers', ['global_headers']],
         ['environments', 'Environments', ['environments']],
-        ['login', 'Try it out login', ['auto_login']],
+        ['login', 'Try it out logins', ['auto_login']],
         ['generation', 'Generation', ['infer_response_examples', 'infer_error_response_examples', 'response_schemas', 'unwrap_resource_collection_examples', 'include_web_routes', 'spatie_query_builder', 'show_prefix']],
-        ['access', 'Access', ['enable', 'enable_auth', 'username', 'password']]
+        ['access', 'Access', ['enable', 'enable_auth', 'username', 'password']],
+        ['links', 'Partner links', []]
     ];
     var FLAGS = [
         ['infer_response_examples', 'Response examples from controllers', 'response()->json, Resources, models, paginators…'],
@@ -31,10 +32,21 @@
         drag: '<svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><circle cx="9" cy="6" r="1.6"/><circle cx="15" cy="6" r="1.6"/><circle cx="9" cy="12" r="1.6"/><circle cx="15" cy="12" r="1.6"/><circle cx="9" cy="18" r="1.6"/><circle cx="15" cy="18" r="1.6"/></svg>',
         trash: '<svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/></svg>',
         eye: '<svg aria-hidden="true" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg>',
+        pen: '<svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20h4L19 9a2.8 2.8 0 0 0-4-4L4 16z"/><path d="m13.5 6.5 4 4"/></svg>',
         eyeOff: '<svg aria-hidden="true" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3l18 18M10.6 5.1A10.6 10.6 0 0 1 12 5c6.5 0 10 7 10 7a17 17 0 0 1-3.2 4.2M6.6 6.6C3.8 8.4 2 12 2 12s3.5 7 10 7c1.6 0 3-.4 4.3-1"/><path d="M9.9 9.9a3 3 0 0 0 4.2 4.2"/></svg>'
     };
 
     var server = null, model = null, originalPayload = null, errors = {}, saving = false, focusAfterRender = null;
+    // Open text editors ("op:<id>", "tag:<name>"); view state only, never saved.
+    var editingTexts = {};
+    // Partner link tokens created in this page: the server keeps only a hash, so the address is shown until reload.
+    var linkTokens = {};
+    function newToken() {
+        var bytes = new Uint8Array(24);
+        (window.crypto || window.msCrypto).getRandomValues(bytes);
+        return btoa(String.fromCharCode.apply(null, bytes)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+    }
+    function linkUrl(token) { return D.urls.docs + (D.urls.docs.indexOf('?') === -1 ? '?' : '&') + 'key=' + encodeURIComponent(token); }
     var $ = function (id) { return document.getElementById(id); };
     var els = { nav: $('d-nav'), content: $('d-content'), savebar: $('d-savebar'), toast: $('d-toast') };
 
@@ -66,10 +78,113 @@
         return Object.keys(raw).map(function (k) { return { key: k, value: raw[k] == null ? '' : String(raw[k]) }; });
     }
 
+    /** English / Arabic texts: { info: {lang: {title, description}}, tags: {tag: {lang: text}}, operations: {id: {lang: {summary, description}}} }. */
+    function normalizeTexts(raw) {
+        var object = function (v) { return v && typeof v === 'object' && !Array.isArray(v) ? clone(v) : {}; };
+        raw = raw || {};
+        return { info: object(raw.info), tags: object(raw.tags), operations: object(raw.operations) };
+    }
+    function pruneTexts(texts) {
+        var prune = function (value) {
+            if (typeof value === 'string') { return value.trim() === '' ? undefined : value; }
+            if (!value || typeof value !== 'object') { return undefined; }
+            var out = {}, any = false;
+            Object.keys(value).forEach(function (k) { var v = prune(value[k]); if (v !== undefined) { out[k] = v; any = true; } });
+            return any ? out : undefined;
+        };
+        return { info: prune(texts.info) || {}, tags: prune(texts.tags) || {}, operations: prune(texts.operations) || {} };
+    }
+    function textOf(kind, key, lang, fieldName) {
+        var t = model.texts;
+        if (kind === 'info') { return ((t.info[lang] || {})[fieldName]) || ''; }
+        if (kind === 'tag') { return ((t.tags[key] || {})[lang]) || ''; }
+        return (((t.operations[key] || {})[lang] || {})[fieldName]) || '';
+    }
+    function setText(kind, key, lang, fieldName, value) {
+        var t = model.texts;
+        if (kind === 'info') { (t.info[lang] = t.info[lang] || {})[fieldName] = value; return; }
+        if (kind === 'tag') { (t.tags[key] = t.tags[key] || {})[lang] = value; return; }
+        var op = t.operations[key] = t.operations[key] || {};
+        (op[lang] = op[lang] || {})[fieldName] = value;
+    }
+    function hasTexts(kind, key) {
+        var pruned = pruneTexts(model.texts);
+        return kind === 'tag' ? !!pruned.tags[key] : !!pruned.operations[key] || !!pruneMeta(model.meta)[key];
+    }
+    var LANGUAGES = { en: { name: 'English', code: 'EN', dir: 'ltr' }, ar: { name: 'العربية', code: 'AR', dir: 'rtl' } };
+    function textField(label, kind, key, lang, fieldName, placeholder, multiline) {
+        var attrs = ' data-text="' + kind + '" data-key="' + esc(key) + '" data-lang="' + lang + '" data-field="' + fieldName + '" placeholder="' + esc(placeholder || '') + '" autocomplete="off"';
+        var value = textOf(kind, key, lang, fieldName);
+        return '<label class="d-field">' + esc(label) + (multiline ? '<textarea rows="3"' + attrs + '>' + esc(value) + '</textarea>' : '<input' + attrs + ' value="' + esc(value) + '">') + '</label>';
+    }
+    /** One panel per language, written in its own direction so labels and text line up. */
+    function langPanel(lang, body, note) {
+        var l = LANGUAGES[lang];
+        return '<div class="d-lang" dir="' + l.dir + '" lang="' + lang + '"><div class="d-lang-head"><span class="d-lang-code">' + l.code + '</span><span>' + l.name + '</span>' + (note ? '<span class="d-hint">' + esc(note) + '</span>' : '') + '</div>' + body + '</div>';
+    }
+    /* ---------- status & note per operation ---------- */
+
+    var STATUSES = [['stable', 'Stable'], ['new', 'New'], ['beta', 'Beta'], ['deprecated', 'Deprecated']];
+    function pruneMeta(meta) {
+        var out = {};
+        Object.keys(meta).forEach(function (id) {
+            var m = meta[id] || {}, clean = {};
+            ['status', 'sunset', 'replacement', 'note'].forEach(function (k) { if (typeof m[k] === 'string' && m[k].trim() !== '') { clean[k] = m[k]; } });
+            if (clean.status && clean.status !== 'deprecated') { delete clean.sunset; delete clean.replacement; }
+            if (Object.keys(clean).length) { out[id] = clean; }
+        });
+        return out;
+    }
+    /** Dashboard value, else the one set in code with ->deprecated() / ->beta(). */
+    function metaOf(id, key) {
+        var own = (model.meta[id] || {})[key];
+        if (own != null && own !== '') { return own; }
+        var code = (model.info[id] || {}).code_status || {};
+        if (key === 'status') { return code.status || 'stable'; }
+        return (model.meta[id] && model.meta[id].status && model.meta[id].status !== 'deprecated') ? '' : (code[key] || '');
+    }
+    function setMeta(id, key, value) { (model.meta[id] = model.meta[id] || {})[key] = value; }
+    function statusChip(id) {
+        var status = metaOf(id, 'status');
+        if (status === 'stable') { return ''; }
+        var sunset = status === 'deprecated' ? metaOf(id, 'sunset') : '';
+        return '<span class="d-status is-' + esc(status) + '">' + esc(status) + (sunset ? ' · ' + esc(sunset) : '') + '</span>';
+    }
+    function opMetaEditor(id) {
+        var status = metaOf(id, 'status'), code = (model.info[id] || {}).code_status || {};
+        var options = Object.keys(model.info).filter(function (other) { return other !== id; }).map(function (other) { var o = model.info[other]; return '<option value="' + esc(o.method + ' ' + o.path) + '">' + esc(o.summary || '') + '</option>'; }).join('');
+        var html = '<div class="d-meta"><div class="d-field">Status<div class="g4t-seg" role="radiogroup" aria-label="Status" style="grid-template-columns:repeat(4,1fr);max-width:440px">' + STATUSES.map(function (st) {
+            return '<button type="button" role="radio" aria-checked="' + (st[0] === status) + '" data-action="set-status" data-key="' + esc(id) + '" data-value="' + st[0] + '">' + st[1] + '</button>';
+        }).join('') + '</div>' + (code.status && !(model.meta[id] || {}).status ? '<span class="d-hint">Set in code with ->' + esc(code.status) + '(); choose another status here to replace it.</span>' : '') + '</div>';
+        if (status === 'deprecated') {
+            html += '<div class="d-grid"><label class="d-field">Removal date (sunset)<input type="date" data-meta="sunset" data-key="' + esc(id) + '" value="' + esc(metaOf(id, 'sunset')) + '"><span class="d-hint">The docs count the days left.</span></label>' +
+                '<label class="d-field">Use instead<input class="g4t-mono" list="d-ops-' + esc(id) + '" data-meta="replacement" data-key="' + esc(id) + '" value="' + esc(metaOf(id, 'replacement')) + '" placeholder="POST /api/v2/tickets" autocomplete="off" spellcheck="false"><datalist id="d-ops-' + esc(id) + '">' + options + '</datalist></label></div>';
+        }
+        return html + '<label class="d-field">Note for clients<textarea rows="2" dir="auto" data-meta="note" data-key="' + esc(id) + '" placeholder="e.g. Send amounts in fils, not dinars. Rate limited to 10 requests a minute.">' + esc(metaOf(id, 'note')) + '</textarea><span class="d-hint">Shown at the top of the endpoint in the docs, in any language.</span></label></div>';
+    }
+    function opTextsEditor(id) {
+        var op = model.info[id];
+        return '<div class="d-texts">' + opMetaEditor(id) + '<div class="d-lang-cols">' +
+            langPanel('en', textField('Summary', 'op', id, 'en', 'summary', op.summary || 'Summary') + textField('Description', 'op', id, 'en', 'description', op.description || 'Description', true), 'empty keeps the text from your code') +
+            langPanel('ar', textField('الملخص', 'op', id, 'ar', 'summary', 'ملخص قصير') + textField('الوصف', 'op', id, 'ar', 'description', 'ماذا يفعل هذا الطلب', true)) +
+            '</div></div>';
+    }
+    function tagTextsEditor(tag) {
+        var fallback = model.defaults.tags[tag] || 'Description';
+        return '<div class="d-texts"><div class="d-lang-cols">' +
+            langPanel('en', textField('Description', 'tag', tag, 'en', 'description', fallback, true), 'empty keeps the text from your code') +
+            langPanel('ar', textField('الوصف', 'tag', tag, 'ar', 'description', 'وصف القسم', true)) + '</div></div>';
+    }
+    function textsButton(key, label) {
+        var kind = key.indexOf('op:') === 0 ? 'op' : 'tag', open = !!editingTexts[key];
+        return '<button type="button" class="d-icon-btn' + (hasTexts(kind, key.slice(kind === 'op' ? 3 : 4)) ? ' has-texts' : '') + '" data-action="edit-texts" data-value="' + esc(key) + '" aria-expanded="' + open + '" aria-label="Edit ' + esc(label) + '" title="' + (kind === 'op' ? 'Status, note and English / Arabic texts' : 'English / Arabic texts') + '">' + ICON.pen + '</button>';
+    }
+
     function toModel(state) {
         var s = clone(state.settings || {});
         var schemes = s.security_schemes || {};
-        var login = s.auto_login || {};
+        // One login (the config file's shape) or a list; logins without a URL are off.
+        var logins = Array.isArray(s.auto_login) ? s.auto_login : (s.auto_login && typeof s.auto_login === 'object' ? [s.auto_login] : []);
         var tags = [], ops = {}, info = {};
         (state.operations || []).forEach(function (o) {
             if (!ops[o.tag]) { ops[o.tag] = []; tags.push(o.tag); }
@@ -81,7 +196,7 @@
         return {
             general: { title: s.title || '', description: s.description || '', version: s.version || '', email: s.email || '' },
             ui: s.ui || 'g4t', theme: s.theme || 'default',
-            g4t: { mode: (s.g4t || {}).mode || 'light', density: (s.g4t || {}).density || 'comfortable' },
+            g4t: { mode: (s.g4t || {}).mode || 'light', density: (s.g4t || {}).density || 'comfortable', gettingStarted: (s.g4t || {}).getting_started !== false && (s.g4t || {}).getting_started !== 'false' },
             scalar: { theme: (s.scalar || {}).theme || 'purple', layout: (s.scalar || {}).layout || 'modern' },
             versions: (Array.isArray(s.versions) && s.versions.length ? s.versions : ['all']).map(String),
             def: s.default || 'all',
@@ -95,13 +210,18 @@
             envs: (Array.isArray(s.environments) ? s.environments : []).map(function (e) {
                 return { name: e.name || '', base_url: e.base_url || '', vars: pairList(e.variables), headers: pairList(e.headers) };
             }),
-            login: {
-                url: login.url || '', method: login.method || 'POST', token_path: login.token_path || '', security_scheme: login.security_scheme || '',
-                fields: Object.keys(login.fields || {}).map(function (k) { return { key: k, label: login.fields[k] }; })
-            },
+            logins: logins.filter(function (l) { return l && l.url; }).map(function (l) {
+                return {
+                    name: l.name || '', url: l.url || '', method: l.method || 'POST', token_path: l.token_path || '', security_scheme: l.security_scheme || '',
+                    fields: Object.keys(l.fields || {}).map(function (k) { return { key: k, label: l.fields[k] }; }), prefill: l.prefill || null
+                };
+            }),
             flags: flags,
             showPrefix: (s.show_prefix || []).join(', '),
             access: { enable: !!s.enable, enable_auth: !!s.enable_auth, username: s.username || '', password: '', passwordSet: !!s.password_set },
+            links: (state.links || []).map(function (l) { return { id: l.id, name: l.name, tags: (l.tags || []).slice(), expires: l.expires || '', hash: l.hash, created: l.created, expired: !!l.expired }; }),
+            meta: clone(((state.layout && state.layout.meta && state.layout.meta.operations) && !Array.isArray(state.layout.meta.operations)) ? state.layout.meta.operations : {}),
+            texts: normalizeTexts(state.layout && state.layout.texts), defaults: state.defaults || { tags: {} },
             tags: tags, ops: ops, info: info, hidden: ((state.layout && state.layout.hidden) || []).slice(), hiddenTags: ((state.layout && state.layout.hidden_tags) || []).slice()
         };
     }
@@ -118,11 +238,9 @@
             if (x.type === 'apiKey') { out.in = x.where; out.name = x.keyName; }
             schemes[x.name] = out;
         });
-        var fields = {};
-        m.login.fields.forEach(function (f) { if (f.key) { fields[f.key] = f.label || f.key; } });
         var settings = {
             title: m.general.title, description: m.general.description, version: m.general.version, email: m.general.email || null,
-            ui: m.ui, theme: m.theme, g4t: { mode: m.g4t.mode, density: m.g4t.density }, scalar: { theme: m.scalar.theme, layout: m.scalar.layout },
+            ui: m.ui, theme: m.theme, g4t: { mode: m.g4t.mode, density: m.g4t.density, getting_started: !!m.g4t.gettingStarted }, scalar: { theme: m.scalar.theme, layout: m.scalar.layout },
             versions: m.versions.slice(), default: m.def,
             servers: m.servers.map(function (x) { return { url: x.url, description: x.description }; }),
             security_schemes: schemes,
@@ -139,7 +257,13 @@
                 var pairs = function (list) { return list.map(function (p) { return { key: p.key, value: p.value }; }); };
                 return { name: e.name, base_url: e.base_url, variables: pairs(e.vars), headers: pairs(e.headers) };
             }),
-            auto_login: { url: m.login.url || null, method: m.login.method, fields: fields, token_path: m.login.token_path || null, security_scheme: m.login.security_scheme || null },
+            auto_login: m.logins.map(function (l, i) {
+                var fields = {};
+                l.fields.forEach(function (f) { if (f.key) { fields[f.key] = f.label || f.key; } });
+                var out = { name: l.name || 'Login ' + (i + 1), url: l.url, method: l.method, fields: fields, token_path: l.token_path || null, security_scheme: l.security_scheme || null };
+                if (l.prefill) { out.prefill = l.prefill; }
+                return out;
+            }),
             show_prefix: splitList(m.showPrefix),
             enable: m.access.enable, enable_auth: m.access.enable_auth, username: m.access.username
         };
@@ -147,7 +271,12 @@
         if (m.access.password) { settings.password = m.access.password; }
         var operations = {};
         m.tags.forEach(function (t) { operations[t] = m.ops[t].slice(); });
-        return { settings: settings, layout: { tags: m.tags.slice(), operations: operations, hidden: m.hidden.slice(), hidden_tags: m.hiddenTags.slice() } };
+        var links = m.links.map(function (l) {
+            var out = { id: l.id, name: l.name, tags: l.tags.slice(), expires: l.expires || null };
+            if (linkTokens[l.id]) { out.token = linkTokens[l.id]; } else { out.hash = l.hash; }
+            return out;
+        });
+        return { settings: settings, links: links, layout: { tags: m.tags.slice(), operations: operations, hidden: m.hidden.slice(), hidden_tags: m.hiddenTags.slice(), texts: pruneTexts(m.texts), meta: { operations: pruneMeta(m.meta) } } };
     }
 
     function changedSettings(payload) {
@@ -199,9 +328,9 @@
     function addBtn(list, label) { return '<button type="button" class="g4t-btn g4t-add-item" data-action="add" data-list="' + list + '" style="justify-self:start">+ ' + esc(label) + '</button>'; }
     function section(id, title, description, body) {
         var keys = (SECTIONS.filter(function (s) { return s[0] === id; })[0] || [])[2] || [];
-        var saved = id === 'endpoints'
-            ? (server.layout.tags.length || server.layout.hidden.length || server.layout.hidden_tags.length || Object.keys(server.layout.operations).length)
-            : keys.some(function (k) { return server.overridden.indexOf(k) !== -1; });
+        var saved = id === 'links' ? server.links.length > 0 : id === 'endpoints'
+            ? (server.layout.tags.length || server.layout.hidden.length || server.layout.hidden_tags.length || Object.keys(server.layout.operations).length || Object.keys(normalizeTexts(server.layout.texts).operations).length || Object.keys(normalizeTexts(server.layout.texts).tags).length || Object.keys(((server.layout.meta || {}).operations) || {}).length)
+            : keys.some(function (k) { return server.overridden.indexOf(k) !== -1; }) || (id === 'general' && Object.keys(normalizeTexts(server.layout.texts).info).length > 0);
         return '<section class="d-section" id="sec-' + id + '"><header><h2>' + esc(title) + (saved ? '<span class="d-badge" title="Overrides config/swagger.php">saved in dashboard</span>' : '') + '</h2>' + (description ? '<p>' + description + '</p>' : '') + '</header>' + body + '</section>';
     }
 
@@ -210,13 +339,16 @@
     function sGeneral() {
         return section('general', 'General', 'The <code class="g4t-mono">info</code> block of the OpenAPI document.',
             '<div class="d-grid">' + field('Title', 'general.title', { err: 'title' }) + field('Version', 'general.version', { err: 'version', mono: true }) + field('Contact email', 'general.email', { err: 'email', type: 'email' }) + '</div>' +
-            field('Description', 'general.description', { type: 'textarea', err: 'description', hint: 'Shown under the title in every UI.' }));
+            field('Description', 'general.description', { type: 'textarea', err: 'description', hint: 'Shown under the title in every UI.' }) +
+            langPanel('ar', textField('العنوان', 'info', '', 'ar', 'title', 'عنوان التوثيق') + textField('الوصف', 'info', '', 'ar', 'description', 'يظهر تحت العنوان', true)) +
+            '<span class="d-hint">Shown when a reader picks العربية in the g4t UI. Endpoints and sections get theirs from the pen button under Endpoints.</span>');
     }
     function sInterface() {
         var body = '<div class="d-field">Documentation UI' + seg('ui', [['g4t', 'g4t'], ['swagger', 'Swagger UI'], ['scalar', 'Scalar']]) + '<span class="d-hint">Readers can still switch for one visit with ?ui=… on the URL.</span></div>';
         if (model.ui === 'g4t') {
             body += '<div class="d-grid"><div class="d-field">Default mode' + seg('g4t.mode', [['light', 'Light'], ['dark', 'Dark'], ['system', 'System']]) + '</div><div class="d-field">Density' + seg('g4t.density', [['comfortable', 'Comfortable'], ['compact', 'Compact']]) + '</div></div>';
             body += field('Accent theme', 'theme', { options: THEMES, err: 'theme' });
+            body += toggle('Getting started card', 'g4t.gettingStarted', 'Base URL, authentication, headers, error shapes and pagination, worked out from the document.');
         } else if (model.ui === 'swagger') {
             body += field('Swagger UI theme', 'theme', { options: THEMES, err: 'theme' });
         } else {
@@ -231,12 +363,15 @@
             model.tags.map(function (tag, ti) {
                 var tagHidden = model.hiddenTags.indexOf(tag) !== -1;
                 return '<div class="d-tag' + (tagHidden ? ' is-hidden' : '') + '" data-sort-index="' + ti + '"><div class="d-tag-head">' + handle(tag) + '<strong>' + esc(tag) + '</strong><span class="g4t-muted" style="font-size:12px">' + model.ops[tag].length + (tagHidden ? ' · hidden, new endpoints too' : '') + '</span>' +
-                    '<button type="button" class="d-icon-btn d-tag-eye" data-action="toggle-tag" data-value="' + esc(tag) + '" aria-pressed="' + tagHidden + '" aria-label="' + (tagHidden ? 'Show' : 'Hide') + ' every ' + esc(tag) + ' endpoint" title="' + (tagHidden ? 'Show this controller in the documentation' : 'Hide the whole controller') + '">' + (tagHidden ? ICON.eyeOff : ICON.eye) + '</button></div>' +
+                    '<span class="d-tag-tools">' + textsButton('tag:' + tag, tag) +
+                    '<button type="button" class="d-icon-btn d-tag-eye" data-action="toggle-tag" data-value="' + esc(tag) + '" aria-pressed="' + tagHidden + '" aria-label="' + (tagHidden ? 'Show' : 'Hide') + ' every ' + esc(tag) + ' endpoint" title="' + (tagHidden ? 'Show this controller in the documentation' : 'Hide the whole controller') + '">' + (tagHidden ? ICON.eyeOff : ICON.eye) + '</button></span></div>' + (editingTexts['tag:' + tag] ? tagTextsEditor(tag) : '') +
                     '<div class="d-ops" data-sortable="ops:' + esc(tag) + '">' + model.ops[tag].map(function (id, oi) {
                         var op = model.info[id], hidden = tagHidden || model.hidden.indexOf(id) !== -1, m = op.method.toLowerCase();
-                        return '<div class="d-op' + (hidden ? ' is-hidden' : '') + '" data-sort-index="' + oi + '">' + handle(op.method + ' ' + op.path) +
-                            '<span class="d-op-text"><span class="g4t-method m-' + esc(m) + '">' + esc(op.method) + '</span><span class="d-op-path">' + esc(op.path) + '</span><span class="d-op-summary">' + esc(op.summary) + '</span></span>' +
-                            '<button type="button" class="d-icon-btn" data-action="toggle-op"' + (tagHidden ? ' disabled' : '') + ' data-value="' + esc(id) + '" aria-pressed="' + hidden + '" aria-label="' + (hidden ? 'Show' : 'Hide') + ' ' + esc(op.method + ' ' + op.path) + '" title="' + (hidden ? 'Hidden from the documentation' : 'Hide from the documentation') + '">' + (hidden ? ICON.eyeOff : ICON.eye) + '</button></div>';
+                        var shownSummary = textOf('op', id, 'en', 'summary') || op.summary;
+                        return '<div class="d-op' + (hidden ? ' is-hidden' : '') + (editingTexts['op:' + id] ? ' has-editor' : '') + '" data-sort-index="' + oi + '">' + handle(op.method + ' ' + op.path) +
+                            '<span class="d-op-text"><span class="g4t-method m-' + esc(m) + '">' + esc(op.method) + '</span><span class="d-op-path">' + esc(op.path) + '</span><span class="d-op-summary">' + esc(shownSummary) + '</span>' + statusChip(id) + ((model.meta[id] || {}).note || (op.code_status || {}).note ? '<span class="d-note-dot" title="Has a note for clients">note</span>' : '') + '</span>' +
+                            textsButton('op:' + id, op.method + ' ' + op.path) +
+                            '<button type="button" class="d-icon-btn" data-action="toggle-op"' + (tagHidden ? ' disabled' : '') + ' data-value="' + esc(id) + '" aria-pressed="' + hidden + '" aria-label="' + (hidden ? 'Show' : 'Hide') + ' ' + esc(op.method + ' ' + op.path) + '" title="' + (hidden ? 'Hidden from the documentation' : 'Hide from the documentation') + '">' + (hidden ? ICON.eyeOff : ICON.eye) + '</button>' + (editingTexts['op:' + id] ? opTextsEditor(id) : '') + '</div>';
                     }).join('') + '</div></div>';
             }).join('') + '</div>';
         if (!model.tags.length) { body = '<div class="d-note">No documented operations yet. Routes need the <code class="g4t-mono">api</code> middleware.</div>'; }
@@ -316,14 +451,23 @@
     }
     function sLogin() {
         var schemeOptions = [['', '— first bearer scheme —']].concat(model.schemes.filter(function (x) { return x.name; }).map(function (x) { return [x.name, x.name]; }));
-        var fields = '<div class="d-list" data-sortable="fields">' + model.login.fields.map(function (f, i) {
-            return '<div class="d-item" data-sort-index="' + i + '">' + handle('field ' + f.key) + '<div class="d-item-body"><div class="d-row">' +
-                '<label class="d-field">Request field<input class="g4t-mono" data-bind="login.fields.' + i + '.key" value="' + esc(f.key) + '" placeholder="email" autocomplete="off" spellcheck="false"></label>' +
-                '<label class="d-field">Label<input data-bind="login.fields.' + i + '.label" value="' + esc(f.label) + '" placeholder="Email" autocomplete="off"></label></div></div>' + removeBtn('fields', i, 'field ' + f.key) + '</div>';
-        }).join('') + '</div>' + errorText('auto_login.fields');
-        return section('login', 'Try it out login', 'A Log in button that posts these fields to your login endpoint and uses the token it returns. Leave the URL empty to only allow pasting a token.',
-            '<div class="d-grid">' + field('Login endpoint', 'login.url', { placeholder: '/api/auth/login', mono: true, err: 'auto_login.url' }) + field('Method', 'login.method', { options: ['POST', 'PUT'] }) + field('Token path in the response', 'login.token_path', { placeholder: 'access_token or data.token', mono: true, hint: 'Empty: token, access_token, data.token… are tried.' }) + field('Security scheme it fills', 'login.security_scheme', { options: schemeOptions }) + '</div>' +
-            '<div class="d-field">Form fields</div>' + fields + addBtn('fields', 'Add field'));
+        var list = '<div class="d-list" data-sortable="logins">' + model.logins.map(function (login, li) {
+            var key = 'auto_login.' + li;
+            var fields = '<div class="d-list" data-sortable="login-fields:' + li + '">' + login.fields.map(function (f, i) {
+                return '<div class="d-item" data-sort-index="' + i + '">' + handle('field ' + f.key) + '<div class="d-item-body"><div class="d-row">' +
+                    '<label class="d-field">Request field<input class="g4t-mono" data-bind="logins.' + li + '.fields.' + i + '.key" value="' + esc(f.key) + '" placeholder="email" autocomplete="off" spellcheck="false"></label>' +
+                    '<label class="d-field">Label<input data-bind="logins.' + li + '.fields.' + i + '.label" value="' + esc(f.label) + '" placeholder="Email" autocomplete="off"></label></div></div>' + removeBtn('login-fields:' + li, i, 'field ' + f.key) + '</div>';
+            }).join('') + '</div>' + errorText(key + '.fields');
+            return '<div class="d-item" data-sort-index="' + li + '">' + handle('login ' + login.name) + '<div class="d-item-body">' +
+                '<div class="d-grid">' + field('Name', 'logins.' + li + '.name', { placeholder: li ? 'Admin' : 'Customer', err: key + '.name', hint: 'Shown in the Log in dialog when there are several.' }) +
+                field('Login endpoint', 'logins.' + li + '.url', { placeholder: '/api/auth/login', mono: true, err: key + '.url' }) +
+                field('Method', 'logins.' + li + '.method', { options: ['POST', 'PUT'] }) +
+                field('Token path in the response', 'logins.' + li + '.token_path', { placeholder: 'access_token or data.token', mono: true, hint: 'Empty: token, access_token, data.token… are tried.' }) +
+                field('Security scheme it fills', 'logins.' + li + '.security_scheme', { options: schemeOptions, hint: 'Give each login its own scheme to stay signed in to all of them at once.' }) + '</div>' +
+                '<div class="d-field">Form fields</div>' + fields + addBtn('login-fields:' + li, 'Add field') + '</div>' + removeBtn('logins', li, 'login ' + login.name) + '</div>';
+        }).join('') + '</div>';
+        return section('login', 'Try it out logins', 'Log in buttons that post these fields to your login endpoints and use the token they return. With several (customer, admin…) the reader picks one in the Log in dialog. Without any, readers can still paste a token.',
+            (model.logins.length ? list : '<div class="d-note">No login: readers paste a token in Authorize.</div>') + addBtn('logins', 'Add login'));
     }
     function sGeneration() {
         return section('generation', 'Generation', 'What the generator reads from your code.',
@@ -340,6 +484,26 @@
             '<div class="d-note">The dashboard itself is protected by <code class="g4t-mono">SWAGGER_DASHBOARD_USERNAME</code> / <code class="g4t-mono">SWAGGER_DASHBOARD_PASSWORD</code> in your <code class="g4t-mono">.env</code>; it cannot change them.</div>');
     }
 
+    function sLinks() {
+        var list = '<div class="d-list">' + model.links.map(function (l, i) {
+            var token = linkTokens[l.id];
+            var chips = model.tags.map(function (tag) {
+                var on = l.tags.indexOf(tag) !== -1;
+                return '<button type="button" class="d-chip" aria-pressed="' + on + '" data-action="link-tag" data-index="' + i + '" data-value="' + esc(tag) + '">' + esc(tag) + '</button>';
+            }).join('');
+            var address = token
+                ? '<div class="d-link-url"><input class="g4t-mono" readonly value="' + esc(linkUrl(token)) + '" aria-label="Link address" onfocus="this.select()"><button type="button" class="g4t-btn g4t-btn-primary" data-action="link-copy" data-value="' + esc(l.id) + '">Copy</button></div><span class="d-hint">' + (l.hash ? 'Copy it now: only a fingerprint is stored, so the address is shown until you leave this page.' : 'Save to activate it. Copy it now: only a fingerprint is stored, so the address is shown until you leave this page.') + '</span>'
+                : '<div class="d-link-url"><span class="d-hint">The address was shown when the link was created. Lost it? Make a new one; the old address stops working when you save.</span><button type="button" class="g4t-btn" data-action="link-regenerate" data-value="' + esc(l.id) + '">New address</button></div>';
+            return '<div class="d-item"><div class="d-item-body">' +
+                '<div class="d-row" style="align-items:start"><label class="d-field' + (errors['links.' + i + '.name'] ? ' is-invalid' : '') + '">Shared with<input data-bind="links.' + i + '.name" value="' + esc(l.name) + '" placeholder="Acme mobile team" autocomplete="off">' + errorText('links.' + i + '.name') + '</label>' +
+                '<label class="d-field">Expires<input type="date" data-bind="links.' + i + '.expires" value="' + esc(l.expires) + '"><span class="d-hint">' + (l.expired ? '<b style="color:var(--err-fg)">Expired</b> · ' : '') + (l.created ? 'created ' + esc(l.created) : 'not saved yet') + (l.expires ? '' : ' · never expires') + '</span></label></div>' +
+                '<div class="d-field">Sections it can see<div class="d-chips">' + chips + '</div><span class="d-hint">' + (l.tags.length ? l.tags.length + ' of ' + model.tags.length + ' sections' : 'None picked: every section') + '. Schemas used only by other sections are left out too.</span></div>' +
+                address + errorText('links.' + i + '.token') + '</div>' + removeBtn('links', i, 'link ' + l.name) + '</div>';
+        }).join('') + '</div>';
+        return section('links', 'Partner links', 'A secret address per partner or client: it opens the g4t docs without the docs password (even when the docs are turned off) and shows only the sections you pick. Remove a link to revoke it.',
+            (model.links.length ? list : '<div class="d-note">No partner links.</div>') + addBtn('links', 'New link'));
+    }
+
     function render() {
         if (!model) { return; }
         var scrollY = window.scrollY;
@@ -348,7 +512,7 @@
             '<p style="margin:0;color:var(--text-2);font-size:13.5px">Saved to <code class="g4t-mono" style="font-size:12px">' + esc(server.settings_file) + '</code> and layered over <code class="g4t-mono" style="font-size:12px">config/swagger.php</code>: anything you never change here keeps following the file.' + (server.cached_spec ? ' Saving also clears the cached document (<code class="g4t-mono" style="font-size:12px">swagger:cache</code>).' : '') + '</p>' +
             (server.overridden.length || server.layout.tags.length || server.layout.hidden.length || server.layout.hidden_tags.length ? '<div><button type="button" class="g4t-btn g4t-btn-danger" data-action="reset-all">Remove all dashboard changes</button></div>' : '') + '</div>' +
             (errorList.length ? '<div class="d-alert" role="alert"><strong>Some values need fixing:</strong>' + errorList.slice(0, 8).map(function (k) { return '<span>' + esc([].concat(errors[k])[0]) + '</span>'; }).join('') + '</div>' : '');
-        els.content.innerHTML = head + sGeneral() + sInterface() + sEndpoints() + sVersions() + sSecurity() + sHeaders() + sEnvironments() + sLogin() + sGeneration() + sAccess();
+        els.content.innerHTML = head + sGeneral() + sInterface() + sEndpoints() + sVersions() + sSecurity() + sHeaders() + sEnvironments() + sLogin() + sGeneration() + sAccess() + sLinks();
         window.scrollTo(0, scrollY);
         renderSavebar();
         if (focusAfterRender) {
@@ -377,7 +541,9 @@
         if (name === 'schemes') { return model.schemes; }
         if (name === 'headers') { return model.headers; }
         if (name === 'authMiddlewares') { return model.authMiddlewares; }
-        if (name === 'fields') { return model.login.fields; }
+        if (name === 'logins') { return model.logins; }
+        if (name === 'links') { return model.links; }
+        if (name.indexOf('login-fields:') === 0) { return (model.logins[Number(name.slice(13))] || {}).fields; }
         if (name === 'envs') { return model.envs; }
         if (name.indexOf('env-vars:') === 0) { return (model.envs[Number(name.slice(9))] || {}).vars; }
         if (name.indexOf('env-headers:') === 0) { return (model.envs[Number(name.slice(12))] || {}).headers; }
@@ -396,7 +562,9 @@
         if (name === 'servers') { model.servers.push({ url: '', description: '' }); }
         if (name === 'schemes') { model.schemes.push({ name: 'scheme' + (model.schemes.length + 1), type: 'apiKey', scheme: 'bearer', where: 'header', keyName: 'X-API-Key', bearerFormat: '' }); }
         if (name === 'headers') { model.headers.push({ name: '', description: '', required: false, example: '', default: '', enumText: '' }); }
-        if (name === 'fields') { model.login.fields.push({ key: '', label: '' }); }
+        if (name === 'links') { var linkId = 'l' + Date.now().toString(36); linkTokens[linkId] = newToken(); model.links.push({ id: linkId, name: 'Partner ' + (model.links.length + 1), tags: [], expires: '', hash: null, created: null, expired: false }); }
+        if (name === 'logins') { model.logins.push({ name: model.logins.length ? 'Login ' + (model.logins.length + 1) : 'Customer', url: '', method: 'POST', token_path: '', security_scheme: '', fields: [{ key: 'email', label: 'Email' }, { key: 'password', label: 'Password' }], prefill: null }); }
+        if (name.indexOf('login-fields:') === 0) { var loginFields = listArray(name); if (loginFields) { loginFields.push({ key: '', label: '' }); } }
         if (name === 'authMiddlewares') { model.authMiddlewares.push(''); }
         if (name === 'envs') { model.envs.push({ name: model.envs.length ? 'Environment ' + (model.envs.length + 1) : 'Staging', base_url: '', vars: [], headers: [] }); }
         if (name.indexOf('env-') === 0 && name !== 'envs') { var rows = listArray(name); if (rows) { rows.push({ key: '', value: '' }); } }
@@ -469,6 +637,25 @@
                 var at = model.hidden.indexOf(value);
                 if (at === -1) { model.hidden.push(value); } else { model.hidden.splice(at, 1); }
                 render(); break;
+            case 'link-tag':
+                var linkTags = model.links[index].tags, at2 = linkTags.indexOf(value);
+                if (at2 === -1) { linkTags.push(value); } else { linkTags.splice(at2, 1); }
+                render(); break;
+            case 'link-copy':
+                if (linkTokens[value] && navigator.clipboard) { navigator.clipboard.writeText(linkUrl(linkTokens[value])).then(function () { toast('Link copied'); }, function () { toast('Copy it from the field'); }); }
+                break;
+            case 'link-regenerate':
+                linkTokens[value] = newToken();
+                model.links.forEach(function (l) { if (l.id === value) { l.hash = null; } });
+                render(); toast('New address · save to replace the old one'); break;
+            case 'set-status':
+                setMeta(el.getAttribute('data-key'), 'status', value);
+                render(); break;
+            case 'edit-texts':
+                editingTexts[value] = !editingTexts[value];
+                render();
+                if (editingTexts[value]) { var first = document.querySelector('[data-text][data-key="' + CSS.escape(value.replace(/^(op|tag):/, '')) + '"]'); if (first) { first.focus(); } }
+                break;
             case 'toggle-tag':
                 var tagAt = model.hiddenTags.indexOf(value);
                 if (tagAt === -1) { model.hiddenTags.push(value); } else { model.hiddenTags.splice(tagAt, 1); }
@@ -480,11 +667,23 @@
             case 'discard': model = toModel(server); errors = {}; render(); toast('Changes discarded'); break;
             case 'save': save(); break;
             case 'reset-all':
-                if (window.confirm('Remove every change saved from the dashboard? config/swagger.php applies again.')) { request('DELETE').then(function (state) { if (state) { load(state); toast(state.message || 'Dashboard changes removed'); } }); }
+                if (window.confirm('Remove every change saved from the dashboard? config/swagger.php applies again, and partner links stop working.')) { request('DELETE').then(function (state) { if (state) { load(state); toast(state.message || 'Dashboard changes removed'); } }); }
                 break;
         }
     });
     document.addEventListener('input', function (e) {
+        if (model && e.target.hasAttribute && e.target.hasAttribute('data-meta')) {
+            setMeta(e.target.getAttribute('data-key'), e.target.getAttribute('data-meta'), e.target.value);
+            if (e.target.getAttribute('data-meta') === 'sunset') { render(); return; }
+            renderSavebar();
+            return;
+        }
+        if (model && e.target.hasAttribute && e.target.hasAttribute('data-text')) {
+            var t = e.target;
+            setText(t.getAttribute('data-text'), t.getAttribute('data-key'), t.getAttribute('data-lang'), t.getAttribute('data-field'), t.value);
+            renderSavebar();
+            return;
+        }
         var path = e.target.getAttribute && e.target.getAttribute('data-bind');
         if (!path || !model) { return; }
         var oldValue = getPath(model, path);
@@ -529,9 +728,9 @@
     function save() {
         if (saving) { return; }
         var payload = toPayload(model);
-        if (resetToRouteOrder) { payload.layout = { tags: [], operations: {}, hidden: [], hidden_tags: [] }; }
+        if (resetToRouteOrder) { payload.layout = { tags: [], operations: {}, hidden: [], hidden_tags: [], texts: payload.layout.texts, meta: payload.layout.meta }; }
         saving = true; errors = {}; renderSavebar();
-        request('PUT', { settings: changedSettings(payload), layout: payload.layout }).then(function (state) {
+        request('PUT', { settings: changedSettings(payload), layout: payload.layout, links: payload.links }).then(function (state) {
             saving = false;
             if (state) { load(state); toast('Saved · the documentation uses the new settings'); } else { renderSavebar(); }
         });

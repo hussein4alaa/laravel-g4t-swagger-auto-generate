@@ -472,6 +472,40 @@ abstract class BaseResponse
         return $parameters;
     }
 
+    /**
+     * deprecated: true (every UI strikes it through) plus x-status / x-sunset / x-replaced-by / x-note for the
+     * g4t UI. Swagger UI and Scalar ignore x- fields, so the same information is appended to the description;
+     * x-description keeps the original for the g4t UI.
+     *
+     * @param  array<string, mixed>  $response
+     * @param  array{status?: string, sunset?: string, replacement?: string, note?: string}  $status
+     */
+    private static function applyStatus(array &$response, array $status): void
+    {
+        if ($status === []) {
+            return;
+        }
+
+        $lines = [];
+        if (($status['status'] ?? null) === 'deprecated') {
+            $response['deprecated'] = true;
+            $lines[] = '**Deprecated**'.(isset($status['sunset']) ? ': removed on '.$status['sunset'] : '').(isset($status['replacement']) ? '. Use '.$status['replacement'].' instead.' : '.');
+        } elseif (isset($status['status'])) {
+            $lines[] = '**'.ucfirst($status['status']).'**'.($status['status'] === 'beta' ? ': may change without notice.' : '');
+        }
+        if (isset($status['note'])) {
+            $lines[] = '> '.str_replace("\n", "\n> ", $status['note']);
+        }
+
+        $response['x-description'] = $response['description'];
+        $response['description'] = trim($response['description']."\n\n".implode("\n\n", $lines));
+        foreach (['status' => 'x-status', 'sunset' => 'x-sunset', 'replacement' => 'x-replaced-by', 'note' => 'x-note'] as $key => $extension) {
+            if (isset($status[$key])) {
+                $response[$extension] = $status[$key];
+            }
+        }
+    }
+
     public static function index($route)
     {
         $response = [
@@ -489,6 +523,10 @@ abstract class BaseResponse
         if (isset($route['x_order'])) {
             $response['x-order'] = $route['x_order'];
         }
+        if (! empty($route['x_translations'])) {
+            $response['x-translations'] = $route['x_translations'];
+        }
+        self::applyStatus($response, (array) ($route['status'] ?? []));
 
         self::applyStoredResponseExamples($response, $route);
         self::applyInferredResponseExample($response, $route);

@@ -3,6 +3,7 @@
 namespace G4T\Swagger\Controllers;
 
 use G4T\Swagger\Support\CachedSpec;
+use G4T\Swagger\Support\PartnerLinks;
 use G4T\Swagger\Support\Settings;
 use G4T\Swagger\Swagger;
 use Illuminate\Http\JsonResponse;
@@ -22,6 +23,9 @@ class DashboardController
     private const SESSION_KEY = 'g4t_swagger_dashboard_user';
 
     private const MAX_ATTEMPTS = 5;
+
+    /** @var array{title: string, description: string, tags: array<string, string>} */
+    private array $defaults = ['title' => '', 'description' => '', 'tags' => []];
 
     public static function url(): string
     {
@@ -103,8 +107,9 @@ class DashboardController
     {
         $values = $this->validated($request);
         $layout = (array) $request->input('layout', []);
+        $links = $request->has('links') ? $this->validatedLinks($request) : null;
 
-        if (! Settings::save($values, $layout)) {
+        if (! Settings::save($values, $layout) || ($links !== null && ! Settings::saveLinks($links))) {
             return response()->json(['message' => 'Could not write '.Settings::path().'. Check that its directory is writable.'], 500);
         }
 
@@ -137,7 +142,11 @@ class DashboardController
             'overridden' => array_keys(Settings::overrides()),
             'layout' => Settings::layout(),
             'operations' => $this->operations($request),
+            // Generated (code) texts, shown as placeholders next to the dashboard's own.
+            'defaults' => $this->defaults,
             'settings_file' => Settings::path(),
+            // Partner links without their tokens: only a hash is stored.
+            'links' => array_map(fn (array $link) => $link + ['expired' => PartnerLinks::expired($link)], Settings::links()),
             'cached_spec' => CachedSpec::read() !== null,
         ];
     }
@@ -152,11 +161,16 @@ class DashboardController
         $previous = $request->query('version');
         $request->query->set('version', 'all');
         try {
-            $spec = json_decode(json_encode((new Swagger)->includingHidden()->swagger()), true);
+            $spec = json_decode(json_encode((new Swagger)->includingHidden()->withoutTextChanges()->swagger()), true);
         } finally {
             $previous === null ? $request->query->remove('version') : $request->query->set('version', $previous);
         }
 
+        $this->defaults = [
+            'title' => (string) ($spec['info']['title'] ?? ''),
+            'description' => (string) ($spec['info']['description'] ?? ''),
+            'tags' => array_column(array_map(fn (array $tag) => ['name' => $tag['name'], 'description' => (string) ($tag['description'] ?? '')], (array) ($spec['tags'] ?? [])), 'description', 'name'),
+        ];
         $hidden = array_flip(Settings::layout()['hidden']);
         $operations = [];
         foreach ((array) ($spec['paths'] ?? []) as $path => $methods) {
@@ -167,6 +181,9 @@ class DashboardController
                     'method' => strtoupper($method),
                     'path' => (string) $path,
                     'summary' => (string) ($operation['summary'] ?? ''),
+                    'description' => (string) ($operation['x-description'] ?? $operation['description'] ?? ''),
+                    // Status set in code (->deprecated() / ->beta()), shown until the dashboard sets one.
+                    'code_status' => array_filter(['status' => $operation['x-status'] ?? null, 'sunset' => $operation['x-sunset'] ?? null, 'replacement' => $operation['x-replaced-by'] ?? null, 'note' => $operation['x-note'] ?? null]),
                     'tag' => (string) ($operation['tags'][0] ?? 'default'),
                     'hidden' => isset($hidden[$id]),
                     'order' => (int) ($operation['x-order'] ?? PHP_INT_MAX),
@@ -208,11 +225,60 @@ class DashboardController
     }
 
     /**
+     * Partner links to store: a new link sends its token (hashed here), a kept one its stored hash.
+     *
+     * @return list<array<string, mixed>>
+     */
+    private function validatedLinks(Request $request): array
+    {
+        $input = ['links' => (array) $request->input('links', [])];
+        $stored = collect(Settings::links())->keyBy('hash');
+        $validator = Validator::make($input, [
+            'links' => ['array', 'max:100'],
+            'links.*.id' => ['required', 'string', 'max:40', 'regex:/^[A-Za-z0-9_-]+$/', 'distinct'],
+            'links.*.name' => ['required', 'string', 'max:60'],
+            'links.*.tags' => ['array'],
+            'links.*.tags.*' => ['string', 'max:200'],
+            'links.*.expires' => ['nullable', 'date_format:Y-m-d'],
+            'links.*.token' => ['nullable', 'string', 'regex:/^[A-Za-z0-9_-]{24,128}$/'],
+            'links.*.hash' => ['nullable', 'string', 'regex:/^[a-f0-9]{64}$/'],
+        ]);
+        $validator->after(function ($validator) use ($input, $stored) {
+            foreach ($input['links'] as $index => $link) {
+                $hash = $link['hash'] ?? null;
+                if (blank($link['token'] ?? null) && ($hash === null || ! $stored->has($hash))) {
+                    $validator->errors()->add("links.{$index}.token", 'Create the link again: its token is missing.');
+                }
+            }
+        });
+        if ($validator->fails()) {
+            throw new ValidationException($validator);
+        }
+
+        return array_map(function (array $link) use ($stored) {
+            $hash = filled($link['token'] ?? null) ? hash('sha256', $link['token']) : $link['hash'];
+
+            return [
+                'id' => $link['id'],
+                'name' => $link['name'],
+                'hash' => $hash,
+                'tags' => array_values((array) ($link['tags'] ?? [])),
+                'expires' => $link['expires'] ?? null,
+                'created' => $stored->get($hash)['created'] ?? now()->toDateString(),
+            ];
+        }, array_values($input['links']));
+    }
+
+    /**
      * @return array<string, mixed> editable swagger.* values ready to save
      */
     private function validated(Request $request): array
     {
         $input = (array) $request->input('settings', []);
+        // One login (the config file's shape) or a list of them.
+        if (isset($input['auto_login']) && is_array($input['auto_login']) && ! array_is_list($input['auto_login'])) {
+            $input['auto_login'] = [$input['auto_login']];
+        }
         $name = 'regex:/^[A-Za-z0-9_.-]+$/';
         $header = 'regex:/^[A-Za-z0-9!#$%&\'*+.^_`|~-]+$/';
 
@@ -230,6 +296,7 @@ class DashboardController
             'g4t' => ['array'],
             'g4t.mode' => [Rule::in(['light', 'dark', 'system'])],
             'g4t.density' => [Rule::in(['comfortable', 'compact'])],
+            'g4t.getting_started' => ['boolean'],
             'scalar' => ['array'],
             'scalar.theme' => ['nullable', 'string', 'max:40', $name],
             'scalar.layout' => [Rule::in(['modern', 'classic'])],
@@ -272,13 +339,15 @@ class DashboardController
             'environments.*.headers' => ['array'],
             'environments.*.headers.*.key' => ['required', 'string', 'max:100', $header],
             'environments.*.headers.*.value' => ['nullable', 'string', 'max:2000'],
-            'auto_login' => ['array'],
-            'auto_login.url' => ['nullable', 'string', 'max:500'],
-            'auto_login.method' => [Rule::in(['POST', 'PUT'])],
-            'auto_login.fields' => ['array'],
-            'auto_login.fields.*' => ['string', 'max:100'],
-            'auto_login.token_path' => ['nullable', 'string', 'max:100'],
-            'auto_login.security_scheme' => ['nullable', 'string', 'max:100'],
+            'auto_login' => ['array', 'max:20'],
+            'auto_login.*.name' => ['nullable', 'string', 'max:60', 'distinct'],
+            'auto_login.*.url' => ['required', 'string', 'max:500'],
+            'auto_login.*.method' => [Rule::in(['POST', 'PUT'])],
+            'auto_login.*.fields' => ['array'],
+            'auto_login.*.fields.*' => ['string', 'max:100'],
+            'auto_login.*.token_path' => ['nullable', 'string', 'max:100'],
+            'auto_login.*.security_scheme' => ['nullable', 'string', 'max:100'],
+            'auto_login.*.prefill' => ['nullable', 'array'],
             'infer_response_examples' => ['boolean'],
             'infer_error_response_examples' => ['boolean'],
             'response_schemas' => ['boolean'],
@@ -305,9 +374,11 @@ class DashboardController
             if (isset($input['versions'], $input['default']) && ! in_array($input['default'], (array) $input['versions'], true)) {
                 $validator->errors()->add('default', 'The default version must be one of the versions.');
             }
-            foreach ((array) ($input['auto_login']['fields'] ?? []) as $field => $label) {
-                if (! is_string($field) || ! preg_match('/^[A-Za-z0-9_.-]+$/', $field)) {
-                    $validator->errors()->add('auto_login.fields', 'Login field names use letters, digits, . _ - only.');
+            foreach ((array) ($input['auto_login'] ?? []) as $index => $login) {
+                foreach ((array) ($login['fields'] ?? []) as $field => $label) {
+                    if (! is_string($field) || ! preg_match('/^[A-Za-z0-9_.-]+$/', $field)) {
+                        $validator->errors()->add("auto_login.{$index}.fields", 'Login field names use letters, digits, . _ - only.');
+                    }
                 }
             }
         });
@@ -345,8 +416,8 @@ class DashboardController
                 'headers' => $pairs((array) ($env['headers'] ?? [])),
             ], $values['environments']));
         }
-        if (array_key_exists('auto_login', $values) && blank($values['auto_login']['url'] ?? null)) {
-            $values['auto_login']['url'] = null;
+        if (isset($values['auto_login'])) {
+            $values['auto_login'] = array_values(array_map(fn (array $login) => array_filter($login, fn ($v) => $v !== null && $v !== ''), $values['auto_login']));
         }
 
         return $values;

@@ -321,6 +321,90 @@ class DashboardTest extends TestCase
         $this->assertArrayHasKey('/api/v1/posts', $this->spec()['paths']);
     }
 
+    public function test_english_and_arabic_texts_reach_the_document(): void
+    {
+        $this->withSession(self::SESSION)->putJson('/swagger/dashboard/api/settings', [
+            'settings' => [],
+            'layout' => ['texts' => [
+                'info' => ['ar' => ['title' => 'توثيق الواجهة', 'description' => '']],
+                'tags' => ['Post' => ['en' => 'Blog posts', 'ar' => 'المقالات']],
+                'operations' => ['get_api_v1_posts' => ['en' => ['summary' => 'All posts'], 'ar' => ['summary' => 'كل المقالات', 'description' => 'قائمة مرتبة']]],
+            ]],
+        ])->assertOk()->assertJsonPath('layout.texts.info', ['ar' => ['title' => 'توثيق الواجهة']]);
+
+        $spec = $this->spec();
+        $operation = $spec['paths']['/api/v1/posts']['get'];
+        $this->assertSame('All posts', $operation['summary'], 'English replaces the generated summary');
+        $this->assertSame(['ar' => ['summary' => 'كل المقالات', 'description' => 'قائمة مرتبة']], $operation['x-translations']);
+        $post = collect($spec['tags'])->firstWhere('name', 'Post');
+        $this->assertSame('Blog posts', $post['description']);
+        $this->assertSame(['ar' => ['description' => 'المقالات']], $post['x-translations']);
+        $this->assertSame(['ar' => ['title' => 'توثيق الواجهة']], $spec['info']['x-translations']);
+        $this->assertSame('Api Documentation', $spec['info']['title']);
+
+        $state = $this->withSession(self::SESSION)->getJson('/swagger/dashboard/api/settings')->json();
+        $listed = collect($state['operations'])->firstWhere('id', 'get_api_v1_posts');
+        $this->assertNotSame('All posts', $listed['summary'], 'The dashboard shows the generated summary as the placeholder');
+        $this->assertArrayHasKey('Post', $state['defaults']['tags']);
+    }
+
+    public function test_several_logins_can_be_saved(): void
+    {
+        $session = $this->withSession(self::SESSION);
+        $session->putJson('/swagger/dashboard/api/settings', ['settings' => ['auto_login' => [
+            ['name' => 'Customer', 'url' => '/api/v1/login', 'method' => 'POST', 'fields' => ['email' => 'Email', 'password' => 'Password'], 'token_path' => '', 'security_scheme' => 'bearerAuth'],
+            ['name' => 'Admin', 'url' => '/api/admin/login', 'method' => 'POST', 'fields' => ['username' => 'Username'], 'security_scheme' => 'bearerAuth'],
+        ]]])->assertOk()->assertJsonCount(2, 'settings.auto_login');
+
+        $this->assertSame(['Customer', 'Admin'], array_column(config('swagger.auto_login'), 'name'), 'A list replaces the config value instead of merging into it');
+        $this->assertArrayNotHasKey('token_path', config('swagger.auto_login')[0], 'Empty values are not stored');
+
+        $session->putJson('/swagger/dashboard/api/settings', ['settings' => ['auto_login' => [['name' => 'Customer'], ['name' => 'Customer', 'url' => '/x', 'fields' => ['bad name' => 'x']]]]])
+            ->assertStatus(422)->assertJsonValidationErrors(['auto_login.0.url', 'auto_login.1.name', 'auto_login.1.fields']);
+    }
+
+    public function test_status_and_note_reach_every_ui(): void
+    {
+        $this->withSession(self::SESSION)->putJson('/swagger/dashboard/api/settings', [
+            'settings' => [],
+            'layout' => ['meta' => ['operations' => [
+                'get_api_v1_posts' => ['status' => 'deprecated', 'sunset' => '2026-12-31', 'replacement' => 'GET /api/v2/products', 'note' => 'Sorted by date.'],
+                'get_api_v1_ping' => ['status' => 'beta', 'sunset' => '2026-01-01'],
+                'get_api_v1_stats' => ['status' => 'nope', 'sunset' => 'soon'],
+            ]]],
+        ])->assertOk()->assertJsonPath('layout.meta.operations.get_api_v1_ping', ['status' => 'beta']);
+
+        $spec = $this->spec();
+        $posts = $spec['paths']['/api/v1/posts']['get'];
+        $this->assertTrue($posts['deprecated']);
+        $this->assertSame(['deprecated', '2026-12-31', 'GET /api/v2/products', 'Sorted by date.'], [$posts['x-status'], $posts['x-sunset'], $posts['x-replaced-by'], $posts['x-note']]);
+        $this->assertStringContainsString('**Deprecated**: removed on 2026-12-31. Use GET /api/v2/products instead.', $posts['description'], 'Swagger UI and Scalar read it from the description');
+        $this->assertStringNotContainsString('Deprecated', $posts['x-description']);
+
+        $ping = $spec['paths']['/api/v1/ping']['get'];
+        $this->assertSame('beta', $ping['x-status']);
+        $this->assertArrayNotHasKey('deprecated', $ping);
+        $this->assertArrayNotHasKey('x-status', $spec['paths']['/api/v1/stats']['get'], 'Unknown statuses are dropped');
+    }
+
+    public function test_the_dashboard_replaces_a_status_set_in_code(): void
+    {
+        $this->app['router']->middleware('api')->get('api/v1/old', [MiscController::class, 'ping'])->deprecated('2026-06-30', 'GET /api/v1/ping');
+        $old = fn () => $this->spec()['paths']['/api/v1/old']['get'];
+        $this->assertSame(['deprecated', '2026-06-30'], [$old()['x-status'], $old()['x-sunset']]);
+
+        $state = $this->withSession(self::SESSION)->getJson('/swagger/dashboard/api/settings')->json();
+        $this->assertSame(['status' => 'deprecated', 'sunset' => '2026-06-30', 'replacement' => 'GET /api/v1/ping'], collect($state['operations'])->firstWhere('id', 'get_api_v1_old')['code_status']);
+
+        $save = fn (array $meta) => $this->withSession(self::SESSION)->putJson('/swagger/dashboard/api/settings', ['settings' => [], 'layout' => ['meta' => ['operations' => ['get_api_v1_old' => $meta]]]])->assertOk();
+        $save(['note' => 'Only a note']);
+        $this->assertSame(['deprecated', '2026-06-30', 'Only a note'], [$old()['x-status'], $old()['x-sunset'], $old()['x-note']], 'A note alone keeps the status from code');
+
+        $save(['status' => 'stable']);
+        $this->assertArrayNotHasKey('deprecated', $old());
+        $this->assertArrayNotHasKey('x-sunset', $old(), 'Stable clears the deprecation set in code');
+    }
+
     public function test_an_empty_password_keeps_the_docs_password(): void
     {
         // As if config/swagger.php had this password when the app booted.

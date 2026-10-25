@@ -16,6 +16,9 @@ trait Tags
             if (! empty($controller['description'])) {
                 $tag['description'] = $controller['description'];
             }
+            if (! empty($controller['x_translations'])) {
+                $tag['x-translations'] = $controller['x_translations'];
+            }
             $tags[] = $tag;
         }
 

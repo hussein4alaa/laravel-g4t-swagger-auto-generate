@@ -197,13 +197,23 @@ Three interfaces ship with the package. Pick one with `ui` (or `?ui=` on the URL
 What the `g4t` UI gives you:
 
 - **Navigation:** sidebar grouped by controller with a filter (press <kbd>/</kbd>), version switcher, deep links (`#op-<operationId>`), mobile drawer.
+- **Search everything:** the filter also matches fields of requests and responses, descriptions and examples (type `phone` to find every endpoint that sends or returns it). <kbd>⌘K</kbd> / <kbd>Ctrl+K</kbd> opens a command palette for endpoints, fields, sections and actions (log in, switch environment, export, dark mode…).
+- **Where is this field used:** click a field name in any table to list every endpoint that has it, and where.
+- **Models diagram:** the response models and the `$ref` links between them; click one to see the endpoints that use it.
 - **Try it out:** a typed form for parameters and multipart bodies (selects for enums and booleans, date pickers, file pickers, one row per array item) or a JSON editor; real requests with status, timing and highlighted responses.
-- **Code samples:** cURL, JavaScript (`fetch`), Dart (`Dio`) and PHP (Laravel `Http`) for every request.
+- **Code samples:** cURL, JavaScript (`fetch`), Dart (`Dio`) and PHP (Laravel `Http`) for every request, plus **Flutter**: model classes with `fromJson` / `toJson` for the request and response, and a repository method using Dio.
+- **Checked before sending:** Try it out compares the values with the documented rules (required, types, lengths, enums, emails) and lists the problems; **Send anyway** sends it as is.
+- **Error cases:** one click sends invalid requests on purpose (no credentials, unknown id, a missing or too long field, a value outside the list) and shows which ones get the expected 401 / 404 / 422.
+- **Present mode:** one endpoint full screen in large type, ← / → to move through them, for walking a team through the API.
 - **Environments:** named environments with their own base URL, headers and `{{variables}}` usable in any parameter, field, header or JSON body; `{{token}}` is the current bearer token.
 - **Authorize:** one field per security scheme (bearer token, API key in a header or query, username and password for Basic).
 - **Memory:** inputs survive reloads (Reset per endpoint) and the last 10 requests per endpoint can be restored or re-run.
 - **Responses:** status-code tabs, named examples, an Example / Schema switch.
-- **Download** the OpenAPI document as JSON or YAML.
+- **Getting started:** a card above the endpoints with the base URL, how to authenticate, the headers to send, the shape of 401 / 403 / 404 / 422 errors and how pagination works, all worked out from the document (`g4t.getting_started`).
+- **Share:** a link (and a QR code for a phone) that opens an endpoint's Try it out with the same values, for a teammate to press Execute. Credentials, and values whose name looks like one (`password`, `token`, `api_key`…), are never put in it.
+- **Response times:** each endpoint shows the average time of your last requests, and a "Response times" card lists the slowest first (kept in your browser only).
+- **English / العربية:** summaries and descriptions written in the dashboard in both languages; the reader switches next to the title.
+- **Download** the OpenAPI document as JSON or YAML, a **Postman** collection (folders per section, path variables, `{{baseUrl}}` and `{{token}}`), a Postman environment, or an **Insomnia** export with every environment.
 - **Appearance:** light (default), dark or system mode; comfortable or compact density; accent colors.
 
 ```php
@@ -212,6 +222,7 @@ What the `g4t` UI gives you:
 "g4t" => [
     "mode" => "light",                   // light | dark | system
     "density" => "comfortable",          // comfortable | compact
+    "getting_started" => true,           // the Getting started card
 ],
 "theme" => env("SWAGGER_THEME", "default"), // Swagger UI theme / g4t accent
 "scalar" => [
@@ -238,6 +249,15 @@ Point `auto_login` at your login endpoint and a **Log in** button appears in eve
     "token_path" => env("SWAGGER_LOGIN_TOKEN_PATH"), // dot path; token, access_token, data.token… are tried when empty
     "security_scheme" => "bearerAuth",   // key in security_schemes
     "prefill" => [],                     // pre-filled values, only rendered in the local environment
+],
+```
+
+For several logins (a customer and an admin API, say), make `auto_login` a list. The g4t Log in dialog lets the reader pick one, and each fills its own `security_scheme`, so a reader can be signed in to all of them at once. Swagger UI and Scalar use the first one. They can be managed from the dashboard too.
+
+```php
+"auto_login" => [
+    ["name" => "Customer", "url" => "/api/v1/auth/login", "security_scheme" => "bearerAuth"],
+    ["name" => "Admin", "url" => "/api/admin/login", "fields" => ["username" => "Username", "password" => "Password"], "security_scheme" => "adminAuth"],
 ],
 ```
 
@@ -285,7 +305,16 @@ Shared environments are visible in the page, so never put secrets in them.
 
 ## Settings dashboard
 
-Everything above can also be changed from a dashboard, without editing `config/swagger.php`: the info block, the UI and its theme, versions and servers, security schemes, auth middlewares, global headers, shared environments, the Try it out login, the generation switches and access. Drag sections and operations to set their order in every UI, and hide an operation, or a whole controller (endpoints added to it later stay hidden too), from the documentation; the routes keep working.
+Everything above can also be changed from a dashboard, without editing `config/swagger.php`: the info block, the UI and its theme, versions and servers, security schemes, auth middlewares, global headers, shared environments, the Try it out login, the generation switches and access. Drag sections and operations to set their order in every UI, and hide an operation, or a whole controller (endpoints added to it later stay hidden too), from the documentation; the routes keep working. The pen button next to an endpoint or a section edits its summary and description in English (replacing the text from your code) and in Arabic, which readers of the g4t UI switch to with **العربية**. For an endpoint it also sets a **status** (New, Beta, Deprecated with a removal date and a replacement) and a **note for clients**: the g4t UI shows a badge, a notice with the days left and a Deprecations list in Getting started; Swagger UI and Scalar strike it through (`deprecated: true`) and show the same text in the description.
+
+The status can also come from code; the dashboard replaces it (choose **Stable** to clear it):
+
+```php
+Route::get('orders/{order}/invoice', [OrderController::class, 'invoice'])->deprecated('2026-12-31', 'GET /api/v2/orders/{order}/invoice');
+Route::post('payments/split', [PaymentController::class, 'split'])->beta();
+```
+
+**Partner links** give a partner or client a secret address to the docs: it opens the g4t UI without the docs password (even when the docs are turned off with `SWAGGER_ENABLED=false`), shows only the sections you pick (and only the schemas those sections use), and can expire on a date. Only a sha256 of each link is stored in `swagger-settings.json`, so copy the address when you create it; removing the link revokes it. Middleware you add in `swagger.middleware` still applies.
 
 The dashboard is off until it has credentials. Add them to `.env`:
 

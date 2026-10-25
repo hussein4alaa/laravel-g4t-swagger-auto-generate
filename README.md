@@ -5,9 +5,11 @@
   </picture>
 </p>
 
+<h3 align="center">API documentation that writes itself from your Laravel code.</h3>
+
 <p align="center">
-  <b>Automatic OpenAPI documentation for Laravel.</b><br>
-  Built from your routes, FormRequests, controllers and API Resources. No annotations to write or keep in sync.
+  Routes, FormRequests, controllers and API Resources become an <b>OpenAPI 3</b> document,<br>
+  served with a documentation UI your team will actually use. No annotations to write or keep in sync.
 </p>
 
 <p align="center">
@@ -16,7 +18,18 @@
   <a href="https://github.com/hussein4alaa/laravel-g4t-swagger-auto-generate/actions/workflows/tests.yml"><img src="https://github.com/hussein4alaa/laravel-g4t-swagger-auto-generate/actions/workflows/tests.yml/badge.svg" alt="Tests"></a>
   <img src="https://img.shields.io/badge/php-8.0%2B-777bb4" alt="PHP 8.0+">
   <img src="https://img.shields.io/badge/laravel-9%20%E2%80%93%2013-ff2d20" alt="Laravel 9 to 13">
+  <img src="https://img.shields.io/badge/OpenAPI-3.0-6ba539" alt="OpenAPI 3.0">
   <a href="LICENSE"><img src="https://img.shields.io/packagist/l/g4t/swagger?color=4f46e5" alt="MIT license"></a>
+</p>
+
+<p align="center">
+  <a href="https://swagger.g4t.io/"><b>Website</b></a> ·
+  <a href="#-install-in-30-seconds">Install</a> ·
+  <a href="#-what-is-read-from-your-code">What it reads</a> ·
+  <a href="#%EF%B8%8F-the-documentation-ui">The UI</a> ·
+  <a href="#%EF%B8%8F-settings-dashboard">Dashboard</a> ·
+  <a href="#%EF%B8%8F-configuration-reference">Configuration</a> ·
+  <a href="#-when-something-is-off">Troubleshooting</a>
 </p>
 
 <p align="center">
@@ -24,32 +37,66 @@
 </p>
 
 <p align="center">
-  <a href="https://swagger.g4t.io/"><b>Documentation</b></a> ·
-  <a href="#installation">Installation</a> ·
-  <a href="#the-documentation-ui">The UI</a> ·
-  <a href="#settings-dashboard">Dashboard</a> ·
-  <a href="#configuration">Configuration</a> ·
-  <a href="#upgrading-to-50">Upgrading to 5.0</a>
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="art/screenshot-dark.png">
+    <img src="art/screenshot.png" alt="The g4t documentation UI: endpoints grouped by controller, an endpoint open with Try it out and a 200 response, New and Deprecated badges in the sidebar" width="100%">
+  </picture>
 </p>
 
-<p align="center">
-  <img src="art/screenshot.png" alt="The g4t documentation UI: operations grouped by controller in a sidebar, version switcher, environment, download and login buttons" width="100%">
-</p>
+---
 
-## Why g4t/swagger
+## ✨ Why g4t/swagger
 
-- **Nothing to annotate.** Routes, HTTP methods, middleware, path parameters and controller names become the OpenAPI document.
-- **Request bodies from your FormRequests.** Validation rules become typed schemas: enums, files, nested objects, `items.*.field` arrays, min/max and required fields.
-- **Response examples from your code.** `response()->json([...])`, `new XResource(...)`, `XResource::collection(...)`, paginators, `abort(404, '…')`, returned models and more, typed from your model casts.
-- **Real response schemas.** Resources and models become `$ref` components, so client generators (openapi-generator, orval, Kiota…) produce typed models.
-- **A documentation UI people enjoy using.** Try it out with file uploads, code samples (cURL, JavaScript, Dart, PHP), environments with `{{variables}}`, request history, light/dark mode, and nothing loaded from a CDN. Swagger UI and Scalar are included too.
-- **A settings dashboard.** Change the config, drag operations into order and hide endpoints from the browser, behind its own sign-in.
-- **Safe by default.** Docs are off in production unless you turn them on; optional Basic Auth; the cached spec is never public.
+| | |
+|---|---|
+| 🪄 **Nothing to annotate** | Routes, HTTP methods, middleware, path parameters and controller names become the document. Your code is the only source of truth, so the docs never drift. |
+| 📝 **Request bodies from FormRequests** | Validation rules become typed schemas: enums, files, nested objects, `items.*.field` arrays, min / max and required fields. |
+| 📦 **Responses from your code** | `response()->json([...])`, Resources, collections, paginators, `abort(404, '…')`, returned models, and even the repository or helper a controller calls. |
+| 🧬 **Real schemas** | Resources and models become `$ref` components, so client generators (openapi-generator, orval, Kiota…) produce typed models. |
+| 🧪 **Try it out, for real** | Typed forms, file uploads, environments with `{{variables}}`, several logins, local validation, error cases, history and code in five languages. |
+| 🎛️ **A settings dashboard** | Change any option, drag endpoints into order, hide or deprecate them, write English / Arabic texts and create secret partner links, all from the browser. |
+| 🔒 **Safe by default** | Off in production unless you enable it, optional Basic Auth, a cache file that is never public, and partner links stored only as hashes. |
+| 🌍 **English and العربية** | Readers switch the language next to the title; Arabic text reads right to left. |
 
-## Requirements
+```mermaid
+flowchart LR
+    A[routes/api.php] --> G((g4t/swagger))
+    B[FormRequests] --> G
+    C[Controllers, repositories, helpers] --> G
+    D[API Resources and models] --> G
+    G --> O[OpenAPI 3 document]
+    O --> U1[g4t UI]
+    O --> U2[Swagger UI]
+    O --> U3[Scalar]
+    O --> E[Postman / Insomnia / client generators]
+```
+
+---
+
+## 📚 Contents
+
+- [Requirements](#-requirements)
+- [Install in 30 seconds](#-install-in-30-seconds)
+- [A five-minute tour](#-a-five-minute-tour)
+- [Describing your API](#%EF%B8%8F-describing-your-api)
+- [What is read from your code](#-what-is-read-from-your-code) · [Requests](#requests) · [Responses](#responses) · [Repositories and helpers](#repositories-and-helpers) · [Your own examples](#your-own-examples)
+- [The documentation UI](#%EF%B8%8F-the-documentation-ui) · [Finding things](#finding-things) · [Trying requests](#trying-requests) · [Sharing and code](#sharing-and-code) · [Appearance](#appearance)
+- [Logging in from the docs](#-logging-in-from-the-docs)
+- [Security schemes, headers and environments](#%EF%B8%8F-security-schemes-headers-and-environments)
+- [Settings dashboard](#%EF%B8%8F-settings-dashboard) · [Endpoints](#endpoints-order-visibility-texts-and-status) · [Partner links](#partner-links) · [Where settings are saved](#where-settings-are-saved)
+- [Configuration reference](#%EF%B8%8F-configuration-reference)
+- [Going to production](#-going-to-production)
+- [Artisan commands](#%EF%B8%8F-artisan-commands)
+- [When something is off](#-when-something-is-off)
+- [Upgrading to 5.0](#%EF%B8%8F-upgrading-to-50)
+- [Testing, contributing and license](#-testing-contributing-and-license)
+
+---
+
+## 🧰 Requirements
 
 | Laravel | PHP |
-|---|---|
+|:---:|:---:|
 | 13 | 8.3 – 8.5 |
 | 12 | 8.2 – 8.5 |
 | 11 | 8.2 – 8.4 |
@@ -58,29 +105,32 @@
 
 Enum features (`Rule::enum()`, enum casts in response schemas) need PHP 8.1, like enums themselves.
 
-## Installation
+---
+
+## 🚀 Install in 30 seconds
 
 ```bash
 composer require g4t/swagger
-```
-
-Publish the configuration file:
-
-```bash
 php artisan vendor:publish --tag=swagger-config
 ```
 
-Then open **`/swagger/documentation`** in your browser, e.g. `https://your-app.test/swagger/documentation`.
+Open **`/swagger/documentation`**, for example `https://your-app.test/swagger/documentation`. That is it: every route in `routes/api.php` is already documented.
 
-> Only routes with the `api` middleware group are documented (everything in `routes/api.php`). Set `SWAGGER_INCLUDE_WEB_ROUTES=true` to include web routes that use your own controllers.
+> [!NOTE]
+> Only routes in the `api` middleware group are documented. Set `SWAGGER_INCLUDE_WEB_ROUTES=true` to include web routes that use your own controllers.
 
-#### Video walkthrough
+> [!TIP]
+> The docs are **off in production** by default. Read [Going to production](#-going-to-production) before you deploy.
+
+**Video walkthrough**
 
 [![Explanatory video on how to use](https://img.youtube.com/vi/bI1BY9tAwOw/0.jpg)](https://www.youtube.com/watch?v=bI1BY9tAwOw)
 
-## Quick start
+---
 
-Write your API as usual:
+## 🧭 A five-minute tour
+
+Write your API the way you already do:
 
 ```php
 // routes/api.php
@@ -118,36 +168,63 @@ public function show(Product $product): ProductResource
 }
 ```
 
-The documentation now shows, for `POST /api/products`, a multipart body with a typed `status` enum, a `tags` array and an `image` file field; a `201` response whose schema is `#/components/schemas/Product` (with its `category` relation as a `$ref` to `Category`); and a `422` validation example. `GET /api/products/{product}` gets an integer path parameter, a `200` example and a `404` "Product not found." example.
+Without a single annotation, the documentation now shows:
 
-## Describing your API
+| Endpoint | What you get |
+|---|---|
+| `POST /api/products` | A multipart body with a typed `status` enum, a `tags` array and an `image` file field · a `201` response whose schema is `#/components/schemas/Product`, with `category` as a `$ref` to `Category` · a `422` validation example |
+| `GET /api/products/{product}` | An integer path parameter · a `200` example · a `404` example with "Product not found." |
+| `POST /api/auth/login` | The summary "Log in" from the route |
+
+---
+
+## 🏷️ Describing your API
+
+Most text is derived for you. When you want more, add it to the route:
 
 ```php
 Route::get('users', [UserController::class, 'index'])
     ->summary('List users')                                   // short title
     ->description('Paginated. Filter with `?search=`.');      // Markdown allowed
 
-Route::get('internal/health', HealthController::class)->hiddenDoc(); // not documented
+Route::get('internal/health', HealthController::class)->hiddenDoc();     // not in the public docs
+
+Route::get('orders/{order}/invoice', [OrderController::class, 'invoice'])
+    ->deprecated('2026-12-31', 'GET /api/v2/orders/{order}/invoice');    // removal date, replacement
+Route::post('payments/split', [PaymentController::class, 'split'])->beta();
 ```
 
 ```php
 use G4T\Swagger\Attributes\SwaggerSection;
 
-#[SwaggerSection('Everything about your users')]   // description of the controller's tag
+#[SwaggerSection('Everything about your users')]   // description of the controller's section
 class UserController extends Controller
 {
 }
 ```
 
-Without `->summary()`, a readable summary is derived from the action: `index` → "List users", `store` → "Create user", `show` → "Get user", `update` → "Update user", `destroy` → "Delete user", `updateStatus` → "Update status".
+Without `->summary()`, a readable summary comes from the action name:
 
-## What is inferred
+| Action | Summary |
+|---|---|
+| `index` | List users |
+| `store` | Create user |
+| `show` | Get user |
+| `update` | Update user |
+| `destroy` | Delete user |
+| `updateStatus` | Update status |
+
+The dashboard can also [rewrite every summary and description](#endpoints-order-visibility-texts-and-status), in English and Arabic, without touching the code.
+
+---
+
+## 🔍 What is read from your code
 
 ### Requests
 
 | Your code | In the document |
 |---|---|
-| FormRequest type-hinted on a `POST` / `PUT` / `PATCH` action | Request body (`application/json` and `multipart/form-data`) |
+| FormRequest on a `POST` / `PUT` / `PATCH` action | Request body (`application/json` and `multipart/form-data`) |
 | FormRequest on a `GET` / `DELETE` action | Query parameters |
 | `required`, `nullable`, `sometimes`, `required_if` … | `required` list (conditional rules are not required) |
 | `string`, `integer`, `numeric`, `boolean`, `array`, `date`, `email`, `uuid` | Types and formats |
@@ -171,9 +248,36 @@ Without `->summary()`, a readable summary is derived from the action: `index` �
 | `response()->json([...], 409)` | Error example (several per status become named examples) |
 | `store` returning a resource, `json(..., 201)` | `201 Created`; `noContent()` gives `204` |
 | `$this->whenLoaded('rel')`, `->load()`, `->with()` | Relations are included only when they are loaded |
-| `return $this->repository->store($request)`, `return Helper::responseSuccess('Saved')`, `return $this->respond(...)` | The called method is read too (up to 3 calls deep), with its parameters set from the arguments; repositories typed with an interface use the class bound in the container |
 
-Static analysis has limits. To force an example for a status, add a JSON file under `storage/swagger/{Controller}/{uri}/{status}.json`, where `{Controller}` is the controller name without "Controller" and `{uri}` is the route URI with `/`, `{`, `}` and `?` replaced by `-`:
+### Repositories and helpers
+
+A controller that hands the work to a repository or a response helper is followed into it, up to three calls deep, with the called method's parameters set from the arguments. Nothing is executed: the source is read.
+
+```php
+// Controller
+public function store(CreateTicketRequest $request)
+{
+    return $this->ticketRepository->store($request);   // typed with an interface? the class bound in the container is used
+}
+
+// Repository
+if (! $order) {
+    return Helper::responseError('Order not found', code: Response::HTTP_NOT_FOUND);
+}
+return Helper::responseSuccess('Ticket created');
+
+// Helper
+public static function responseSuccess($message, $data = null)
+{
+    return response()->json(['status' => true, 'message' => $message, 'data' => $data], Response::HTTP_OK);
+}
+```
+
+The document gets a `200` example `{"status": true, "message": "Ticket created", "data": null}` and a `404` example with "Order not found". Each method is read once per generation, so following calls costs a few milliseconds.
+
+### Your own examples
+
+Static analysis has limits. To force an example for a status, add a JSON file under `storage/swagger/{Controller}/{uri}/{status}.json`, where `{Controller}` is the controller name without "Controller" and `{uri}` is the route URI with `/`, `{`, `}` and `?` replaced by `-`.
 
 For `GET /api/products/{product}` on `ProductController`, that is `storage/swagger/Product/-api-products--product-/200.json`:
 
@@ -184,37 +288,57 @@ For `GET /api/products/{product}` on `ProductController`, that is `storage/swagg
 }
 ```
 
-## The documentation UI
+---
 
-Three interfaces ship with the package. Pick one with `ui` (or `?ui=` on the URL for a single visit):
+## 🖥️ The documentation UI
+
+Three interfaces ship with the package. Pick one with `ui`, or with `?ui=` on the URL for one visit:
 
 | `ui` | Interface |
-|------|-----------|
-| `g4t` (default) | The package's own reference UI, bundled, no CDN |
+|---|---|
+| **`g4t`** (default) | The package's own reference UI, bundled, nothing loaded from a CDN |
 | `swagger` | Swagger UI, bundled, with a theme picker |
 | `scalar` | [Scalar API Reference](https://github.com/scalar/scalar), loaded from jsDelivr at a pinned version |
 
-What the `g4t` UI gives you:
+Everything below is in the `g4t` UI.
 
-- **Navigation:** sidebar grouped by controller with a filter (press <kbd>/</kbd>), version switcher, deep links (`#op-<operationId>`), mobile drawer.
-- **Search everything:** the filter also matches fields of requests and responses, descriptions and examples (type `phone` to find every endpoint that sends or returns it). <kbd>⌘K</kbd> / <kbd>Ctrl+K</kbd> opens a command palette for endpoints, fields, sections and actions (log in, switch environment, export, dark mode…).
-- **Where is this field used:** click a field name in any table to list every endpoint that has it, and where.
-- **Models diagram:** the response models and the `$ref` links between them; click one to see the endpoints that use it.
-- **Try it out:** a typed form for parameters and multipart bodies (selects for enums and booleans, date pickers, file pickers, one row per array item) or a JSON editor; real requests with status, timing and highlighted responses.
-- **Code samples:** cURL, JavaScript (`fetch`), Dart (`Dio`) and PHP (Laravel `Http`) for every request, plus **Flutter**: model classes with `fromJson` / `toJson` for the request and response, and a repository method using Dio.
-- **Checked before sending:** Try it out compares the values with the documented rules (required, types, lengths, enums, emails) and lists the problems; **Send anyway** sends it as is.
-- **Error cases:** one click sends invalid requests on purpose (no credentials, unknown id, a missing or too long field, a value outside the list) and shows which ones get the expected 401 / 404 / 422.
-- **Present mode:** one endpoint full screen in large type, ← / → to move through them, for walking a team through the API.
-- **Environments:** named environments with their own base URL, headers and `{{variables}}` usable in any parameter, field, header or JSON body; `{{token}}` is the current bearer token.
-- **Authorize:** one field per security scheme (bearer token, API key in a header or query, username and password for Basic).
-- **Memory:** inputs survive reloads (Reset per endpoint) and the last 10 requests per endpoint can be restored or re-run.
-- **Responses:** status-code tabs, named examples, an Example / Schema switch.
-- **Getting started:** a card above the endpoints with the base URL, how to authenticate, the headers to send, the shape of 401 / 403 / 404 / 422 errors and how pagination works, all worked out from the document (`g4t.getting_started`).
-- **Share:** a link (and a QR code for a phone) that opens an endpoint's Try it out with the same values, for a teammate to press Execute. Credentials, and values whose name looks like one (`password`, `token`, `api_key`…), are never put in it.
-- **Response times:** each endpoint shows the average time of your last requests, and a "Response times" card lists the slowest first (kept in your browser only).
-- **English / العربية:** summaries and descriptions written in the dashboard in both languages; the reader switches next to the title.
-- **Download** the OpenAPI document as JSON or YAML, a **Postman** collection (folders per section, path variables, `{{baseUrl}}` and `{{token}}`), a Postman environment, or an **Insomnia** export with every environment.
-- **Appearance:** light (default), dark or system mode; comfortable or compact density; accent colors.
+### Finding things
+
+| Feature | What it does |
+|---|---|
+| 🔎 **Search everything** | The filter (<kbd>/</kbd>) matches paths and summaries, and also request and response fields, descriptions and examples: type `phone` to find every endpoint that sends or returns it. |
+| ⌨️ **Command palette** | <kbd>⌘K</kbd> / <kbd>Ctrl+K</kbd> jumps to any endpoint, field or section, or runs an action: log in, switch environment, export, change mode or language, open the models diagram. |
+| 🧷 **Where is this field used** | Click a field name in any table to list every endpoint that has it, and where (query, request or response). |
+| 🕸️ **Models diagram** | The response models and the `$ref` links between them; click one to see what it links to and the endpoints that use it. |
+| 🧭 **Getting started** | A card above the endpoints with the base URL, how to authenticate, the headers to send, the shape of 401 / 403 / 404 / 422 errors, pagination and deprecations, all worked out from the document. |
+| 🗂️ **Navigation** | One section per controller, a version switcher, deep links (`#op-<operationId>`), and a drawer on phones. |
+
+### Trying requests
+
+| Feature | What it does |
+|---|---|
+| 🧪 **Try it out** | A typed form (selects for enums and booleans, date and file pickers, one row per array item) or a JSON editor, with real requests, status, timing and highlighted responses. |
+| ✅ **Checked before sending** | Values are compared with the documented rules (required, types, lengths, enums, emails) and the problems are listed; **Send anyway** sends them as they are. |
+| 💥 **Error cases** | One click sends invalid requests on purpose: no credentials, an unknown id, a missing, too long or invalid field. A table shows which got the expected 401 / 404 / 422. |
+| 🌐 **Environments** | Base URL, headers and `{{variables}}` usable in any parameter, field, header or body; `{{token}}` is the current bearer token. |
+| 🕘 **Memory and history** | Inputs survive reloads (Reset per endpoint); the last 10 requests per endpoint can be restored or re-run. |
+| ⏱️ **Response times** | Each endpoint shows the average time of your last requests, and a card lists the slowest first. Kept in your browser only. |
+| 📄 **Responses** | Status-code tabs, named examples, and an Example / Schema switch. |
+
+### Sharing and code
+
+| Feature | What it does |
+|---|---|
+| 💻 **Code samples** | cURL, JavaScript (`fetch`), Dart (`Dio`) and PHP (Laravel `Http`) for every request. |
+| 📱 **Flutter** | Request and response model classes with `fromJson` / `toJson`, and a repository method using Dio, ready to paste into an app. |
+| 🔗 **Share links and QR codes** | A link that opens Try it out with the same values, for a teammate to press Execute, plus a QR code to open it on a phone. Credentials, and values whose name looks like one (`password`, `token`, `api_key`…), are never put in it. |
+| 📤 **Export** | The OpenAPI document as JSON or YAML, a Postman collection (a folder per section, path variables, `{{baseUrl}}` and `{{token}}`) and environment, or an Insomnia export with every environment. |
+| 🎤 **Present mode** | One endpoint full screen in large type; <kbd>←</kbd> / <kbd>→</kbd> moves through them, for walking a team through the API. |
+| 🌍 **English / العربية** | Texts written in the dashboard in both languages; readers switch next to the title. |
+
+### Appearance
+
+Light (default), dark or system mode, comfortable or compact density, and accent colors.
 
 ```php
 // config/swagger.php
@@ -235,11 +359,13 @@ What the `g4t` UI gives you:
 ],
 ```
 
-The Swagger UI files are published with the package's assets (`php artisan vendor:publish --tag=swagger-assets`). Each entry of `versions` becomes a definition in Swagger UI and a source in Scalar.
+The Swagger UI files are published with the package assets (`php artisan vendor:publish --tag=swagger-assets`). Each entry of `versions` becomes a definition in Swagger UI and a source in Scalar.
 
-## Authentication in "Try it out"
+---
 
-Point `auto_login` at your login endpoint and a **Log in** button appears in every interface. It posts the credentials as JSON, reads the token from the response and sends it as `Authorization: Bearer …` with every protected operation. Readers can also paste a token by hand (**Authorize**), and the token is shared between the three UIs until **Log out**.
+## 🔑 Logging in from the docs
+
+Point `auto_login` at your login endpoint and a **Log in** button appears in every interface. It posts the credentials as JSON, reads the token from the response, and sends it as `Authorization: Bearer …` with every protected operation. Readers can also paste a token by hand (**Authorize**), and the token is shared between the three UIs until **Log out**.
 
 ```php
 "auto_login" => [
@@ -252,7 +378,7 @@ Point `auto_login` at your login endpoint and a **Log in** button appears in eve
 ],
 ```
 
-For several logins (a customer and an admin API, say), make `auto_login` a list. The g4t Log in dialog lets the reader pick one, and each fills its own `security_scheme`, so a reader can be signed in to all of them at once. Swagger UI and Scalar use the first one. They can be managed from the dashboard too.
+**Several logins.** A customer API and an admin API? Make `auto_login` a list. The g4t Log in dialog lets the reader pick one, and each fills its own `security_scheme`, so a reader can be signed in to all of them at once. Swagger UI and Scalar use the first one.
 
 ```php
 "auto_login" => [
@@ -261,22 +387,24 @@ For several logins (a customer and an admin API, say), make `auto_login` a list.
 ],
 ```
 
-## Security schemes and headers
+---
 
-Every scheme in `security_schemes` is documented and works in **Try it out**: the Authorize dialog shows one field per scheme and each request carries the credential where its scheme expects it.
+## 🛡️ Security schemes, headers and environments
+
+Every scheme in `security_schemes` is documented and works in Try it out: Authorize shows one field per scheme, and each request carries the credential where its scheme expects it. Protected routes accept any one of the schemes.
 
 ```php
 "security_schemes" => [
-    "bearerAuth" => ["type" => "http", "scheme" => "bearer"],                 // Authorization: Bearer …
+    "bearerAuth" => ["type" => "http", "scheme" => "bearer"],                      // Authorization: Bearer …
     "apiKey"     => ["type" => "apiKey", "in" => "header", "name" => "X-API-Key"], // X-API-Key: …
     "queryKey"   => ["type" => "apiKey", "in" => "query", "name" => "api_key"],    // ?api_key=…
-    "basicAuth"  => ["type" => "http", "scheme" => "basic"],                  // Authorization: Basic …
+    "basicAuth"  => ["type" => "http", "scheme" => "basic"],                       // Authorization: Basic …
 ],
 ```
 
-Protected routes accept any one of the schemes. (API keys in a cookie are documented, but a browser page cannot set them; use the code samples.)
+API keys in a cookie are documented, but a browser page cannot set them; use the code samples for those.
 
-To document a header on **every** operation (a language, a tenant, a request id…), list it in `global_headers`. Each UI then shows an input for it:
+**A header on every request** (a language, a tenant, a request id…) goes in `global_headers`; every UI then shows an input for it:
 
 ```php
 "global_headers" => [
@@ -286,9 +414,7 @@ To document a header on **every** operation (a language, a tenant, a request id�
 ],
 ```
 
-### Environments
-
-The environment menu in the `g4t` UI header switches the base URL, the `{{variables}}` you can type in any parameter, field or body, and headers sent with every request. Readers can create their own; the ones in `environments` (or the dashboard's **Environments** section) are shared with everyone and read-only for readers, who can duplicate them to change values:
+**Shared environments** switch the base URL, the `{{variables}}` readers type in any field, and headers sent with every request. Readers can create their own; the ones in `environments` are shared with everyone and read-only for readers, who can duplicate them to change values.
 
 ```php
 "environments" => [
@@ -301,35 +427,72 @@ The environment menu in the `g4t` UI header switches the base URL, the `{{variab
 ],
 ```
 
-Shared environments are visible in the page, so never put secrets in them.
+> [!WARNING]
+> Shared environments are visible in the page. Never put secrets in them.
 
-## Settings dashboard
+---
 
-Everything above can also be changed from a dashboard, without editing `config/swagger.php`: the info block, the UI and its theme, versions and servers, security schemes, auth middlewares, global headers, shared environments, the Try it out login, the generation switches and access. Drag sections and operations to set their order in every UI, and hide an operation, or a whole controller (endpoints added to it later stay hidden too), from the documentation; the routes keep working. The pen button next to an endpoint or a section edits its summary and description in English (replacing the text from your code) and in Arabic, which readers of the g4t UI switch to with **العربية**. For an endpoint it also sets a **status** (New, Beta, Deprecated with a removal date and a replacement) and a **note for clients**: the g4t UI shows a badge, a notice with the days left and a Deprecations list in Getting started; Swagger UI and Scalar strike it through (`deprecated: true`) and show the same text in the description.
+## 🎛️ Settings dashboard
 
-The status can also come from code; the dashboard replaces it (choose **Stable** to clear it):
-
-```php
-Route::get('orders/{order}/invoice', [OrderController::class, 'invoice'])->deprecated('2026-12-31', 'GET /api/v2/orders/{order}/invoice');
-Route::post('payments/split', [PaymentController::class, 'split'])->beta();
-```
-
-**Partner links** give a partner or client a secret address to the docs: it opens the g4t UI without the docs password (even when the docs are turned off with `SWAGGER_ENABLED=false`), shows only what you pick (whole sections, single endpoints found with a search, or both, and only the schemas they use), and can expire on a date. A single endpoint is shown even when it is hidden from the public docs, with the dashboard eye or `->hiddenDoc()` in code, so you can share an internal endpoint with one client only. Only a sha256 of each link is stored in `swagger-settings.json`, so copy the address when you create it; removing the link revokes it. Middleware you add in `swagger.middleware` still applies.
-
-The dashboard is off until it has credentials. Add them to `.env`:
+Everything in this README can also be changed from a dashboard, without editing `config/swagger.php`. It is off until it has credentials:
 
 ```dotenv
 SWAGGER_DASHBOARD_USERNAME=admin
 SWAGGER_DASHBOARD_PASSWORD=a-long-random-password   # or a bcrypt/argon hash from Hash::make()
 ```
 
-Then open `/swagger/dashboard` (`SWAGGER_DASHBOARD_URL`). Sign-in uses the session (the `web` middleware group) and allows 5 attempts a minute per IP.
+Then open **`/swagger/dashboard`** (`SWAGGER_DASHBOARD_URL`). Sign-in uses the session (the `web` middleware group) and allows 5 attempts a minute per IP.
 
-Saved changes go to `swagger-settings.json` in the project root (`SWAGGER_DASHBOARD_SETTINGS_PATH`, relative to the root or absolute), outside `public/`, so it is never served. Only the values you changed are kept; everything else keeps following `config/swagger.php`. Saving the config file's value again removes the override, and **Reset** removes them all. Saving also clears the `swagger:cache` file. Commit the file to ship the same settings to every server (it holds the docs password if you set one in the dashboard); turn the dashboard off with `SWAGGER_DASHBOARD_ENABLED=false`. Settings saved by earlier versions in `storage/app/swagger/settings.json` keep working and move to the new file on the next save.
+| Section | What you change |
+|---|---|
+| General | Title, version, contact, description, and the Arabic title and description |
+| Interface | g4t / Swagger UI / Scalar, mode, density, accent, the Getting started card |
+| Endpoints | Order, visibility, texts, status and notes ([below](#endpoints-order-visibility-texts-and-status)) |
+| Versions and servers | Version filters (`v1`, or path segments like `driver/v1`) and servers |
+| Security schemes | Bearer, basic, API keys, and the middleware that marks a route as protected |
+| Global headers | Headers documented on every operation |
+| Environments | Shared environments with variables and headers |
+| Try it out logins | One or several logins, each with its fields and scheme |
+| Generation | Response examples, error examples, schemas, web routes, prefixes, Spatie Query Builder |
+| Access | Docs on or off, Basic Auth and its credentials |
+| Partner links | Secret links for partners ([below](#partner-links)) |
 
-## Configuration
+### Endpoints: order, visibility, texts and status
 
-All keys live in `config/swagger.php`. The most useful ones:
+- **Drag** sections and endpoints to set their order in every UI.
+- **Hide** an endpoint, or a whole controller with the eye next to its name (endpoints added to it later stay hidden too). The routes keep working.
+- **Texts:** the pen button edits the summary and description in English (replacing the text from your code) and in Arabic.
+- **Status:** New, Beta, or Deprecated with a removal date and a replacement, plus a **note for clients**. The g4t UI shows a badge, a notice with the days left, and a Deprecations list in Getting started; Swagger UI and Scalar strike it through (`deprecated: true`) and show the same text in the description. A status set in code with `->deprecated()` or `->beta()` is replaced by the dashboard; choose **Stable** to clear it.
+
+### Partner links
+
+A secret address per partner or client, for when you want someone to see part of your API and nothing else.
+
+- Opens the g4t UI **without the docs password**, even when the docs are turned off with `SWAGGER_ENABLED=false`.
+- Shows only what you pick: whole sections, single endpoints found with a search, or both, and only the schemas they use.
+- A single endpoint is shown even when it is hidden from the public docs (with the dashboard eye or `->hiddenDoc()`), so you can share an internal endpoint with one client only.
+- Can expire on a date. Removing the link revokes it.
+- Only a sha256 of each link is stored, so copy the address when you create it.
+
+> [!NOTE]
+> Middleware you add in `swagger.middleware` still applies to partner links.
+
+### Where settings are saved
+
+Saved changes go to `swagger-settings.json` in the project root (`SWAGGER_DASHBOARD_SETTINGS_PATH`, relative to the root or absolute), outside `public/`, so it is never served.
+
+- Only the values you changed are kept; everything else keeps following `config/swagger.php`. Saving the config file's value again removes the override.
+- **Reset** removes every dashboard change, including partner links.
+- Saving also clears the `swagger:cache` file.
+- Commit the file to ship the same settings to every server. It holds the docs password if you set one in the dashboard.
+- Settings saved by earlier versions in `storage/app/swagger/settings.json` keep working and move to the new file on the next save.
+- Turn the dashboard off with `SWAGGER_DASHBOARD_ENABLED=false`.
+
+---
+
+## ⚙️ Configuration reference
+
+All keys live in `config/swagger.php`.
 
 | Key | Env | Default | |
 |---|---|---|---|
@@ -337,46 +500,52 @@ All keys live in `config/swagger.php`. The most useful ones:
 | `url` | `SWAGGER_URL` | `swagger/documentation` | Docs URL; the JSON is at `{url}/json` |
 | `title` / `description` / `version` | `SWAGGER_TITLE` … | | `info` block of the document |
 | `servers` | | `APP_URL` | Servers listed in the document |
-| `versions` / `default` | | `["all"]` / `all` | Version filter, e.g. `["all", "v1", "v2"]` matches `/api/v1/…` |
+| `versions` / `default` | | `["all"]` / `all` | Version filter: `v1` matches `/api/v1/…`, `driver/v1` matches `/api/driver/v1/…` |
 | `show_prefix` | | `[]` | Only document routes with these prefixes |
 | `include_web_routes` | `SWAGGER_INCLUDE_WEB_ROUTES` | `false` | Also document web routes using your controllers |
-| `auth_middlewares` | | `auth`, `auth:api`, `auth:sanctum` | Extra middleware names that mark a route as protected |
-| `security_schemes` | | HTTP bearer | OpenAPI security schemes (bearer, basic, API key in a header or query) |
+| `auth_middlewares` | | `auth`, `auth:api`, `auth:sanctum` | Middleware names that mark a route as protected |
+| `security_schemes` | | HTTP bearer | Bearer, basic, API key in a header or query |
 | `global_headers` | | `[]` | Header parameters added to every operation |
-| `environments` | | `[]` | [Shared environments](#environments) for the `g4t` UI |
+| `environments` | | `[]` | Shared environments for the g4t UI |
+| `auto_login` | `SWAGGER_LOGIN_URL`, `SWAGGER_LOGIN_TOKEN_PATH` | off | One login or a list of logins |
 | `infer_response_examples` | | `true` | Success examples from controllers |
 | `infer_error_response_examples` | | `true` | Error examples (`abort`, `json(…, 4xx)`, `422`) |
 | `response_schemas` | `SWAGGER_RESPONSE_SCHEMAS` | `true` | Response schemas and `$ref` components |
 | `unwrap_resource_collection_examples` | | `true` | Non-paginated collections as a top-level array |
 | `spatie_query_builder` | | `false` | Adds `filter`, `sort` and `include` to GET routes |
+| `ui` / `g4t` / `theme` / `scalar` | `SWAGGER_UI`, `SWAGGER_THEME` | `g4t` | The [interface and its look](#appearance) |
 | `enable_auth` | `SWAGGER_AUTH_ENABLED` | `false` | Basic Auth on the docs (`SWAGGER_USERNAME`, `SWAGGER_PASSWORD`) |
+| `session_ttl` | `SWAGGER_SESSION_TTL` | `100000` | Basic Auth idle timeout in seconds, when the docs run with a session |
 | `middleware` | | `[]` | Extra middleware for the docs routes, e.g. `["web", "auth"]` |
+| `use_cached_spec_when_present` | `SWAGGER_USE_CACHED_SPEC` | `true` | Serve the `swagger:cache` file when it exists |
 | `cached_spec_location` | `SWAGGER_CACHED_SPEC_LOCATION` | `storage` | Where `swagger:cache` writes (`storage` or `public`) |
-| `dashboard` | `SWAGGER_DASHBOARD_*` | off until a username and password are set | The [settings dashboard](#settings-dashboard): `enabled`, `url`, `username`, `password`, `settings_path`, `middleware` |
+| `dashboard` | `SWAGGER_DASHBOARD_*` | off until credentials are set | `enabled`, `url`, `username`, `password`, `settings_path`, `middleware` |
 
-### Protecting the documentation
+---
 
-```dotenv
-SWAGGER_ENABLED=true          # needed to serve docs in production
-SWAGGER_AUTH_ENABLED=true
-SWAGGER_USERNAME=docs
-SWAGGER_PASSWORD=a-long-random-password   # an empty password never authenticates
-```
+## 🌐 Going to production
 
-You can also put the docs behind your own guards with `"middleware" => ["web", "auth"]`. With a session, `session_ttl` (`SWAGGER_SESSION_TTL`) is the Basic Auth idle timeout.
+A short checklist for a public or staging server:
 
-## Caching
+1. **Turn the docs on** where you want them: `SWAGGER_ENABLED=true`.
+2. **Protect them**, with Basic Auth or your own guards:
+   ```dotenv
+   SWAGGER_AUTH_ENABLED=true
+   SWAGGER_USERNAME=docs
+   SWAGGER_PASSWORD=a-long-random-password   # an empty password never authenticates
+   ```
+   or `"middleware" => ["web", "auth"]` in `config/swagger.php`.
+3. **Cache the document** during deployment, so it is not generated on every request:
+   ```bash
+   php artisan swagger:cache
+   ```
+   The file is stored outside `public/` and only served through the docs JSON endpoint, so Basic Auth and your middleware still apply.
+4. **Share with partners** through [partner links](#partner-links) instead of handing out the docs password.
+5. **Decide about the dashboard:** keep it behind strong credentials, or turn it off with `SWAGGER_DASHBOARD_ENABLED=false` and ship `swagger-settings.json` with the code.
 
-Generating the document reads your controllers, so large APIs benefit from caching it, typically during deployment:
+---
 
-```bash
-php artisan swagger:cache          # write storage/app/swagger/doc.json
-php artisan swagger:cache --clear  # remove it
-```
-
-While the cache file exists it is served instead of generating the document on each request (`use_cached_spec_when_present`, env `SWAGGER_USE_CACHED_SPEC`). It is stored outside `public/` and is only reachable through the docs JSON endpoint, so Basic Auth and your middleware still apply.
-
-## Artisan commands
+## 🛠️ Artisan commands
 
 | Command | What it does |
 |---|---|
@@ -384,11 +553,10 @@ While the cache file exists it is served instead of generating the document on e
 | `make:swagger` | Older alias of `swagger:cache` |
 | `swagger:mock-server` | Uploads your document to the G4T mock server (experimental) |
 
-### Mock server (experimental)
+<details>
+<summary><b>Mock server (experimental)</b></summary>
 
-G4T provides an **optional** command that connects your auto-generated documentation to a **hosted mock API** run by G4T, so you can explore or demo your API surface while you build, without hosting that side yourself.
-
-> **Experimental:** this feature is under testing. It may change, pause or evolve without much notice. Do not rely on it for business-critical paths yet.
+G4T provides an **optional** command that connects your generated documentation to a **hosted mock API** run by G4T, so you can explore or demo your API while you build it, without hosting that side yourself.
 
 ```bash
 php artisan swagger:mock-server
@@ -396,18 +564,85 @@ php artisan swagger:mock-server
 
 Set `MOCK_SERVER_APP_ID` to always update the same mock app without prompts.
 
-## Upgrading to 5.0
+> [!CAUTION]
+> This feature is under testing. It may change, pause or evolve without much notice. Do not rely on it for business-critical paths yet.
+
+</details>
+
+---
+
+## 🩺 When something is off
+
+<details>
+<summary><b>A route is missing from the docs</b></summary>
+
+- It must be in the `api` middleware group (or set `SWAGGER_INCLUDE_WEB_ROUTES=true` for web routes that use your controllers).
+- `show_prefix` limits the docs to some prefixes, and the version selector shows one version at a time; pick **all**.
+- It may be hidden with `->hiddenDoc()` or with the eye in the dashboard.
+- A cached document is served while the cache file exists: run `php artisan swagger:cache` again, or `--clear`.
+
+</details>
+
+<details>
+<summary><b>The docs answer 403 in production</b></summary>
+
+They are off in production by default. Set `SWAGGER_ENABLED=true`, and protect them as described in [Going to production](#-going-to-production).
+
+</details>
+
+<details>
+<summary><b>An example is missing or wrong</b></summary>
+
+Examples come from reading the source, so very dynamic code (a response built through many conditions, a class picked at runtime) cannot always be followed. Force the example with a [JSON file](#your-own-examples), or turn inference off with `infer_response_examples` / `infer_error_response_examples`.
+
+</details>
+
+<details>
+<summary><b>My changes do not show up</b></summary>
+
+- A `swagger:cache` file is being served: rebuild it or run `php artisan swagger:cache --clear`.
+- A value saved in the dashboard overrides `config/swagger.php`; the dashboard marks those sections "saved in dashboard". Save the config value there again, or use **Reset**.
+- Run `php artisan config:clear` after changing `.env` if the config is cached.
+
+</details>
+
+<details>
+<summary><b>Try it out says "Network error"</b></summary>
+
+The request did not reach the server: the selected server URL is not reachable from the browser, or another origin blocks it with CORS. Pick the server marked "This page" in the server selector, or set `servers` (or `APP_URL`) to the address the docs run on.
+
+</details>
+
+<details>
+<summary><b>Log in works but "no token was found"</b></summary>
+
+Set `token_path` (`SWAGGER_LOGIN_TOKEN_PATH`) to where your login response keeps the token, e.g. `data.token` or `data.access_token`.
+
+</details>
+
+<details>
+<summary><b>Swagger UI loads without styles or scripts</b></summary>
+
+Publish the assets: `php artisan vendor:publish --tag=swagger-assets`.
+
+</details>
+
+---
+
+## ⬆️ Upgrading to 5.0
 
 - **The `g4t` UI is the new default.** Set `SWAGGER_UI=swagger` to keep Swagger UI.
-- **Disabled in production by default.** `enable` now defaults to `APP_ENV !== production`; set `SWAGGER_ENABLED=true` to keep the docs online there.
+- **Off in production by default.** `enable` now defaults to `APP_ENV !== production`; set `SWAGGER_ENABLED=true` to keep the docs online there.
 - **The cached spec moved out of `public/`.** `swagger:cache` / `make:swagger` write to `storage/app/swagger/{cached_spec_path}`. Set `SWAGGER_CACHED_SPEC_LOCATION=public` for the old location, and remove any old `public/doc.json` (`php artisan swagger:cache --clear` removes both).
 - **Basic Auth** reads `SWAGGER_AUTH_ENABLED`, `SWAGGER_USERNAME` and `SWAGGER_PASSWORD`; an empty password never authenticates. `session_ttl` replaces the misspelled `sesson_ttl` (still read).
 - **Valid OpenAPI 3.0.** `paths` and `tags` are at the document root, nested rules become nested schemas, optional path parameters produce one path per variant, and `auth:sanctum` routes are detected.
 - **Status codes.** `store` actions returning a resource are documented as `201`, `noContent()` as `204`.
 - **Security scheme.** The default scheme is HTTP bearer (`bearerAuth`): paste just the token, without `Bearer `.
-- **Same-name controllers** in different namespaces get distinct tags and schemas (`V1/Product`, `V2/Product`).
+- **Same-name controllers** in different namespaces get distinct sections and schemas (`V1/Product`, `V2/Product`).
 
-## Testing
+---
+
+## 🤝 Testing, contributing and license
 
 ```bash
 composer test
@@ -415,28 +650,14 @@ composer test
 
 The suite runs on Orchestra Testbench, and GitHub Actions covers every supported pair above (Laravel 9 to 13, PHP 8.0 to 8.5), including the lowest supported dependencies.
 
+- **Ideas:** the [Canny board](https://g4t.canny.io/).
+- **Issues and pull requests:** welcome on [GitHub](https://github.com/hussein4alaa/laravel-g4t-swagger-auto-generate); see [CONTRIBUTING.md](CONTRIBUTING.md).
+- **Security:** report vulnerabilities as described in [SECURITY.md](SECURITY.md).
+- **License:** open source under the [MIT license](LICENSE).
+- **Maintainer:** [Hussein Alaa](https://www.linkedin.com/in/hussein4alaa/).
+
+**More reading:** [website](https://swagger.g4t.io/) · [OpenAPI specification](https://swagger.io/specification/) · [Laravel documentation](https://laravel.com/docs)
+
 <p align="center">
   <img src="./back.png" alt="I Stand with IRAN">
 </p>
-
-## Suggestions
-
-Feature requests: [Canny board](https://g4t.canny.io/).
-
-## Contributing
-
-Issues and pull requests are welcome on [GitHub](https://github.com/hussein4alaa/laravel-g4t-swagger-auto-generate). See [CONTRIBUTING.md](CONTRIBUTING.md), and report vulnerabilities as described in [SECURITY.md](SECURITY.md).
-
-## License
-
-Open-source under the [MIT license](LICENSE).
-
-## Credits
-
-Maintained by [Hussein Alaa](https://www.linkedin.com/in/hussein4alaa/).
-
-## Additional resources
-
-- [Package documentation](https://swagger.g4t.io/)
-- [OpenAPI specification](https://swagger.io/specification/)
-- [Laravel documentation](https://laravel.com/docs)

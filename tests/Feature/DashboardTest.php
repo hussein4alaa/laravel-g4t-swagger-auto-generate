@@ -252,6 +252,20 @@ class DashboardTest extends TestCase
             ->assertStatus(422)->assertJsonValidationErrors(['auth_middlewares.0', 'auth_middlewares.1']);
     }
 
+    public function test_versions_can_have_path_segments(): void
+    {
+        $session = $this->withSession(self::SESSION);
+        $session->putJson('/swagger/dashboard/api/settings', ['settings' => ['versions' => ['all', 'v1', 'driver/v1'], 'default' => 'all']])
+            ->assertOk()->assertJsonPath('settings.versions', ['all', 'v1', 'driver/v1']);
+
+        $this->app['router']->middleware('api')->get('api/driver/v1/trips', [MiscController::class, 'ping']);
+        $paths = array_keys($this->getJson('/swagger/documentation/json?version='.urlencode('driver/v1'))->assertOk()->json('paths'));
+        $this->assertSame(['/api/driver/v1/trips'], $paths);
+
+        $session->putJson('/swagger/dashboard/api/settings', ['settings' => ['versions' => ['all', '/driver', 'driver//v1', 'driver v1'], 'default' => 'all']])
+            ->assertStatus(422)->assertJsonValidationErrors(['versions.1', 'versions.2', 'versions.3']);
+    }
+
     public function test_invalid_values_are_rejected_with_field_errors(): void
     {
         $this->withSession(self::SESSION)->putJson('/swagger/dashboard/api/settings', ['settings' => [

@@ -305,7 +305,8 @@ class DashboardController
             'scalar.theme' => ['nullable', 'string', 'max:40', $name],
             'scalar.layout' => [Rule::in(['modern', 'classic'])],
             'versions' => ['array', 'min:1'],
-            'versions.*' => ['required', 'string', 'max:30', $name, 'distinct'],
+            // Path segments are allowed: "driver/v1" lists /api/driver/v1/... routes.
+            'versions.*' => ['required', 'string', 'max:60', 'regex:/^[A-Za-z0-9_.-]+(\/[A-Za-z0-9_.-]+)*$/', 'distinct'],
             'default' => ['nullable', 'string'],
             'servers' => ['array'],
             'servers.*.url' => ['required', 'string', 'max:500', function ($attribute, $value, $fail) {
@@ -360,6 +361,8 @@ class DashboardController
             'spatie_query_builder' => ['boolean'],
             'show_prefix' => ['array'],
             'show_prefix.*' => ['string', 'max:100'],
+        ], [
+            'versions.*.regex' => 'A version uses letters, digits, . _ - and "/" between parts, e.g. v1 or driver/v1.',
         ]);
 
         $validator->after(function ($validator) use ($input) {

@@ -16,7 +16,11 @@
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 6h16M4 12h16M4 18h16"></path></svg>
             </button>
             <div class="g4t-brand">
+                @if (! empty($partner['brand']['logo']))
+                <img class="g4t-brand-logo" src="{{ $partner['brand']['logo'] }}" alt="" height="28" referrerpolicy="no-referrer">
+                @else
                 @include('swagger::partials.logo', ['size' => 28])
+                @endif
                 <div class="g4t-brand-text">
                     <div class="g4t-brand-name">{{ config('app.name') }}</div>
                     <div class="g4t-brand-sub">API reference · g4t/swagger</div>
@@ -99,7 +103,7 @@
             'gettingStarted' => $g4t['getting_started'],
             'environments' => $environments ?? [],
             'jsonUrl' => url(config('swagger.url') . '/json') . (empty($partner) ? '' : '?key=' . urlencode($partner['key'])),
-            'partner' => empty($partner) ? null : ['name' => $partner['name'], 'sections' => $partner['sections'], 'endpoints' => $partner['endpoints'] ?? 0, 'expires' => $partner['expires']],
+            'partner' => empty($partner) ? null : ['name' => $partner['name'], 'sections' => $partner['sections'], 'endpoints' => $partner['endpoints'] ?? 0, 'expires' => $partner['expires'], 'brand' => $partner['brand'] ?? null],
         ], JSON_UNESCAPED_SLASHES | JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) !!};
     </script>
     @include('swagger::g4t.script')

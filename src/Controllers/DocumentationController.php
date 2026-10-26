@@ -3,6 +3,7 @@
 namespace G4T\Swagger\Controllers;
 
 use G4T\Swagger\Support\CachedSpec;
+use G4T\Swagger\Support\Flows;
 use G4T\Swagger\Support\PartnerLinks;
 use G4T\Swagger\Swagger;
 use Illuminate\Http\Response;
@@ -64,7 +65,7 @@ class DocumentationController
                 'defaultTheme' => (string) config('swagger.theme', 'default'),
                 'g4t' => $this->g4tSettings(),
                 'environments' => $this->sharedEnvironments(),
-                'partner' => $partner === null ? null : ['name' => $partner['name'], 'key' => $partner['token'], 'sections' => $partner['tags'], 'endpoints' => count($partner['operations']), 'expires' => $partner['expires']],
+                'partner' => $partner === null ? null : ['name' => $partner['name'], 'key' => $partner['token'], 'sections' => $partner['tags'], 'endpoints' => count($partner['operations']), 'expires' => $partner['expires'], 'brand' => $partner['brand'] ?? null],
             ]);
         }
 
@@ -281,15 +282,15 @@ class DocumentationController
             // The live build reads the version from the request too.
             request()->merge(['version' => $version]);
         }
-        // A link that picks single endpoints may pick hidden ones: built with them, then narrowed to the link.
-        $data = $partner !== null && $partner['operations'] !== []
+        // A link that picks single endpoints, webhooks or flows may pick hidden ones: built with them, then narrowed to the link.
+        $data = $partner !== null && ($partner['operations'] !== [] || ! empty(PartnerLinks::webhooks($partner)) || ! empty(PartnerLinks::flows($partner)))
             ? (new Swagger)->includingHidden()->swagger()
             : $this->resolveSwaggerSpecification();
         if ($version !== null) {
             $data = $this->filter($data, $version);
         }
         if ($partner !== null) {
-            $data = PartnerLinks::scope(json_decode(json_encode($data)), $partner['tags'], $partner['operations'], PartnerLinks::schemes($partner));
+            $data = PartnerLinks::scope(json_decode(json_encode($data)), $partner['tags'], $partner['operations'], PartnerLinks::schemes($partner), PartnerLinks::webhooks($partner), PartnerLinks::flows($partner));
         }
 
         return response()->json($data, 200, [], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
@@ -357,7 +358,8 @@ class DocumentationController
             fn ($tag) => is_object($tag) && isset($usedTags[$tag->name ?? '']),
         ));
 
-        return $data;
+        // Flows that need an operation of another version leave too.
+        return Flows::scope($data);
     }
 
     public function getThemesList()

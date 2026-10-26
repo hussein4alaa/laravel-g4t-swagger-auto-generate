@@ -348,4 +348,60 @@ class PartnerLinksTest extends TestCase
         $this->get('/swagger/documentation')->assertStatus(401)->assertHeader('WWW-Authenticate');
         $this->get('/swagger/documentation?key=')->assertStatus(401);
     }
+
+    public function test_the_dashboard_saves_the_branding_of_a_link(): void
+    {
+        $session = $this->withSession(['g4t_swagger_dashboard_user' => 'admin']);
+        $link = ['id' => 'acme', 'name' => 'Acme', 'tags' => ['Misc'], 'token' => self::TOKEN];
+
+        $session->putJson('/swagger/dashboard/api/settings', ['settings' => [], 'links' => [$link + ['brand' => [
+            'color' => '#0F766E', 'logo' => 'https://cdn.acme.test/logo.svg', 'welcome' => ['en' => "Hi Acme!\nStart with Misc.", 'ar' => 'أهلاً'],
+        ]]]])->assertOk()
+            ->assertJsonPath('links.0.brand.color', '#0f766e')
+            ->assertJsonPath('links.0.brand.logo', 'https://cdn.acme.test/logo.svg')
+            ->assertJsonPath('links.0.brand.welcome.en', "Hi Acme!\nStart with Misc.")
+            ->assertJsonPath('links.0.brand.welcome.ar', 'أهلاً');
+
+        $session->putJson('/swagger/dashboard/api/settings', ['settings' => [], 'links' => [$link + ['brand' => ['color' => '', 'logo' => null, 'welcome' => ['en' => ' ', 'ar' => '']]]]])
+            ->assertOk()->assertJsonPath('links.0.brand', null);
+    }
+
+    public function test_invalid_branding_is_rejected(): void
+    {
+        $session = $this->withSession(['g4t_swagger_dashboard_user' => 'admin']);
+        $link = ['id' => 'acme', 'name' => 'Acme', 'token' => self::TOKEN];
+
+        foreach (['javascript:alert(1)', 'data:image/svg+xml,<svg/>', 'http://cdn.acme.test/logo.png', 'logo.png', '/logo.png" onerror="x'] as $logo) {
+            $session->putJson('/swagger/dashboard/api/settings', ['settings' => [], 'links' => [$link + ['brand' => ['logo' => $logo]]]])
+                ->assertStatus(422)->assertJsonValidationErrors(['links.0.brand.logo']);
+        }
+        $session->putJson('/swagger/dashboard/api/settings', ['settings' => [], 'links' => [$link + ['brand' => ['color' => 'red', 'welcome' => ['en' => str_repeat('a', 2001)]]]]])
+            ->assertStatus(422)->assertJsonValidationErrors(['links.0.brand.color', 'links.0.brand.welcome.en']);
+        $session->putJson('/swagger/dashboard/api/settings', ['settings' => [], 'links' => [$link + ['brand' => ['logo' => '/images/acme.png']]]])
+            ->assertOk()->assertJsonPath('links.0.brand.logo', '/images/acme.png');
+    }
+
+    public function test_a_branded_link_shows_its_color_logo_and_welcome_message(): void
+    {
+        $this->link(['Misc'], null, [], null, ['brand' => ['color' => '#0f766e', 'logo' => 'https://cdn.acme.test/logo.svg?a=1&b=2', 'welcome' => ['en' => 'Hi <b>Acme</b>', 'ar' => 'أهلاً']]]);
+
+        $page = $this->get('/swagger/documentation?key='.self::TOKEN)->assertOk();
+        $page->assertSee('<img class="g4t-brand-logo" src="https://cdn.acme.test/logo.svg?a=1&amp;b=2"', false)
+            ->assertDontSee('id="g4t-logo-bg"', false)
+            ->assertSee('"brand":{"color":"#0f766e"', false)
+            ->assertSee('Hi \u003Cb\u003EAcme\u003C/b\u003E', false);
+
+        $this->withHeaders(['Authorization' => 'Basic '.base64_encode('docs:docs-pass')])->get('/swagger/documentation')
+            ->assertOk()->assertSee('id="g4t-logo-bg"', false)->assertDontSee('cdn.acme.test', false);
+    }
+
+    public function test_branding_read_from_the_file_keeps_only_safe_values(): void
+    {
+        $this->link([], null, [], null, ['brand' => ['color' => 'url(javascript:x)', 'logo' => 'javascript:alert(1)', 'welcome' => ['en' => 'Hello']]]);
+        $this->assertSame(['color' => null, 'logo' => null, 'welcome' => ['en' => 'Hello', 'ar' => '']], Settings::links()[0]['brand']);
+
+        Settings::flush();
+        $this->link([], null, [], null, ['brand' => ['color' => 'nope', 'logo' => 'data:x']]);
+        $this->assertNull(Settings::links()[0]['brand']);
+    }
 }

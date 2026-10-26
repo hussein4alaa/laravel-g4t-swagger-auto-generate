@@ -128,6 +128,25 @@ class ResponseExampleExtractor
         $this->schemas()->reserve($names);
     }
 
+    /**
+     * Example of a JsonResource's toArray() or of an Eloquent model's row, read without a controller
+     * (payloads described by a class, e.g. webhooks); null for any other class.
+     *
+     * @return array<string, mixed>|null
+     */
+    public function classExample(string $class): ?array
+    {
+        if (is_subclass_of($class, JsonResource::class) && ! is_subclass_of($class, ResourceCollection::class)) {
+            $example = $this->resourceExample($class, [], []);
+        } elseif ($this->models->isModel($class)) {
+            $example = $this->models->modelExample($class);
+        } else {
+            return null;
+        }
+
+        return is_array($example) ? ResponseSchema::strip($example) : null;
+    }
+
     private function schemas(): ResponseSchema
     {
         return $this->responseSchema ??= new ResponseSchema(function (string $class, string $property): ?array {

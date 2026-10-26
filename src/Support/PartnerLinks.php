@@ -21,6 +21,9 @@ final class PartnerLinks
 
     private const ATTRIBUTE = 'g4t_swagger_partner_link';
 
+    /** A link's accent color: #RRGGBB. */
+    public const COLOR = '/^#[0-9a-fA-F]{6}$/';
+
     /**
      * The valid, not expired link of this request, with its token; null for everyone else.
      *
@@ -94,6 +97,14 @@ final class PartnerLinks
     }
 
     /**
+     * A logo address the docs may show: https:// or a path on this site (never javascript:, data: or http:).
+     */
+    public static function safeLogo(string $url): bool
+    {
+        return strlen($url) <= 500 && (bool) preg_match('#^(https://|/)[^\s"\'<>\\\\]*$#i', $url);
+    }
+
+    /**
      * @param  array{expires?: ?string}  $link
      */
     public static function expired(array $link): bool
@@ -156,17 +167,43 @@ final class PartnerLinks
     }
 
     /**
+     * Names of the webhooks a link documents, hidden ones included: null for every visible one, [] for none.
+     *
+     * @param  array{webhooks?: ?list<string>}  $link
+     * @return list<string>|null
+     */
+    public static function webhooks(array $link): ?array
+    {
+        return isset($link['webhooks']) && is_array($link['webhooks']) ? $link['webhooks'] : null;
+    }
+
+    /**
+     * Ids of the flows a link shows, hidden ones included: null for every visible one, [] for none.
+     *
+     * @param  array{flows?: ?list<string>}  $link
+     * @return list<string>|null
+     */
+    public static function flows(array $link): ?array
+    {
+        return isset($link['flows']) && is_array($link['flows']) ? $link['flows'] : null;
+    }
+
+    /**
      * The link's part of the document: every visible operation of its sections, plus the operations it picks
      * one by one, even hidden ones (from the dashboard or ->hiddenDoc()). A link with neither shows everything
      * visible. Tags without operations and schemas nothing reaches are dropped, so other sections do not leak.
      *
      * With $schemes, protected operations ask for those schemes only, and the others leave the document.
+     * With $webhooks, only those webhooks stay in x-webhooks (hidden ones too); without, the hidden ones leave.
+     * $flows works the same for x-flows, and a flow also needs every one of its steps inside the link.
      *
      * @param  list<string>  $tags
      * @param  list<string>  $operations
      * @param  list<string>|null  $schemes
+     * @param  list<string>|null  $webhooks
+     * @param  list<string>|null  $flows
      */
-    public static function scope(stdClass $spec, array $tags, array $operations = [], ?array $schemes = null): stdClass
+    public static function scope(stdClass $spec, array $tags, array $operations = [], ?array $schemes = null, ?array $webhooks = null, ?array $flows = null): stdClass
     {
         $allowedTags = array_flip($tags);
         $picked = array_flip($operations);
@@ -212,6 +249,16 @@ final class PartnerLinks
             }
         }
 
+        if (($spec->{'x-webhooks'} ?? null) instanceof stdClass) {
+            $all = get_object_vars($spec->{'x-webhooks'});
+            $kept = $webhooks !== null ? array_intersect_key($all, array_flip($webhooks)) : array_diff_key($all, array_flip(Webhooks::hidden()));
+            if ($kept === []) {
+                unset($spec->{'x-webhooks'});
+            } else {
+                $spec->{'x-webhooks'} = (object) $kept;
+            }
+        }
+
         // Drop schemas the remaining operations cannot reach (no names of other sections leak).
         $schemas = $spec->components->schemas ?? null;
         if ($schemas instanceof stdClass) {
@@ -228,7 +275,8 @@ final class PartnerLinks
             $spec->components->schemas = (object) array_intersect_key(get_object_vars($schemas), $reachable);
         }
 
-        return $spec;
+        // Only flows whose every step is inside the link.
+        return Flows::scope(Flows::pick($spec, $flows));
     }
 
     /**

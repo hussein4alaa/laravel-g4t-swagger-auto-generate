@@ -50,6 +50,7 @@
     .g4t-icon-btn:hover { border-color: var(--border-strong); }
     .g4t-drawer-btn { width: 36px; height: 36px; display: none; }
     .g4t-brand { display: flex; align-items: center; gap: 10px; min-width: 0; }
+    .g4t-brand-logo { display: block; flex: none; height: 28px; width: auto; max-width: 120px; object-fit: contain; border-radius: 6px; }
     .g4t-logo-mark { flex: none; display: block; }
     .g4t-brand-text { min-width: 0; line-height: 1.2; }
     .g4t-brand-name { font-weight: 600; font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -133,6 +134,7 @@
     .g4t-lang { display: inline-grid; grid-template-columns: repeat(2, auto); margin-inline-start: auto; }
     .g4t-lang button { padding-inline: 10px; }
     .g4t-partner { display: inline-flex; align-items: center; gap: 8px; justify-self: start; padding: 5px 10px; border-radius: 999px; background: color-mix(in oklab, var(--accent) 10%, transparent); color: var(--text-2); font-size: 12.5px; }
+    .g4t-welcome { margin: 0; padding: 12px 14px; border-inline-start: 3px solid var(--accent); border-radius: 10px; background: color-mix(in oklab, var(--accent) 6%, transparent); color: var(--text); font-size: 14px; line-height: 1.55; white-space: pre-line; overflow-wrap: anywhere; }
     .g4t-guide { margin-top: 10px; border: 1px solid var(--border); border-radius: 12px; background: var(--surface); }
     .g4t-guide > summary { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 12px; padding: 12px 16px; cursor: pointer; list-style: none; }
     .g4t-guide > summary::-webkit-details-marker { display: none; }
@@ -365,6 +367,24 @@
     .m-put { color: var(--m-put-fg); background: var(--m-put-bg); }
     .m-patch { color: var(--m-patch-fg); background: var(--m-patch-bg); }
     .m-delete { color: var(--m-delete-fg); background: var(--m-delete-bg); }
+    .m-flow { color: var(--accent); background: color-mix(in oklab, var(--accent) 12%, transparent); }
+    .g4t-nav-method.m-flow { background: transparent; }
+    .g4t-flow-steps { display: grid; gap: 8px; margin: 0; padding: 0; list-style: none; }
+    .g4t-flow-step { display: grid; gap: 8px; padding: 10px 12px; border: 1px solid var(--border); border-inline-start: 3px solid var(--border); border-radius: 8px; background: var(--surface); min-width: 0; }
+    .g4t-flow-step.is-ok { border-inline-start-color: var(--ok-fg, #15803d); }
+    .g4t-flow-step.is-fail { border-inline-start-color: var(--err-fg); }
+    .g4t-flow-step.is-busy { border-inline-start-color: var(--accent); }
+    .g4t-flow-step.is-skipped { opacity: .55; }
+    .g4t-flow-step-head { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; min-width: 0; }
+    .g4t-flow-num { display: inline-grid; place-items: center; width: 22px; height: 22px; flex: none; border-radius: 999px; background: var(--surface-2); color: var(--text-2); font: 600 11.5px/1 var(--mono); }
+    .g4t-flow-path { word-break: break-all; text-align: start; font-weight: 500; }
+    .g4t-flow-summary { font-size: 13px; min-width: 0; }
+    .g4t-flow-state { display: inline-flex; align-items: center; gap: 8px; margin-inline-start: auto; }
+    .g4t-flow-sets { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 12.5px; color: var(--text-2); }
+    .g4t-flow-detail > summary { cursor: pointer; font-size: 12.5px; color: var(--text-2); }
+    .g4t-flow-detail { display: grid; gap: 8px; }
+    .g4t-flow-detail[open] > summary { margin-bottom: 8px; }
+    .g4t-flow-desc { white-space: pre-line; }
     .g4t-nav-method.m-get, .g4t-nav-method.m-post, .g4t-nav-method.m-put, .g4t-nav-method.m-patch, .g4t-nav-method.m-delete { background: transparent; }
 
     .j-str { color: var(--j-str); } .j-num { color: var(--j-num); } .j-kw { color: var(--j-kw); } .j-key { color: var(--j-key); } .j-punc { color: var(--j-punc); }

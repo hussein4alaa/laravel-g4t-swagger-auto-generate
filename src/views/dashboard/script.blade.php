@@ -15,7 +15,9 @@
         ['security', 'Security schemes', ['security_schemes', 'auth_middlewares']],
         ['headers', 'Global headers', ['global_headers']],
         ['environments', 'Environments', ['environments']],
+        ['webhooks', 'Webhooks', ['webhooks']],
         ['login', 'Try it out logins', ['auto_login']],
+        ['flows', 'Flows', ['flows']],
         ['generation', 'Generation', ['infer_response_examples', 'infer_error_response_examples', 'response_schemas', 'unwrap_resource_collection_examples', 'include_web_routes', 'spatie_query_builder', 'show_prefix']],
         ['access', 'Access', ['enable', 'enable_auth', 'username', 'password']],
         ['links', 'Partner links', []],
@@ -80,6 +82,20 @@
         if (!raw) { return []; }
         if (Array.isArray(raw)) { return raw.map(function (p) { return { key: String((p || {}).key || ''), value: String((p || {}).value == null ? '' : p.value) }; }); }
         return Object.keys(raw).map(function (k) { return { key: k, value: raw[k] == null ? '' : String(raw[k]) }; });
+    }
+
+    /** Webhooks from the config (a list or a name => webhook map) as editable rows; the payload example as JSON text. */
+    function webhookRows(raw) {
+        if (!raw) { return []; }
+        var list = Array.isArray(raw) ? raw : Object.keys(raw).map(function (k) { return Object.assign({ name: k }, raw[k]); });
+        return list.filter(function (w) { return w && typeof w === 'object'; }).map(function (w) {
+            var headers = Array.isArray(w.headers) ? w.headers : Object.keys(w.headers || {}).map(function (k) { return typeof w.headers[k] === 'string' ? { name: k, description: w.headers[k] } : Object.assign({ name: k }, w.headers[k]); });
+            return {
+                name: w.name || '', summary: w.summary || '', description: w.description || '', method: String(w.method || 'POST').toUpperCase(),
+                headers: headers.map(function (h) { return { name: (h || {}).name || '', description: (h || {}).description || '', example: (h || {}).example == null ? '' : String(h.example) }; }),
+                exampleText: w.example === undefined || w.example === null ? '' : JSON.stringify(w.example, null, 2), cls: w['class'] || '', hiddenInCode: w.hidden === true || w.hidden === 'true'
+            };
+        });
     }
 
     /** English / Arabic texts: { info: {lang: {title, description}}, tags: {tag: {lang: text}}, operations: {id: {lang: {summary, description}}} }. */
@@ -213,6 +229,7 @@
             }),
             authMiddlewares: (Array.isArray(s.auth_middlewares) ? s.auth_middlewares : []).map(String),
             headers: headerList(s.global_headers),
+            webhooks: webhookRows(s.webhooks),
             envs: (Array.isArray(s.environments) ? s.environments : []).map(function (e) {
                 return { name: e.name || '', base_url: e.base_url || '', vars: pairList(e.variables), headers: pairList(e.headers) };
             }),
@@ -225,9 +242,17 @@
             flags: flags,
             showPrefix: (s.show_prefix || []).join(', '),
             access: { enable: !!s.enable, enable_auth: !!s.enable_auth, username: s.username || '', password: '', passwordSet: !!s.password_set },
-            links: (state.links || []).map(function (l) { return { id: l.id, name: l.name, tags: (l.tags || []).slice(), operations: (l.operations || []).slice(), token: l.token || null, security: Array.isArray(l.security) ? l.security.slice() : null, versions: Array.isArray(l.versions) ? l.versions.slice() : null, environments: Array.isArray(l.environments) ? l.environments.slice() : null, expires: l.expires || '', hash: l.hash, created: l.created, expired: !!l.expired }; }),
+            links: (state.links || []).map(function (l) { return { id: l.id, name: l.name, tags: (l.tags || []).slice(), operations: (l.operations || []).slice(), token: l.token || null, security: Array.isArray(l.security) ? l.security.slice() : null, versions: Array.isArray(l.versions) ? l.versions.slice() : null, environments: Array.isArray(l.environments) ? l.environments.slice() : null, webhooks: Array.isArray(l.webhooks) ? l.webhooks.slice() : null, flows: Array.isArray(l.flows) ? l.flows.slice() : null, brand: brandModel(l.brand), expires: l.expires || '', hash: l.hash, created: l.created, expired: !!l.expired }; }),
             meta: clone(((state.layout && state.layout.meta && state.layout.meta.operations) && !Array.isArray(state.layout.meta.operations)) ? state.layout.meta.operations : {}),
             texts: normalizeTexts(state.layout && state.layout.texts), defaults: state.defaults || { tags: {} },
+            flows: ((state.layout && state.layout.flows) || []).map(function (f) {
+                var description = f.description && !Array.isArray(f.description) ? f.description : {};
+                return { id: f.id, name: f.name || '', descEn: description.en || '', descAr: description.ar || '', steps: (f.steps || []).map(function (st) {
+                    return { operation: st.operation, params: st.params && !Array.isArray(st.params) ? clone(st.params) : {}, headers: pairList(Array.isArray(st.headers) ? [] : st.headers), body: st.body || '', extract: (st.extract || []).map(function (x) { return { 'var': x['var'] || '', from: x.from || '' }; }) };
+                }) };
+            }),
+            hiddenWebhooks: ((state.layout && state.layout.hidden_webhooks) || []).slice(),
+            hiddenFlows: ((state.layout && state.layout.hidden_flows) || []).slice(),
             tags: tags, ops: ops, info: info, hidden: ((state.layout && state.layout.hidden) || []).slice(), hiddenTags: ((state.layout && state.layout.hidden_tags) || []).slice()
         };
     }
@@ -270,6 +295,21 @@
                 if (l.prefill) { out.prefill = l.prefill; }
                 return out;
             }),
+            webhooks: m.webhooks.map(function (w) {
+                var out = { name: w.name, method: w.method || 'POST' };
+                if (w.summary) { out.summary = w.summary; }
+                if (w.description) { out.description = w.description; }
+                out.headers = w.headers.map(function (h) {
+                    var header = { name: h.name };
+                    if (h.description) { header.description = h.description; }
+                    if (h.example) { header.example = h.example; }
+                    return header;
+                });
+                if (w.exampleText.trim()) { out.example = w.exampleText; }
+                if (w.cls) { out['class'] = w.cls; }
+                if (w.hiddenInCode) { out.hidden = true; }
+                return out;
+            }),
             show_prefix: splitList(m.showPrefix),
             enable: m.access.enable, enable_auth: m.access.enable_auth, username: m.access.username
         };
@@ -284,10 +324,21 @@
             out.security = keep(l.security, m.schemes.map(function (x) { return x.name; }));
             out.versions = keep(l.versions, m.versions);
             out.environments = keep(l.environments, m.envs.map(function (e) { return e.name; }));
+            out.webhooks = keep(l.webhooks, m.webhooks.map(function (w) { return w.name; }));
+            out.flows = keep(l.flows, m.flows.map(function (f) { return f.id; }));
+            out.brand = brandPayload(l.brand);
             if (linkTokens[l.id]) { out.token = linkTokens[l.id]; } else { out.hash = l.hash; }
             return out;
         });
-        return { settings: settings, links: links, layout: { tags: m.tags.slice(), operations: operations, hidden: m.hidden.slice(), hidden_tags: m.hiddenTags.slice(), texts: pruneTexts(m.texts), meta: { operations: pruneMeta(m.meta) } } };
+        var flows = m.flows.map(function (f) {
+            return { id: f.id, name: f.name, description: { en: f.descEn, ar: f.descAr }, steps: f.steps.map(function (st) {
+                var params = {}, headers = {};
+                Object.keys(st.params).forEach(function (k) { if (String(st.params[k]) !== '') { params[k] = String(st.params[k]); } });
+                st.headers.forEach(function (h) { if (h.key) { headers[h.key] = h.value; } });
+                return { operation: st.operation, params: params, headers: headers, body: st.body, extract: st.extract.filter(function (x) { return x['var'] || x.from; }).map(function (x) { return { 'var': x['var'], from: x.from }; }) };
+            }) };
+        });
+        return { settings: settings, links: links, layout: { tags: m.tags.slice(), operations: operations, hidden: m.hidden.slice(), hidden_tags: m.hiddenTags.slice(), hidden_webhooks: m.hiddenWebhooks.slice(), hidden_flows: m.hiddenFlows.slice(), texts: pruneTexts(m.texts), meta: { operations: pruneMeta(m.meta) }, flows: flows } };
     }
 
     function changedSettings(payload) {
@@ -339,7 +390,7 @@
     function addBtn(list, label) { return '<button type="button" class="g4t-btn g4t-add-item" data-action="add" data-list="' + list + '" style="justify-self:start">+ ' + esc(label) + '</button>'; }
     function section(id, title, description, body) {
         var keys = (SECTIONS.filter(function (s) { return s[0] === id; })[0] || [])[2] || [];
-        var saved = id === 'links' ? server.links.length > 0 : id === 'endpoints'
+        var saved = id === 'links' ? server.links.length > 0 : id === 'webhooks' && (server.layout.hidden_webhooks || []).length ? true : id === 'flows' ? ((server.layout.flows || []).length > 0 || (server.layout.hidden_flows || []).length > 0) : id === 'endpoints'
             ? (server.layout.tags.length || server.layout.hidden.length || server.layout.hidden_tags.length || Object.keys(server.layout.operations).length || Object.keys(normalizeTexts(server.layout.texts).operations).length || Object.keys(normalizeTexts(server.layout.texts).tags).length || Object.keys(((server.layout.meta || {}).operations) || {}).length)
             : keys.some(function (k) { return server.overridden.indexOf(k) !== -1; }) || (id === 'general' && Object.keys(normalizeTexts(server.layout.texts).info).length > 0);
         pageHeader = { title: title, description: description, saved: !!saved };
@@ -461,6 +512,36 @@
         return section('environments', 'Environments', 'Shared environments every reader can switch between in the g4t UI (the environment menu in the header). Readers can still add their own. Values are visible in the page, so never put secrets here.',
             (model.envs.length ? list : '<div class="d-note">No shared environments: readers only see the ones they create.</div>') + addBtn('envs', 'Add environment') + errorText('environments'));
     }
+    function webhookHidden(w) { return w.hiddenInCode || model.hiddenWebhooks.indexOf(w.name) !== -1; }
+    function sWebhooks() {
+        var list = '<div class="d-list" data-sortable="webhooks">' + model.webhooks.map(function (w, wi) {
+            var key = 'webhooks.' + wi;
+            var headers = '<div class="d-list" data-sortable="webhook-headers:' + wi + '">' + w.headers.map(function (h, i) {
+                var hk = key + '.headers.' + i;
+                return '<div class="d-item" data-sort-index="' + i + '">' + handle('header ' + h.name) + '<div class="d-item-body"><div class="d-row">' +
+                    '<label class="d-field' + (errors[hk + '.name'] ? ' is-invalid' : '') + '">Header<input class="g4t-mono" data-bind="webhooks.' + wi + '.headers.' + i + '.name" value="' + esc(h.name) + '" placeholder="X-Signature" autocomplete="off" spellcheck="false">' + errorText(hk + '.name') + '</label>' +
+                    '<label class="d-field">Description<input data-bind="webhooks.' + wi + '.headers.' + i + '.description" value="' + esc(h.description) + '" placeholder="HMAC-SHA256 of the body with your secret" autocomplete="off"></label>' +
+                    '<label class="d-field">Example<input class="g4t-mono" data-bind="webhooks.' + wi + '.headers.' + i + '.example" value="' + esc(h.example) + '" placeholder="sha256=5d41402a…" autocomplete="off" spellcheck="false"></label></div></div>' +
+                    removeBtn('webhook-headers:' + wi, i, 'header ' + h.name) + '</div>';
+            }).join('') + '</div>';
+            var hidden = webhookHidden(w);
+            var eye = '<button type="button" class="d-icon-btn" data-action="toggle-webhook-hidden" data-value="' + esc(w.name) + '"' + (w.hiddenInCode ? ' disabled' : '') + ' aria-pressed="' + hidden + '" aria-label="' + (hidden ? 'Show' : 'Hide') + ' webhook ' + esc(w.name) + '" title="' + (w.hiddenInCode ? 'Hidden in config/swagger.php (hidden: true)' : hidden ? 'Hidden from the documentation; partner links can still pick it' : 'Hide from the documentation') + '">' + (hidden ? ICON.eyeOff : ICON.eye) + '</button>';
+            return '<div class="d-item' + (hidden ? ' is-hidden' : '') + '" data-sort-index="' + wi + '">' + handle('webhook ' + w.name) + '<div class="d-item-body">' +
+                (hidden ? '<span class="d-status is-deprecated" style="justify-self:start">' + (w.hiddenInCode ? 'hidden in code' : 'hidden in the docs') + ' · partner links can still pick it</span>' : '') +
+                '<div class="d-row"><label class="d-field' + (errors[key + '.name'] ? ' is-invalid' : '') + '">Name<input class="g4t-mono" data-bind="webhooks.' + wi + '.name" value="' + esc(w.name) + '" placeholder="order.status_changed" autocomplete="off" spellcheck="false">' + errorText(key + '.name') + '</label>' +
+                field('Method', 'webhooks.' + wi + '.method', { options: ['POST', 'PUT', 'PATCH'], err: key + '.method' }) +
+                field('Summary', 'webhooks.' + wi + '.summary', { placeholder: 'An order changed status', err: key + '.summary' }) + '</div>' +
+                field('Description', 'webhooks.' + wi + '.description', { type: 'textarea', rows: 2, err: key + '.description', placeholder: 'When it is sent, how often, what to answer.' }) +
+                '<div class="d-field">Headers<span class="d-hint">Headers your API adds, e.g. a signature the receiver checks.</span></div>' + headers + addBtn('webhook-headers:' + wi, 'Add header') +
+                (w.cls ? '<div class="d-note">The payload is built from <code class="g4t-mono">' + esc(w.cls) + '</code> (set in <code class="g4t-mono">config/swagger.php</code>). An example here replaces the generated one.</div>' : '') +
+                field('Example payload (JSON)', 'webhooks.' + wi + '.exampleText', { type: 'textarea', rows: 6, err: key + '.example', placeholder: '{\n  "event": "order.status_changed",\n  "data": { "id": 1, "status": "paid" }\n}', hint: 'Its schema is worked out from the example. Readers can send it to their own URL from the docs.' }) +
+                '</div><div class="d-item-tools">' + eye + removeBtn('webhooks', wi, 'webhook ' + w.name) + '</div></div>';
+        }).join('') + '</div>';
+        var hiddenCount = model.webhooks.filter(webhookHidden).length;
+        if (model.webhooks.length) { list = '<span class="g4t-muted" style="font-size:13px">' + model.webhooks.length + ' webhook' + (model.webhooks.length > 1 ? 's' : '') + (hiddenCount ? ' · ' + hiddenCount + ' hidden' : '') + '</span>' + list; }
+        return section('webhooks', 'Webhooks', 'Requests your API sends to your clients. The eye hides one from the documentation, like an endpoint; partner links can still pick it. They get their own group in the g4t UI, where readers can send a test webhook from their browser to their own URL, and travel as <code class="g4t-mono">x-webhooks</code> in the document.',
+            (model.webhooks.length ? list : '<div class="d-note">No webhooks documented.</div>') + addBtn('webhooks', 'Add webhook') + errorText('webhooks'));
+    }
     function sLogin() {
         var schemeOptions = [['', '— first bearer scheme —']].concat(model.schemes.filter(function (x) { return x.name; }).map(function (x) { return [x.name, x.name]; }));
         var list = '<div class="d-list" data-sortable="logins">' + model.logins.map(function (login, li) {
@@ -494,6 +575,82 @@
             (a.enable_auth ? '<div class="d-grid">' + field('Docs username', 'access.username', { err: 'username', autocomplete: 'off' }) +
                 field('Docs password', 'access.password', { type: 'password', err: 'password', autocomplete: 'new-password', placeholder: a.passwordSet ? '•••••••• (unchanged)' : 'Set a password', hint: a.passwordSet ? 'Leave empty to keep the current password.' : 'An empty password never authenticates.' }) + '</div>' : '') +
             '<div class="d-note">The dashboard itself is protected by <code class="g4t-mono">SWAGGER_DASHBOARD_USERNAME</code> / <code class="g4t-mono">SWAGGER_DASHBOARD_PASSWORD</code> in your <code class="g4t-mono">.env</code>; it cannot change them.</div>');
+    }
+
+    /* Flows: steps picked from the documented operations, run one after another from the g4t UI. */
+    var flowSearch = {}, flowPicking = {};
+    function flowVarsBefore(f, j) {
+        var vars = [];
+        f.steps.slice(0, j).forEach(function (st) { st.extract.forEach(function (x) { if (x['var'] && vars.indexOf(x['var']) === -1) { vars.push(x['var']); } }); });
+        return vars;
+    }
+    function flowPickerHtml(i) {
+        var f = model.flows[i], words = (flowSearch[f.id] || '').trim().toLowerCase().split(/\s+/).filter(Boolean);
+        var rows = Object.keys(model.info).map(function (id) { return model.info[id]; }).filter(function (o) {
+            var hay = (o.method + ' ' + o.path + ' ' + (o.summary || '') + ' ' + o.tag).toLowerCase();
+            return words.every(function (w) { return hay.indexOf(w) !== -1; });
+        });
+        if (!rows.length) { return '<div class="d-hint" style="padding:10px">No endpoint matches.</div>'; }
+        return rows.slice(0, 200).map(function (o) {
+            var hiddenLabel = opHiddenLabel(o);
+            return '<button type="button" class="d-pick" data-action="flow-add-step" data-index="' + i + '" data-value="' + esc(o.id) + '"><span class="d-pick-box" aria-hidden="true">+</span><span class="g4t-method m-' + esc(o.method.toLowerCase()) + '">' + esc(o.method) + '</span>' +
+                '<span class="d-pick-text"><span class="g4t-mono d-pick-path">' + esc(o.path) + '</span><span class="d-pick-meta">' + esc(o.summary || '') + ' · ' + esc(o.tag) + '</span></span>' +
+                (hiddenLabel ? '<span class="d-status is-deprecated d-pick-hidden">' + esc(hiddenLabel) + '</span>' : '<span></span>') + '</button>';
+        }).join('');
+    }
+    function renderFlowPicker(i) {
+        var box = document.getElementById('d-flow-ops-' + model.flows[i].id);
+        if (box) { box.innerHTML = flowPickerHtml(i); }
+    }
+    function flowStepHtml(f, i, st, j) {
+        var key = 'flows.' + i + '.steps.' + j, o = model.info[st.operation], path = 'flows.' + i + '.steps.' + j, before = flowVarsBefore(f, j);
+        var head = o
+            ? '<span class="g4t-method m-' + esc(o.method.toLowerCase()) + '">' + esc(o.method) + '</span><span class="g4t-mono d-op-path">' + esc(o.path) + '</span><span class="d-op-summary">' + esc(textOf('op', o.id, 'en', 'summary') || o.summary || '') + '</span>' + (opHiddenLabel(o) ? '<span class="d-status is-deprecated" title="The public docs leave out flows that use it; partner links that pick it show them">' + esc(opHiddenLabel(o)) + '</span>' : '')
+            : '<span class="d-status is-deprecated">missing</span><span class="g4t-mono">' + esc(st.operation) + '</span>';
+        var params = o ? (o.params || []).map(function (p) {
+            return '<label class="d-field">' + esc(p.name) + ' <span class="d-hint">' + esc(p.in) + (p.required || p.in === 'path' ? ' · required' : '') + '</span><input class="g4t-mono" data-flow-param="' + i + ':' + j + '" data-name="' + esc(p.name) + '" value="' + esc(st.params[p.name] == null ? '' : st.params[p.name]) + '" placeholder="' + (before.length ? '{{' + esc(before[before.length - 1]) + '}}' : 'value') + '" autocomplete="off" spellcheck="false"></label>';
+        }).join('') : '';
+        var headers = '<div class="d-list">' + st.headers.map(function (h, k) {
+            return '<div class="d-item"><div class="d-item-body"><div class="d-row"><label class="d-field">Header<input class="g4t-mono" data-bind="' + path + '.headers.' + k + '.key" value="' + esc(h.key) + '" placeholder="Authorization" autocomplete="off" spellcheck="false"></label>' +
+                '<label class="d-field" style="grid-column:span 2">Value<input class="g4t-mono" data-bind="' + path + '.headers.' + k + '.value" value="' + esc(h.value) + '" placeholder="Bearer {{token}}" autocomplete="off" spellcheck="false"></label></div></div>' + removeBtn('flow-headers:' + i + ':' + j, k, 'header ' + h.key) + '</div>';
+        }).join('') + '</div>' + errorText(key + '.headers');
+        var extract = '<div class="d-list">' + st.extract.map(function (x, k) {
+            var xk = key + '.extract.' + k;
+            return '<div class="d-item"><div class="d-item-body"><div class="d-row"><label class="d-field' + (errors[xk + '.var'] ? ' is-invalid' : '') + '">Variable<input class="g4t-mono" data-bind="' + path + '.extract.' + k + '.var" value="' + esc(x['var']) + '" placeholder="token" autocomplete="off" spellcheck="false">' + errorText(xk + '.var') + '</label>' +
+                '<label class="d-field' + (errors[xk + '.from'] ? ' is-invalid' : '') + '" style="grid-column:span 2">From the response<input class="g4t-mono" data-bind="' + path + '.extract.' + k + '.from" value="' + esc(x.from) + '" placeholder="body.data.token" autocomplete="off" spellcheck="false">' + errorText(xk + '.from') + '</label></div></div>' + removeBtn('flow-extract:' + i + ':' + j, k, 'variable ' + x['var']) + '</div>';
+        }).join('') + '</div>';
+        var hasBody = o ? o.body_fields !== null && o.body_fields !== undefined && ['GET', 'HEAD', 'DELETE'].indexOf(o.method) === -1 : !!st.body;
+        return '<div class="d-item d-flow-step" data-sort-index="' + j + '">' + handle('step ' + (j + 1)) + '<div class="d-item-body">' +
+            '<div class="d-flow-step-head"><span class="d-flow-num">' + (j + 1) + '</span>' + head + '</div>' + errorText(key + '.operation') +
+            (params ? '<div class="d-grid">' + params + '</div>' : '') +
+            '<div class="d-field">Headers<span class="d-hint">Sent after the reader\'s own credentials, so they can replace them, e.g. Authorization: Bearer {{token}}.</span></div>' + headers + addBtn('flow-headers:' + i + ':' + j, 'Add header') +
+            (hasBody ? field('Body (JSON)', path + '.body', { type: 'textarea', rows: Math.min(10, Math.max(3, st.body.split('\n').length + 1)), err: key + '.body', placeholder: '{ "email": "{{email}}" }', hint: 'Values may use {{variables}}, unquoted for numbers: { "order_id": {{order_id}} }.' }) : '') +
+            '<div class="d-field">Keep from the response<span class="d-hint">body.data.token, headers.x-request-id or status; later steps use it as {{variable}}.' + (before.length ? ' Set by earlier steps: ' + before.map(function (v) { return '{{' + esc(v) + '}}'; }).join(', ') + '.' : '') + '</span></div>' +
+            extract + addBtn('flow-extract:' + i + ':' + j, 'Add variable') +
+            '</div>' + removeBtn('flow-steps:' + i, j, 'step ' + (j + 1)) + '</div>';
+    }
+    function sFlows() {
+        var list = '<div class="d-list" data-sortable="flows">' + model.flows.map(function (f, i) {
+            var key = 'flows.' + i, hidden = model.hiddenFlows.indexOf(f.id) !== -1;
+            var eye = '<button type="button" class="d-icon-btn" data-action="toggle-flow-hidden" data-value="' + esc(f.id) + '" aria-pressed="' + hidden + '" aria-label="' + (hidden ? 'Show' : 'Hide') + ' flow ' + esc(f.name) + '" title="' + (hidden ? 'Hidden from the documentation; partner links can still pick it' : 'Hide from the documentation') + '">' + (hidden ? ICON.eyeOff : ICON.eye) + '</button>';
+            var hiddenSteps = f.steps.filter(function (st) { return model.info[st.operation] && opHiddenLabel(model.info[st.operation]); }).length;
+            return '<div class="d-item d-flow' + (hidden ? ' is-hidden' : '') + '" data-sort-index="' + i + '">' + handle('flow ' + f.name) + '<div class="d-item-body">' +
+                (hidden ? '<span class="d-status is-deprecated" style="justify-self:start">hidden in the docs · partner links can still pick it</span>'
+                    : hiddenSteps ? '<span class="d-status is-deprecated" style="justify-self:start">' + hiddenSteps + ' step' + (hiddenSteps > 1 ? 's use' : ' uses') + ' a hidden endpoint: only partner links that pick ' + (hiddenSteps > 1 ? 'them' : 'it') + ' show this flow</span>' : '') +
+                '<div class="d-row"><label class="d-field' + (errors[key + '.name'] ? ' is-invalid' : '') + '" style="grid-column:span 2">Name<input data-bind="flows.' + i + '.name" value="' + esc(f.name) + '" placeholder="Place and pay an order" autocomplete="off">' + errorText(key + '.name') + '</label></div>' +
+                '<div class="d-lang-cols">' + langPanel('en', '<label class="d-field">Description<textarea rows="2" data-bind="flows.' + i + '.descEn" placeholder="Logs in, creates an order and pays it.">' + esc(f.descEn) + '</textarea>' + errorText(key + '.description.en') + '</label>') +
+                langPanel('ar', '<label class="d-field">الوصف<textarea rows="2" dir="rtl" data-bind="flows.' + i + '.descAr" placeholder="تسجيل الدخول ثم إنشاء طلب ودفعه.">' + esc(f.descAr) + '</textarea>' + errorText(key + '.description.ar') + '</label>') + '</div>' +
+                '<div class="d-field">Steps' + (f.steps.length ? ' <span class="d-badge">' + f.steps.length + '</span>' : '') + '<span class="d-hint">Run in this order; the flow stops at the first step that fails. Drag to reorder.</span></div>' +
+                '<div class="d-list" data-sortable="flow-steps:' + i + '">' + f.steps.map(function (st, j) { return flowStepHtml(f, i, st, j); }).join('') + '</div>' + errorText(key + '.steps') +
+                (flowPicking[f.id]
+                    ? '<div class="d-field">Add a step<div class="d-search"><input type="search" data-flow-search="' + i + '" value="' + esc(flowSearch[f.id] || '') + '" placeholder="Search by path, method, summary or section" autocomplete="off" spellcheck="false" aria-label="Search endpoints"></div>' +
+                      '<div class="d-picker" id="d-flow-ops-' + esc(f.id) + '" role="group" aria-label="Endpoints">' + flowPickerHtml(i) + '</div>' +
+                      '<button type="button" class="g4t-link-btn" style="justify-self:start" data-action="flow-picker" data-index="' + i + '">Done adding</button></div>'
+                    : '<button type="button" class="g4t-btn g4t-add-item" data-action="flow-picker" data-index="' + i + '" style="justify-self:start">+ Add step</button>') +
+                '</div><div class="d-item-tools">' + eye + removeBtn('flows', i, 'flow ' + f.name) + '</div></div>';
+        }).join('') + '</div>';
+        return section('flows', 'Flows', 'Requests run one after another with one click in the g4t UI (log in, create an order, pay it). A step can keep values from its response, such as a token or an id, for the next steps. Readers run them with their own environment and credentials. The eye hides a flow from the documentation, like an endpoint; partner links can still pick it.',
+            (model.flows.length ? '<span class="g4t-muted" style="font-size:13px">' + model.flows.length + ' flow' + (model.flows.length > 1 ? 's' : '') + (model.hiddenFlows.length ? ' · ' + model.hiddenFlows.length + ' hidden' : '') + '</span>' + list : '<div class="d-note">No flows yet.</div>') + addBtn('flows', 'New flow') + errorText('flows'));
     }
 
     /* Where the saved settings live: the local file or a shared filesystem disk (s3, …). */
@@ -612,8 +769,38 @@
             names: function () { return model.envs.map(function (e) { return e.name; }).filter(Boolean); },
             pickedHint: function (p) { return 'Shows ' + p.join(', ') + '. Readers can still add their own.'; },
             defaultHint: function (n) { return 'Every shared environment: ' + n.join(', ') + '.'; },
-            noneHint: 'No shared environment (their base URLs and values stay private). Readers can still add their own.' }
+            noneHint: 'No shared environment (their base URLs and values stay private). Readers can still add their own.' },
+        webhooks: { label: 'Webhooks', page: 'webhooks', pageTitle: 'Webhooks', empty: 'No webhooks yet', none: true,
+            names: function () { return model.webhooks.map(function (w) { return w.name; }).filter(Boolean); },
+            // Like single endpoints: picked webhooks show even when they are hidden from the docs.
+            hidden: function (n) { return model.webhooks.some(function (w) { return w.name === n && webhookHidden(w); }); },
+            note: function (n) { return LINK_CHOICES.webhooks.hidden(n) ? 'hidden' : ''; },
+            pickedHint: function (p) { return 'Documents ' + p.join(', ') + ', hidden ones included; the other webhooks stay private.'; },
+            defaultHint: function (n) {
+                var visible = n.filter(function (name) { return !LINK_CHOICES.webhooks.hidden(name); });
+                return visible.length ? 'Every visible webhook: ' + visible.join(', ') + '. Pick to add hidden ones.' : 'Every webhook is hidden from the docs: pick the ones this link shows.';
+            },
+            noneHint: 'No webhooks.' },
+        flows: { label: 'Flows', page: 'flows', pageTitle: 'Flows', empty: 'No flows yet', none: true,
+            names: function () { return model.flows.map(function (f) { return f.id; }); },
+            title: function (id) { return (model.flows.filter(function (f) { return f.id === id; })[0] || {}).name || id; },
+            hidden: function (id) { return model.hiddenFlows.indexOf(id) !== -1; },
+            note: function (id, l) {
+                var flow = model.flows.filter(function (f) { return f.id === id; })[0], outside = flow ? flow.steps.filter(function (st) { return !linkHasOp(l, st.operation); }).length : 0;
+                return [LINK_CHOICES.flows.hidden(id) ? 'hidden' : '', outside ? outside + ' step' + (outside > 1 ? 's' : '') + ' outside this link' : ''].filter(Boolean).join(' · ');
+            },
+            pickedHint: function (p) { return 'Shows ' + p.map(LINK_CHOICES.flows.title).join(', ') + ', hidden ones included. A flow shows only when every one of its steps is inside the link.'; },
+            defaultHint: function () { return 'Every visible flow whose steps are all inside the link. Pick to add hidden ones.'; },
+            noneHint: 'No flows.' }
     };
+    /** Whether a link shows an operation: picked one by one, or a visible one of a picked section (everything visible when it picks nothing). */
+    function linkHasOp(l, id) {
+        var o = model.info[id];
+        if (!o) { return false; }
+        if (l.operations.indexOf(id) !== -1) { return true; }
+        if (opHiddenLabel(o)) { return false; }
+        return (!l.tags.length && !l.operations.length) || l.tags.indexOf(o.tag) !== -1;
+    }
     function linkChoiceMode(l, kind) {
         var value = l[kind];
         if (value === null || value === undefined) { return 'default'; }
@@ -633,13 +820,45 @@
                 return '<button type="button" role="radio" aria-checked="' + (m[0] === mode) + '" data-action="link-choice-mode" data-index="' + i + '" data-key="' + kind + '" data-value="' + m[0] + '">' + m[1] + '</button>';
             }).join('') + '</div>' +
             (mode === 'custom' ? '<div class="d-chips" role="group" aria-label="' + esc(c.label) + ' of this link">' + names.map(function (n) {
-                return '<button type="button" class="d-chip" aria-pressed="' + (picked.indexOf(n) !== -1) + '" data-action="link-choice" data-index="' + i + '" data-key="' + kind + '" data-value="' + esc(n) + '"><span class="g4t-mono">' + esc(n) + '</span></button>';
+                return '<button type="button" class="d-chip" aria-pressed="' + (picked.indexOf(n) !== -1) + '" data-action="link-choice" data-index="' + i + '" data-key="' + kind + '" data-value="' + esc(n) + '"><span class="' + (c.title ? '' : 'g4t-mono') + '">' + esc(c.title ? c.title(n) : n) + '</span>' + (c.note && c.note(n, l) ? ' <span class="d-chip-note">' + esc(c.note(n, l)) + '</span>' : '') + '</button>';
             }).join('') + '</div>' : '') +
             '<span class="d-hint">' + esc(hint) + '</span>' +
             Object.keys(errors).filter(function (k) { return k === key || k.indexOf(key + '.') === 0; }).map(errorText).join('') + '</div>';
     }
+    /* Branding of a link's docs: accent color, logo and an English / Arabic welcome message. */
+    var brandOpen = {};
+    function brandModel(raw) {
+        raw = raw || {};
+        var welcome = raw.welcome || {};
+        return { color: raw.color || '', logo: raw.logo || '', welcomeEn: welcome.en || '', welcomeAr: welcome.ar || '' };
+    }
+    function brandPayload(b) {
+        var en = b.welcomeEn.trim(), ar = b.welcomeAr.trim();
+        if (!b.color.trim() && !b.logo.trim() && !en && !ar) { return null; }
+        return { color: b.color.trim() || null, logo: b.logo.trim() || null, welcome: en || ar ? { en: b.welcomeEn, ar: b.welcomeAr } : null };
+    }
+    function linkBrandHtml(i, l) {
+        var b = l.brand, key = 'links.' + i + '.brand', custom = brandPayload(b) !== null;
+        var invalid = Object.keys(errors).some(function (k) { return k.indexOf(key + '.') === 0; });
+        var open = invalid || (brandOpen[l.id] !== undefined ? brandOpen[l.id] : custom);
+        var picker = /^#[0-9a-f]{6}$/i.test(b.color) ? b.color : '#4f46e5';
+        var welcome = function (lang, label, placeholder) {
+            var bind = 'links.' + i + '.brand.welcome' + (lang === 'ar' ? 'Ar' : 'En');
+            return '<label class="d-field' + (errors[key + '.welcome.' + lang] ? ' is-invalid' : '') + '">' + label + '<textarea rows="3" data-bind="' + bind + '"' + (lang === 'ar' ? ' dir="rtl"' : '') + ' placeholder="' + esc(placeholder) + '">' + esc(lang === 'ar' ? b.welcomeAr : b.welcomeEn) + '</textarea>' + errorText(key + '.welcome.' + lang) + '</label>';
+        };
+        return '<details class="d-brand" data-brand="' + esc(l.id) + '"' + (open ? ' open' : '') + '><summary>Branding' + (custom ? '<span class="d-badge">custom</span>' : '') + '<span class="d-hint">Color, logo and a welcome message on this partner\'s docs</span></summary><div class="d-brand-body">' +
+            '<div class="d-field' + (errors[key + '.color'] ? ' is-invalid' : '') + '">Accent color<div class="d-brand-color">' +
+            '<input type="color" data-bind="links.' + i + '.brand.color" data-rerender value="' + esc(picker) + '" aria-label="Pick the accent color">' +
+            '<input class="g4t-mono" data-bind="links.' + i + '.brand.color" data-rerender value="' + esc(b.color) + '" placeholder="theme default" maxlength="7" autocomplete="off" spellcheck="false" aria-label="Accent color as #RRGGBB">' +
+            (b.color ? '<button type="button" class="g4t-btn" data-action="link-brand-clear" data-index="' + i + '">Clear</button>' : '') + '</div>' +
+            '<span class="d-hint">Replaces the theme accent (buttons, links, highlights); lightened in dark mode when it would be too dark to read.</span>' + errorText(key + '.color') + '</div>' +
+            field('Logo address', 'links.' + i + '.brand.logo', { placeholder: 'https://cdn.acme.com/logo.svg or /images/acme.png', mono: true, err: key + '.logo', hint: 'Shown instead of the g4t logo in the header, 28px high. https:// or a path on this site.' }) +
+            '<div class="d-lang-cols">' + langPanel('en', welcome('en', 'Welcome message', 'Hi Acme team! Start with Orders; the sandbox resets every night.'), 'shown above the endpoints') +
+            langPanel('ar', welcome('ar', 'رسالة الترحيب', 'أهلاً فريق Acme! ابدأوا بقسم الطلبات.'), 'when the reader picks العربية') + '</div>' +
+            '</div></details>';
+    }
     function linkChoicesHtml(i, l) {
-        return '<div class="d-link-choices">' + linkChoiceHtml(i, l, 'versions') + linkChoiceHtml(i, l, 'environments') + linkChoiceHtml(i, l, 'security') + '</div>';
+        return '<div class="d-link-choices">' + linkChoiceHtml(i, l, 'versions') + linkChoiceHtml(i, l, 'environments') + linkChoiceHtml(i, l, 'security') + linkChoiceHtml(i, l, 'webhooks') + linkChoiceHtml(i, l, 'flows') + '</div>';
     }
     /** Whole sections a link shares: a compact, searchable list that stays short with many sections. */
     function linkSectionsHtml(i, l) {
@@ -676,7 +895,7 @@
                 '<div class="d-search"><input type="search" data-link-search="' + i + '" value="' + esc(linkSearch[l.id] || '') + '" placeholder="Search by path, method, summary or section" autocomplete="off" spellcheck="false" aria-label="Search endpoints"></div>' +
                 '<div class="d-picker" id="d-link-ops-' + esc(l.id) + '" role="group" aria-label="Endpoints">' + linkOpsHtml(i) + '</div>' +
                 '<span class="d-hint">Picked endpoints show even when they are hidden from the docs (the eye under Endpoints, or ->hiddenDoc() in code).</span></div>' +
-                linkChoicesHtml(i, l) +
+                linkChoicesHtml(i, l) + linkBrandHtml(i, l) +
                 '<div class="d-note d-link-scope">' + esc(linkScopeText(l)) + '</div>' +
                 '</div>' + removeBtn('links', i, 'link ' + l.name) + '</div>';
         }).join('') + '</div>';
@@ -696,7 +915,9 @@
         { id: 'security', title: 'Security schemes', group: 'API', section: 'security', render: sSecurity },
         { id: 'headers', title: 'Global headers', group: 'API', section: 'headers', render: sHeaders },
         { id: 'environments', title: 'Environments', group: 'API', section: 'environments', render: sEnvironments },
+        { id: 'webhooks', title: 'Webhooks', group: 'API', section: 'webhooks', render: sWebhooks },
         { id: 'logins', title: 'Try it out logins', group: 'Try it out', section: 'login', render: sLogin },
+        { id: 'flows', title: 'Flows', group: 'Try it out', section: 'flows', render: sFlows },
         { id: 'generation', title: 'Generation', group: 'Generation', section: 'generation', render: sGeneration },
         { id: 'access', title: 'Access', group: 'Access', section: 'access', render: sAccess },
         { id: 'partner-links', title: 'Partner links', group: 'Access', section: 'links', render: sLinks },
@@ -725,6 +946,8 @@
         if (resetToRouteOrder || JSON.stringify([layout.tags, layout.operations, layout.hidden, layout.hidden_tags, layout.meta, layout.texts.tags, layout.texts.operations]) !== JSON.stringify([before.tags, before.operations, before.hidden, before.hidden_tags, before.meta, before.texts.tags, before.texts.operations])) { out.endpoints = true; }
         if (JSON.stringify(layout.texts.info) !== JSON.stringify(before.texts.info)) { out.general = true; }
         if (JSON.stringify(payload.links) !== JSON.stringify(originalPayload.links)) { out['partner-links'] = true; }
+        if (JSON.stringify([layout.flows, layout.hidden_flows]) !== JSON.stringify([before.flows, before.hidden_flows])) { out.flows = true; }
+        if (JSON.stringify(layout.hidden_webhooks) !== JSON.stringify(before.hidden_webhooks)) { out.webhooks = true; }
         return out;
     }
     function goToPage(id, push) {
@@ -851,6 +1074,14 @@
         if (name === 'envs') { return model.envs; }
         if (name.indexOf('env-vars:') === 0) { return (model.envs[Number(name.slice(9))] || {}).vars; }
         if (name.indexOf('env-headers:') === 0) { return (model.envs[Number(name.slice(12))] || {}).headers; }
+        if (name === 'webhooks') { return model.webhooks; }
+        if (name.indexOf('webhook-headers:') === 0) { return (model.webhooks[Number(name.slice(16))] || {}).headers; }
+        if (name === 'flows') { return model.flows; }
+        var flowPart = /^flow-(steps|headers|extract):(\d+)(?::(\d+))?$/.exec(name);
+        if (flowPart) {
+            var flow = model.flows[Number(flowPart[2])], step = flow && flowPart[3] !== undefined ? flow.steps[Number(flowPart[3])] : null;
+            return flowPart[1] === 'steps' ? (flow || {}).steps : (step || {})[flowPart[1]];
+        }
         if (name === 'tags') { return model.tags; }
         if (name.indexOf('ops:') === 0) { return model.ops[name.slice(4)]; }
         return null;
@@ -866,10 +1097,15 @@
         if (name === 'servers') { model.servers.push({ url: '', description: '' }); }
         if (name === 'schemes') { model.schemes.push({ name: 'scheme' + (model.schemes.length + 1), type: 'apiKey', scheme: 'bearer', where: 'header', keyName: 'X-API-Key', bearerFormat: '' }); }
         if (name === 'headers') { model.headers.push({ name: '', description: '', required: false, example: '', default: '', enumText: '' }); }
-        if (name === 'links') { var linkId = 'l' + Date.now().toString(36); linkTokens[linkId] = newToken(); model.links.push({ id: linkId, name: 'Partner ' + (model.links.length + 1), tags: [], operations: [], token: null, security: null, versions: null, environments: null, expires: '', hash: null, created: null, expired: false }); }
+        if (name === 'links') { var linkId = 'l' + Date.now().toString(36); linkTokens[linkId] = newToken(); model.links.push({ id: linkId, name: 'Partner ' + (model.links.length + 1), tags: [], operations: [], token: null, security: null, versions: null, environments: null, webhooks: null, flows: null, brand: brandModel(null), expires: '', hash: null, created: null, expired: false }); }
         if (name === 'logins') { model.logins.push({ name: model.logins.length ? 'Login ' + (model.logins.length + 1) : 'Customer', url: '', method: 'POST', token_path: '', security_scheme: '', fields: [{ key: 'email', label: 'Email' }, { key: 'password', label: 'Password' }], prefill: null }); }
         if (name.indexOf('login-fields:') === 0) { var loginFields = listArray(name); if (loginFields) { loginFields.push({ key: '', label: '' }); } }
         if (name === 'authMiddlewares') { model.authMiddlewares.push(''); }
+        if (name === 'flows') { var flowId = 'f' + Date.now().toString(36); flowPicking[flowId] = true; model.flows.push({ id: flowId, name: 'Flow ' + (model.flows.length + 1), descEn: '', descAr: '', steps: [] }); }
+        if (name.indexOf('flow-headers:') === 0) { var flowHeaders = listArray(name); if (flowHeaders) { flowHeaders.push({ key: '', value: '' }); } }
+        if (name.indexOf('flow-extract:') === 0) { var flowExtract = listArray(name); if (flowExtract) { flowExtract.push({ 'var': '', from: 'body.' }); } }
+        if (name === 'webhooks') { model.webhooks.push({ name: model.webhooks.length ? 'event.' + (model.webhooks.length + 1) : 'order.created', summary: '', description: '', method: 'POST', headers: [], exampleText: '', cls: '' }); }
+        if (name.indexOf('webhook-headers:') === 0) { var webhookHeaders = listArray(name); if (webhookHeaders) { webhookHeaders.push({ name: '', description: '', example: '' }); } }
         if (name === 'envs') { model.envs.push({ name: model.envs.length ? 'Environment ' + (model.envs.length + 1) : 'Staging', base_url: '', vars: [], headers: [] }); }
         if (name.indexOf('env-') === 0 && name !== 'envs') { var rows = listArray(name); if (rows) { rows.push({ key: '', value: '' }); } }
     }
@@ -938,6 +1174,8 @@
             case 'add': addItem(list); render(); break;
             case 'remove':
                 var removed = listArray(list).splice(index, 1)[0];
+                if (list === 'flows' && removed) { model.hiddenFlows = model.hiddenFlows.filter(function (id) { return id !== removed.id; }); model.links.forEach(function (l) { if (l.flows) { l.flows = l.flows.filter(function (id) { return id !== removed.id; }); } }); }
+                if (list === 'webhooks' && removed) { model.hiddenWebhooks = model.hiddenWebhooks.filter(function (n) { return n !== removed.name; }); }
                 if (list === 'versions' && removed === model.def) { model.def = model.versions[0]; }
                 render(); break;
             case 'toggle-op':
@@ -993,6 +1231,31 @@
                 linkTokens[value] = newToken();
                 render(); toast('New address · save to replace the old one'); break;
             case 'link-keep-address': delete linkTokens[value]; render(); break;
+            case 'flow-picker':
+                var pickerFlow = model.flows[index];
+                flowPicking[pickerFlow.id] = !flowPicking[pickerFlow.id];
+                render();
+                if (flowPicking[pickerFlow.id]) { var flowInput = document.querySelector('[data-flow-search="' + index + '"]'); if (flowInput) { flowInput.focus(); } }
+                break;
+            case 'flow-add-step':
+                var stepOp = model.info[value], bodyText = '';
+                if (stepOp && stepOp.body_fields && stepOp.body_fields.length) {
+                    var template = {};
+                    stepOp.body_fields.forEach(function (name) { template[name] = ''; });
+                    bodyText = JSON.stringify(template, null, 2);
+                }
+                model.flows[index].steps.push({ operation: value, params: {}, headers: [], body: bodyText, extract: [] });
+                render(); toast('Step added');
+                break;
+            case 'toggle-flow-hidden':
+                var flowAt = model.hiddenFlows.indexOf(value);
+                if (flowAt === -1) { model.hiddenFlows.push(value); } else { model.hiddenFlows.splice(flowAt, 1); }
+                render(); break;
+            case 'toggle-webhook-hidden':
+                var hiddenAt = model.hiddenWebhooks.indexOf(value);
+                if (hiddenAt === -1) { model.hiddenWebhooks.push(value); } else { model.hiddenWebhooks.splice(hiddenAt, 1); }
+                render(); break;
+            case 'link-brand-clear': model.links[index].brand.color = ''; render(); break;
             case 'set-status':
                 setMeta(el.getAttribute('data-key'), 'status', value);
                 render(); break;
@@ -1032,6 +1295,18 @@
             renderLinkOps(li);
             return;
         }
+        if (model && e.target.hasAttribute && e.target.hasAttribute('data-flow-search')) {
+            var fi = Number(e.target.getAttribute('data-flow-search'));
+            flowSearch[model.flows[fi].id] = e.target.value;
+            renderFlowPicker(fi);
+            return;
+        }
+        if (model && e.target.hasAttribute && e.target.hasAttribute('data-flow-param')) {
+            var at5 = e.target.getAttribute('data-flow-param').split(':');
+            model.flows[Number(at5[0])].steps[Number(at5[1])].params[e.target.getAttribute('data-name')] = e.target.value;
+            renderSavebar();
+            return;
+        }
         if (model && e.target.hasAttribute && e.target.hasAttribute('data-meta')) {
             setMeta(e.target.getAttribute('data-key'), e.target.getAttribute('data-meta'), e.target.value);
             if (e.target.getAttribute('data-meta') === 'sunset') { render(); return; }
@@ -1050,9 +1325,10 @@
         setPath(model, path, e.target.type === 'checkbox' ? e.target.checked : e.target.value);
         if (path.indexOf('versions.') === 0 && oldValue === model.def) { model.def = e.target.value; }
         // A renamed scheme, version or environment stays picked by the partner links (and logins) that use it.
-        var renamed = /^schemes\.\d+\.name$/.test(path) ? 'security' : /^versions\.\d+$/.test(path) ? 'versions' : /^envs\.\d+\.name$/.test(path) ? 'environments' : null;
+        var renamed = /^schemes\.\d+\.name$/.test(path) ? 'security' : /^versions\.\d+$/.test(path) ? 'versions' : /^envs\.\d+\.name$/.test(path) ? 'environments' : /^webhooks\.\d+\.name$/.test(path) ? 'webhooks' : null;
         if (renamed && oldValue) {
             model.links.forEach(function (l) { if (l[renamed]) { l[renamed] = l[renamed].map(function (n) { return n === oldValue ? e.target.value : n; }); } });
+            if (renamed === 'webhooks') { model.hiddenWebhooks = model.hiddenWebhooks.map(function (n) { return n === oldValue ? e.target.value : n; }); }
             if (renamed === 'security') { model.logins.forEach(function (lg) { if (lg.security_scheme === oldValue) { lg.security_scheme = e.target.value; } }); }
         }
         if (e.target.type === 'checkbox' && (path === 'access.enable_auth')) { render(); return; }
@@ -1064,6 +1340,11 @@
         if (el.hasAttribute('data-storage-pick')) { storagePick = el.value; errors = {}; render(); return; }
         if (el.hasAttribute('data-rerender')) { render(); }
     });
+    // <details> toggle does not bubble: listen while capturing.
+    document.addEventListener('toggle', function (e) {
+        var brandLink = e.target && e.target.getAttribute && e.target.getAttribute('data-brand');
+        if (brandLink) { brandOpen[brandLink] = e.target.open; }
+    }, true);
     window.addEventListener('beforeunload', function (e) { if (isDirty()) { e.preventDefault(); e.returnValue = ''; } });
 
     /* ---------- server ---------- */
@@ -1095,7 +1376,7 @@
     function save() {
         if (saving) { return; }
         var payload = toPayload(model);
-        if (resetToRouteOrder) { payload.layout = { tags: [], operations: {}, hidden: [], hidden_tags: [], texts: payload.layout.texts, meta: payload.layout.meta }; }
+        if (resetToRouteOrder) { payload.layout = { tags: [], operations: {}, hidden: [], hidden_tags: [], texts: payload.layout.texts, meta: payload.layout.meta, flows: payload.layout.flows, hidden_webhooks: payload.layout.hidden_webhooks, hidden_flows: payload.layout.hidden_flows }; }
         saving = true; errors = {}; renderSavebar();
         request('PUT', { settings: changedSettings(payload), layout: payload.layout, links: payload.links }).then(function (state) {
             saving = false;

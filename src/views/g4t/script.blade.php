@@ -4,8 +4,9 @@
     'use strict';
 
     var S = window.G4T_SETTINGS || {};
-    // Feature modules (g4t/js/*) register click actions, overlay views and keyboard shortcuts here.
-    var ACTIONS = {}, OVERLAYS = {}, KEYS = [];
+    // Feature modules (g4t/js/*) register click actions, overlay views, keyboard shortcuts, input bindings
+    // and groups listed after the operations (sidebar + page: { nav(query), body(query), open(hash) }) here.
+    var ACTIONS = {}, OVERLAYS = {}, KEYS = [], BINDS = {}, GROUPS = [];
     // Every configured login (customer, admin, …); S.autoLogin is the first one.
     var LOGINS = Array.isArray(S.autoLogins) && S.autoLogins.length ? S.autoLogins : (S.autoLogin ? [S.autoLogin] : []);
     var STATUS = { 0: 'Network error', 200: 'OK', 201: 'Created', 202: 'Accepted', 204: 'No Content', 301: 'Moved', 302: 'Found', 304: 'Not Modified', 400: 'Bad Request', 401: 'Unauthorized', 402: 'Payment Required', 403: 'Forbidden', 404: 'Not Found', 405: 'Method Not Allowed', 409: 'Conflict', 410: 'Gone', 413: 'Too Large', 415: 'Unsupported Media', 419: 'Page Expired', 422: 'Unprocessable', 429: 'Too Many Requests', 500: 'Server Error', 502: 'Bad Gateway', 503: 'Unavailable' };
@@ -228,6 +229,7 @@
     }
     function hasTranslations(spec) {
         if (!spec) { return false; }
+        if (BRAND && BRAND.welcome && BRAND.welcome.ar) { return true; }
         if ((spec.info || {})['x-translations'] || (spec.tags || []).some(function (t) { return t && t['x-translations']; })) { return true; }
         return Object.keys(spec.paths || {}).some(function (path) { return METHODS.some(function (m) { return spec.paths[path][m] && spec.paths[path][m]['x-translations']; }); });
     }
@@ -248,7 +250,7 @@
                 var params = (item.parameters || []).concat(o.parameters || []).map(function (p) { return p.$ref ? resolveRef(p.$ref) : p; }).filter(Boolean);
                 var body = o.requestBody && o.requestBody.$ref ? resolveRef(o.requestBody.$ref) : o.requestBody;
                 var op = {
-                    id: id, method: m.toUpperCase(), path: path, tag: (o.tags && o.tags[0]) || 'default',
+                    id: id, operationId: o.operationId || '', method: m.toUpperCase(), path: path, tag: (o.tags && o.tags[0]) || 'default',
                     // x-description is the text without the status lines appended for Swagger UI / Scalar.
                     summary: tr(o, 'summary', o.summary || ''), desc: tr(o, 'description', o['x-description'] != null ? o['x-description'] : (o.description || '')), deprecated: !!o.deprecated, order: o['x-order'],
                     status: o['x-status'] || (o.deprecated ? 'deprecated' : ''), sunset: o['x-sunset'] || '', replacedBy: o['x-replaced-by'] || '', note: o['x-note'] || '',
@@ -305,13 +307,37 @@
 
     /* ---------- appearance ---------- */
 
+    // A partner link's own color replaces the theme accent.
+    var BRAND = (S.partner && S.partner.brand) || null;
+    function hexRgb(hex) { return [1, 3, 5].map(function (i) { return parseInt(hex.slice(i, i + 2), 16); }); }
+    function luminance(rgb) {
+        var c = rgb.map(function (v) { v /= 255; return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4); });
+        return 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2];
+    }
+    function mixHex(rgb, target, amount) {
+        return '#' + rgb.map(function (v) { var x = Math.round(v + (target - v) * amount); return (x < 16 ? '0' : '') + x.toString(16); }).join('');
+    }
+    /** [accent, text on it]: the brand color, lightened on dark pages and darkened when too pale for links on light ones. */
+    function brandAccent(hex, dark) {
+        var rgb = hexRgb(hex), lum = luminance(rgb);
+        var accent = dark && lum < 0.18 ? mixHex(rgb, 255, 0.45) : !dark && lum > 0.45 ? mixHex(rgb, 0, 0.35) : hex;
+        return [accent, luminance(hexRgb(accent)) > 0.36 ? '#0f1012' : '#ffffff'];
+    }
     function applyRoot() {
         var root = document.documentElement, dark = isDark();
         root.dataset.mode = dark ? 'dark' : 'light';
         root.dataset.density = state.density;
         var palette = PALETTES[state.theme] || PALETTES['default'];
-        root.style.setProperty('--accent', palette[dark ? 1 : 0]);
-        root.style.setProperty('--accent-fg', dark ? '#0f1012' : '#ffffff');
+        var colors = BRAND && BRAND.color && /^#[0-9a-f]{6}$/i.test(BRAND.color) ? brandAccent(BRAND.color, dark) : [palette[dark ? 1 : 0], dark ? '#0f1012' : '#ffffff'];
+        root.style.setProperty('--accent', colors[0]);
+        root.style.setProperty('--accent-fg', colors[1]);
+    }
+    /** The link's welcome message in the reader's language: { text, lang } or null. */
+    function welcomeText() {
+        var w = BRAND && BRAND.welcome;
+        if (!w) { return null; }
+        if (state.lang === 'ar' && w.ar) { return { text: w.ar, lang: 'ar' }; }
+        return w.en ? { text: w.en, lang: 'en' } : w.ar ? { text: w.ar, lang: 'ar' } : null;
     }
 
     function renderAppear() {
@@ -329,7 +355,7 @@
         els.appear.innerHTML =
             '<div style="display:grid;gap:6px"><div class="g4t-menu-label">Mode</div><div class="g4t-seg" role="radiogroup" aria-label="Mode" style="grid-template-columns:repeat(3,1fr)">' + seg([['light', 'Light'], ['dark', 'Dark'], ['system', 'System']], state.mode, 'mode') + '</div></div>' +
             '<div style="display:grid;gap:6px"><div class="g4t-menu-label">Density</div><div class="g4t-seg" role="radiogroup" aria-label="Density" style="grid-template-columns:repeat(2,1fr)">' + seg([['comfortable', 'Comfortable'], ['compact', 'Compact']], state.density, 'density') + '</div></div>' +
-            '<div style="display:grid;gap:6px"><div style="display:flex;align-items:baseline;justify-content:space-between;gap:8px"><span class="g4t-menu-label">Theme</span><span class="g4t-menu-hint">accent color</span></div><div class="g4t-theme-list" role="radiogroup" aria-label="Theme">' + themes + '</div></div>';
+            (BRAND && BRAND.color ? '' : '<div style="display:grid;gap:6px"><div style="display:flex;align-items:baseline;justify-content:space-between;gap:8px"><span class="g4t-menu-label">Theme</span><span class="g4t-menu-hint">accent color</span></div><div class="g4t-theme-list" role="radiogroup" aria-label="Theme">' + themes + '</div></div>');
     }
 
     /* ---------- auth ---------- */
@@ -901,6 +927,7 @@
             '<a class="g4t-mono" style="font-size:12px" href="' + esc(url) + '" target="_blank" rel="noopener">' + esc(url.replace(location.origin, '')) + '</a>' +
             (hasTranslations(spec) ? '<span class="g4t-seg g4t-lang" role="radiogroup" aria-label="Language"><button type="button" role="radio" aria-checked="' + (state.lang === 'en') + '" data-action="lang" data-value="en">English</button><button type="button" role="radio" aria-checked="' + (state.lang === 'ar') + '" data-action="lang" data-value="ar" lang="ar">العربية</button></span>' : '') + '</div>' +
             (S.partner ? '<div class="g4t-partner">' + ICON.link + '<span>Shared with <b>' + esc(S.partner.name) + '</b>' + (S.partner.sections && S.partner.sections.length ? ' · ' + S.partner.sections.length + ' section' + (S.partner.sections.length > 1 ? 's' : '') : '') + (S.partner.endpoints ? ' · ' + S.partner.endpoints + ' endpoint' + (S.partner.endpoints > 1 ? 's' : '') : '') + (S.partner.expires ? ' · until ' + esc(formatDate(S.partner.expires)) : '') + '</span></div>' : '') +
+            (welcomeText() ? '<p class="g4t-welcome" dir="' + (welcomeText().lang === 'ar' ? 'rtl' : 'auto') + '" lang="' + welcomeText().lang + '">' + esc(welcomeText().text) + '</p>' : '') +
             '<h1 dir="auto">' + esc(tr(info, 'title', info.title || document.title)) + '</h1>' +
             (tr(info, 'description', info.description) ? '<p class="g4t-info-desc" dir="auto">' + esc(tr(info, 'description', info.description)) + '</p>' : '') +
             (model ? '<div class="g4t-info-meta">' + (serverSelect ? '<span><span class="g4t-muted">Server</span>' + serverSelect + '</span>' : '') +
@@ -1018,15 +1045,16 @@
         var tags = filteredTags();
         if (state.loading) { els.nav.innerHTML = '<div class="g4t-nav-empty">Loading…</div>'; return; }
         if (state.error) { els.nav.innerHTML = '<div class="g4t-nav-empty">Definition failed to load.</div>'; return; }
-        if (!state.model.ops.length) { els.nav.innerHTML = '<div class="g4t-nav-empty">No operations in ' + esc(state.version) + '.</div>'; return; }
-        if (!tags.length) { els.nav.innerHTML = '<div class="g4t-nav-empty">No matches.</div>'; return; }
+        var extra = GROUPS.map(function (g) { return g.nav(state.filter.trim().toLowerCase()); }).join('');
+        if (!state.model.ops.length && !extra) { els.nav.innerHTML = '<div class="g4t-nav-empty">No operations in ' + esc(state.version) + '.</div>'; return; }
+        if (!tags.length && !extra) { els.nav.innerHTML = '<div class="g4t-nav-empty">No matches.</div>'; return; }
         els.nav.innerHTML = tags.map(function (t) {
             return '<div class="g4t-nav-group"><button type="button" class="g4t-nav-tag" data-action="goto-tag" data-anchor="' + esc(t.anchor) + '"><span>' + esc(t.name) + '</span><span>' + t.ops.length + '</span></button>' +
                 t.ops.map(function (o) {
                     var m = o.method.toLowerCase();
                     return '<button type="button" class="g4t-nav-op" data-action="goto" data-op="' + esc(o.id) + '"' + (state.active === o.id ? ' aria-current="true"' : '') + '><span class="g4t-nav-method m-' + esc(m) + '">' + (o.method === 'DELETE' ? 'DEL' : esc(o.method)) + '</span><span class="g4t-nav-summary' + (o.status === 'deprecated' ? ' is-deprecated' : '') + '" dir="auto">' + esc(o.summary || o.path) + '</span>' + statusBadge(o, true) + '</button>';
                 }).join('') + '</div>';
-        }).join('');
+        }).join('') + extra;
     }
 
     /* ---------- operations ---------- */
@@ -1123,16 +1151,18 @@
     function saveJson(key, value) { try { localStorage.setItem('g4t-ui:' + key, JSON.stringify(value)); } catch (e) { } }
     var VAR_RE = /\{\{\s*([A-Za-z_][\w.-]*)\s*\}\}/g;
     function activeEnv() { return state.envs.filter(function (e) { return e.id === state.envId; })[0] || state.envs[0]; }
-    function envVars() {
+    /** The active environment's variables; `extra` (values a flow extracted) wins over them. */
+    function envVars(extra) {
         var vars = {};
         (activeEnv().vars || []).forEach(function (v) { if (v.key) { vars[v.key] = v.value; } });
         if (state.token && !Object.prototype.hasOwnProperty.call(vars, 'token')) { vars.token = state.token; }
+        Object.keys(extra || {}).forEach(function (k) { vars[k] = extra[k]; });
         return vars;
     }
     /** Replaces {{name}} with the active environment's variables; unknown names are collected in `missing`. */
-    function subst(value, missing) {
+    function subst(value, missing, extra) {
         if (typeof value !== 'string' || value.indexOf('{{') === -1) { return value; }
-        var vars = envVars();
+        var vars = envVars(extra);
         return value.replace(VAR_RE, function (match, name) {
             if (Object.prototype.hasOwnProperty.call(vars, name)) { return String(vars[name]); }
             if (missing && missing.indexOf(name) === -1) { missing.push(name); }
@@ -1152,13 +1182,16 @@
      */
     function buildRequest(op, variant) {
         // variant (error cases): { noAuth, params: {name: value}, omit: field, set: {field: value}, emptyBody }
+        // or a flow step: { flow: { params: {name: value}, headers: {name: value}, body: 'JSON text' }, vars: {name: value} }
         variant = variant || {};
-        var missingVars = [], missing = [];
+        var missingVars = [], missing = [], flow = variant.flow || null;
+        var sub = function (value) { return subst(value, missingVars, variant.vars); };
         var path = op.path, query = [], headers = { 'Accept': 'application/json', 'X-Requested-With': 'XMLHttpRequest' };
         // Environment headers first, so documented header parameters and credentials can override them.
-        (activeEnv().headers || []).forEach(function (h) { if (h.key) { headers[h.key] = subst(h.value, missingVars); } });
+        (activeEnv().headers || []).forEach(function (h) { if (h.key) { headers[h.key] = sub(h.value); } });
         op.params.forEach(function (p) {
-            var value = variant.params && variant.params[p.name] != null ? String(variant.params[p.name]) : subst(paramValue(op, p), missingVars);
+            var value = flow ? sub(flow.params && flow.params[p.name] != null ? String(flow.params[p.name]) : '')
+                : variant.params && variant.params[p.name] != null ? String(variant.params[p.name]) : sub(paramValue(op, p));
             if (p.in === 'path') {
                 if (value === '') { missing.push(p.name); }
                 path = path.replace('{' + p.name + '}', encodeURIComponent(value));
@@ -1171,8 +1204,16 @@
         });
         if (missing.length) { return { error: 'Fill in the path parameter' + (missing.length > 1 ? 's ' : ' ') + missing.join(', ') }; }
         if (!variant.noAuth) { applyAuth(op, headers, query); }
+        // A flow step's own headers come last, so they can replace the credentials too.
+        if (flow) { Object.keys(flow.headers || {}).forEach(function (name) { if (name) { headers[name] = sub(String(flow.headers[name])); } }); }
         var req = { method: op.method, url: serverUrl() + path + (query.length ? '?' + query.join('&') : ''), headers: headers, body: undefined, parts: null, json: undefined, missingVars: missingVars };
-        if (op.body && ['GET', 'HEAD'].indexOf(op.method) === -1) {
+        if (flow) {
+            if (String(flow.body || '').trim() !== '' && ['GET', 'HEAD'].indexOf(op.method) === -1) {
+                try { req.json = JSON.parse(sub(String(flow.body))); } catch (e) { return { error: 'The body isn’t valid JSON once its variables are filled in' }; }
+                headers['Content-Type'] = 'application/json';
+                req.body = JSON.stringify(req.json);
+            }
+        } else if (op.body && ['GET', 'HEAD'].indexOf(op.method) === -1) {
             if (isMultipart(op)) {
                 var form = new FormData(), parts = [];
                 formFields(op).forEach(function (f) {
@@ -1188,7 +1229,7 @@
                     }
                     var values = f.multiple ? listValues(op, f).map(function (v) { return String(v).trim(); }).filter(function (v) { return v !== ''; }) : (f.value !== '' ? [f.value] : []);
                     values.forEach(function (v) {
-                        v = subst(String(v), missingVars);
+                        v = sub(String(v));
                         form.append(f.name, v);
                         parts.push({ name: f.name, value: v });
                     });
@@ -1197,7 +1238,7 @@
                 req.parts = parts;
             } else {
                 var json;
-                try { json = JSON.parse(subst(bodyText(op), missingVars)); } catch (e) { return { error: 'Request body isn’t valid JSON' }; }
+                try { json = JSON.parse(sub(bodyText(op))); } catch (e) { return { error: 'Request body isn’t valid JSON' }; }
                 if (variant.emptyBody) { json = {}; }
                 if (json && typeof json === 'object' && !Array.isArray(json)) {
                     if (variant.omit) { delete json[variant.omit]; }
@@ -1328,6 +1369,22 @@
     }
     function curl(op) { return codeFor(op, 'curl'); }
 
+    /** Sends a built request; resolves with { code, text, ms, json, raw, ctype, headers } (code 0: it never reached the server). */
+    function sendRequest(req) {
+        var started = performance.now();
+        return fetch(req.url, { method: req.method, headers: req.headers, body: req.body })
+            .then(function (response) {
+                return response.text().then(function (text) {
+                    var json; try { json = text ? JSON.parse(text) : null; } catch (e) { json = undefined; }
+                    var headers = {};
+                    response.headers.forEach(function (value, name) { headers[name.toLowerCase()] = value; });
+                    return { code: response.status, text: statusText(response.status, response.statusText), ms: Math.round(performance.now() - started), json: json, raw: text, ctype: (response.headers.get('content-type') || '').split(';')[0], headers: headers };
+                });
+            })
+            .catch(function (error) {
+                return { code: 0, text: 'Network error', ms: Math.round(performance.now() - started), json: undefined, raw: error.message + '\n\nThe request did not reach the server. Check the server URL above and CORS.', ctype: '', headers: {} };
+            });
+    }
     function execute(op, options) {
         options = options || {};
         // Checked against the documented rules first; "Send anyway" skips it.
@@ -1341,22 +1398,12 @@
             return;
         }
         state.busy[op.id] = true; renderOp(op.id);
-        var started = performance.now();
-        fetch(req.url, { method: req.method, headers: req.headers, body: req.body })
-            .then(function (response) {
-                return response.text().then(function (text) {
-                    var json; try { json = text ? JSON.parse(text) : null; } catch (e) { json = undefined; }
-                    state.results[op.id] = { code: response.status, text: statusText(response.status, response.statusText), ms: Math.round(performance.now() - started), json: json, raw: text, ctype: (response.headers.get('content-type') || '').split(';')[0], unauth: response.status === 401 && !opAuthReady(op) };
-                });
-            })
-            .catch(function (error) {
-                state.results[op.id] = { code: 0, text: 'Network error', ms: Math.round(performance.now() - started), json: undefined, raw: error.message + '\n\nThe request did not reach the server. Check the server URL above and CORS.', ctype: '' };
-            })
-            .then(function () {
-                var res = state.results[op.id];
-                addHistory(op, { at: Date.now(), code: res.code, text: res.text, ms: res.ms, method: req.method, url: req.url, env: activeEnv().name, input: snapshot(op.id), files: (req.parts || []).filter(function (p) { return p.file !== undefined; }).map(function (p) { return p.file; }) });
-                state.busy[op.id] = false; renderOp(op.id); renderGuides();
-            });
+        sendRequest(req).then(function (res) {
+            res.unauth = res.code === 401 && !opAuthReady(op);
+            state.results[op.id] = res;
+            addHistory(op, { at: Date.now(), code: res.code, text: res.text, ms: res.ms, method: req.method, url: req.url, env: activeEnv().name, input: snapshot(op.id), files: (req.parts || []).filter(function (p) { return p.file !== undefined; }).map(function (p) { return p.file; }) });
+            state.busy[op.id] = false; renderOp(op.id); renderGuides();
+        });
     }
 
     /* ---------- saved inputs & history ---------- */
@@ -1766,19 +1813,20 @@
                 '<div class="g4t-actions"><button type="button" class="g4t-btn g4t-btn-primary" data-action="retry">Retry</button><a class="g4t-btn" href="' + esc(e.url) + '" target="_blank" rel="noopener">Open raw JSON</a></div></div>';
             return;
         }
-        if (!state.model.ops.length) {
+        var extra = GROUPS.map(function (g) { return g.body(state.filter.trim().toLowerCase()); }).join('');
+        if (!state.model.ops.length && !extra) {
             els.ops.innerHTML = '<div class="g4t-state g4t-state-empty"><div class="g4t-state-icon">{ }</div><h2>No operations in ' + esc(state.version) + '</h2><p>The definition loaded, but no routes match this version. Check the version prefixes in <code class="g4t-mono" style="font-size:12.5px;padding:1px 5px;border-radius:4px;background:var(--surface-2)">config/swagger.php</code> or register routes under it.</p>' +
                 (state.version !== 'all' && versionNames.indexOf('all') !== -1 ? '<button type="button" class="g4t-btn" data-action="show-all" style="margin-top:4px;height:34px;padding-inline:14px">Show all versions</button>' : '') + '</div>';
             return;
         }
         var tags = filteredTags();
-        if (!tags.length) {
+        if (!tags.length && !extra) {
             els.ops.innerHTML = '<div class="g4t-state g4t-state-nomatch"><span style="color:var(--text-2)">No operations match “<strong style="color:var(--text)">' + esc(state.filter) + '</strong>”.</span><button type="button" class="g4t-btn" data-action="clear-filter">Clear filter</button></div>';
             return;
         }
         els.ops.innerHTML = tags.map(function (t) {
             return '<section id="' + esc(t.anchor) + '" class="g4t-section"><div class="g4t-section-head"><h2>' + esc(t.name) + '</h2><span dir="auto">' + esc(t.desc) + '</span></div><div class="g4t-op-list">' + t.ops.map(opHtml).join('') + '</div></section>';
-        }).join('');
+        }).join('') + extra;
     }
 
     function renderAll() { renderAuth(); renderInfo(); renderNav(); renderOps(); }
@@ -1831,6 +1879,7 @@
                 var hash = decodeURIComponent((location.hash || '').replace(/^#/, ''));
                 if (sharedRequest) { openSharedRequest(); }
                 else if (hash.indexOf('op-') === 0 && opById(hash.slice(3))) { gotoOp(hash.slice(3), true); }
+                else { GROUPS.some(function (g) { return g.open(hash); }); }
             })
             .catch(function (error) {
                 state.loading = false;
@@ -1873,6 +1922,8 @@
 @include('swagger::g4t.js.flutter')
 @include('swagger::g4t.js.diagram')
 @include('swagger::g4t.js.qr')
+@include('swagger::g4t.js.webhooks')
+@include('swagger::g4t.js.flows')
 @verbatim
 
     /* ---------- events ---------- */
@@ -2031,6 +2082,7 @@
         var el = e.target, bind = el.getAttribute && el.getAttribute('data-bind');
         if (el === els.filter) { state.filter = el.value; renderNav(); renderOps(); return; }
         var id = el.getAttribute && el.getAttribute('data-op'), name = el.getAttribute && el.getAttribute('data-name');
+        if (bind && BINDS[bind]) { BINDS[bind](el); return; }
         if (bind === 'param') { (state.inputs[id] = state.inputs[id] || {})[name] = el.value; }
         else if (bind === 'form') { (state.forms[id] = state.forms[id] || {})[name] = el.value; }
         else if (bind === 'form-item') { setListItem(id, name, Number(el.getAttribute('data-index')), el.value); }
@@ -2113,6 +2165,7 @@
     window.addEventListener('hashchange', function () {
         var hash = decodeURIComponent((location.hash || '').replace(/^#/, ''));
         if (hash.indexOf('op-') === 0 && opById(hash.slice(3))) { gotoOp(hash.slice(3), true); }
+        else { GROUPS.some(function (g) { return g.open(hash); }); }
     });
     window.addEventListener('storage', function (e) {
         if (e.key === tokenKey) { state.token = e.newValue; renderAuth(); renderInfo(); renderOps(); }

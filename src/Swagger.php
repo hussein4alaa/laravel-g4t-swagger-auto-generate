@@ -10,8 +10,10 @@ use G4T\Swagger\Sections\Paths;
 use G4T\Swagger\Sections\Schemas;
 use G4T\Swagger\Sections\Tags;
 use G4T\Swagger\Support\Debug;
+use G4T\Swagger\Support\Flows;
 use G4T\Swagger\Support\SchemaBuilder;
 use G4T\Swagger\Support\Settings;
+use G4T\Swagger\Support\Webhooks;
 use Illuminate\Routing\Route as RoutingRoute;
 use Illuminate\Support\Facades\Route;
 use Illuminate\Support\Str;
@@ -41,6 +43,8 @@ class Swagger
     public function swagger(): array
     {
         $generated = $this->generateSwaggerJsonResponse();
+        $webhooks = Webhooks::document($this->includeHidden);
+        $flows = Flows::within(Flows::saved($this->includeHidden), Flows::operationIds($generated->paths));
 
         return Extensions::document([
             'openapi' => '3.0.3',
@@ -64,7 +68,11 @@ class Swagger
                 'schemas' => $generated->schemas === [] ? new stdClass : $generated->schemas,
                 'securitySchemes' => empty($generated->securitySchemes) ? new stdClass : $generated->securitySchemes,
             ],
-        ]);
+        ] + array_filter([
+            // OpenAPI 3.1 `webhooks`, under an x- key in a 3.0 document.
+            'x-webhooks' => $webhooks === [] ? null : (object) $webhooks,
+            'x-flows' => $flows === [] ? null : $flows,
+        ]));
     }
 
     /**

@@ -84,6 +84,8 @@ flowchart LR
 - [The documentation UI](#%EF%B8%8F-the-documentation-ui) · [Finding things](#finding-things) · [Trying requests](#trying-requests) · [Sharing and code](#sharing-and-code) · [Appearance](#appearance)
 - [Logging in from the docs](#-logging-in-from-the-docs)
 - [Security schemes, headers and environments](#%EF%B8%8F-security-schemes-headers-and-environments)
+- [Webhooks](#-webhooks)
+- [Flows](#-flows)
 - [Settings dashboard](#%EF%B8%8F-settings-dashboard) · [Endpoints](#endpoints-order-visibility-texts-and-status) · [Partner links](#partner-links) · [Where settings are saved](#where-settings-are-saved)
 - [Configuration reference](#%EF%B8%8F-configuration-reference)
 - [Going to production](#-going-to-production)
@@ -506,6 +508,57 @@ API keys in a cookie are documented, but a browser page cannot set them; use the
 
 ---
 
+## 🪝 Webhooks
+
+Document the webhooks your API **sends** to your clients. Each gets a page under **Webhooks** in the g4t UI with its headers, its payload (schema and example), **Copy as cURL**, and **Send test webhook**: the reader types the URL of their own app and the payload goes there from their browser. Nothing is ever sent from your server.
+
+```php
+"webhooks" => [
+    [
+        "name" => "order.status_changed",
+        "summary" => "An order changed status",
+        "description" => "Sent when an order is paid, shipped or cancelled.",
+        "method" => "POST",                     // POST (default), PUT or PATCH
+        "headers" => [
+            ["name" => "X-Signature", "description" => "HMAC-SHA256 of the body with your secret", "example" => "sha256=5d41402a"],
+        ],
+        "class" => App\Http\Resources\OrderResource::class,
+    ],
+    [
+        "name" => "invoice.paid",
+        "example" => ["event" => "invoice.paid", "data" => ["id" => 1, "total" => 25000]],
+    ],
+],
+```
+
+| Payload | How it is read |
+|---|---|
+| `"example" => [...]` | As is; the schema is worked out from it |
+| `"class" => XResource::class` | The resource's `toArray()`, like a controller response |
+| `"class" => Order::class` | The model's row, typed from `$casts`, without `$hidden` |
+| `"class" => OrderData::class` | A DTO's public typed properties (promoted constructor parameters included) |
+
+An `example` next to a `class` replaces the generated example. OpenAPI 3.0.3 has no `webhooks`, so they travel as `x-webhooks` in the document, in the shape of 3.1's `webhooks`.
+
+- **Test sends and CORS:** when the reader's server does not allow the docs page through CORS, the webhook goes as plain text instead, without the custom headers, and the page says that the response could not be read. Copy as cURL always works.
+- **Hide** a webhook like an endpoint: `"hidden" => true` in the config, or the eye on the dashboard's **Webhooks** page. Partner links can still pick it.
+- The dashboard edits the list too (payload as a JSON example). Once saved there, the dashboard's list replaces the config file's; webhooks with a `class` keep it.
+
+---
+
+## 🔗 Flows
+
+A flow runs several documented requests one after another in one click: log in, create an order, pay it. Build them on the dashboard's **Flows** page: pick each step's endpoint from a searchable list, reorder the steps, and fill in its path and query values, headers and JSON body.
+
+- **Variables:** any value may use `{{name}}`, like everywhere in Try it out. A step can **keep** values from its response for the next steps: `body.data.token`, `body.data.0.id`, `headers.x-request-id` or `status`. A numeric variable can go unquoted in a body: `{"order_id": {{order_id}}}`.
+- Step headers come after the reader's own credentials, so `Authorization: Bearer {{token}}` replaces them.
+- In the g4t UI, **Run flow** sends the steps through the same code as Try it out (the reader's environment, server and credentials), shows each step's request, status and response, stops at the first failure (a 4xx / 5xx, or a value to keep that is not in the response), and lists the variables it set.
+- A flow only shows where every endpoint it uses does: not in a version without them, not in the public docs when a step is hidden.
+- **Hide** a flow with the eye, like an endpoint; partner links can still pick it.
+- Flows travel as `x-flows` in the document.
+
+---
+
 ## 🎛️ Settings dashboard
 
 Everything in this README can also be changed from a dashboard, without editing `config/swagger.php`. It is off until it has credentials:
@@ -526,7 +579,9 @@ Then open **`/swagger/dashboard`** (`SWAGGER_DASHBOARD_URL`). Sign-in uses the s
 | Security schemes | Bearer, basic, API keys, and the middleware that marks a route as protected |
 | Global headers | Headers documented on every operation |
 | Environments | Shared environments with variables and headers |
+| Webhooks | Webhooks your API sends, their headers and payload ([above](#-webhooks)) |
 | Try it out logins | One or several logins, each with its fields and scheme |
+| Flows | Chained requests run in one click ([above](#-flows)) |
 | Generation | Response examples, error examples, schemas, web routes, prefixes, Spatie Query Builder |
 | Access | Docs on or off, Basic Auth and its credentials |
 | Partner links | Secret links for partners ([below](#partner-links)) |
@@ -548,6 +603,8 @@ A secret address per partner or client, for when you want someone to see part of
 - Versions, shared environments and security schemes: **Default** (all of them), or only the ones you pick. Environments can also be **None**, which keeps their base URLs and values private.
   - A link limited to some versions never opens another one, even with `?version=` in the address.
   - With picked schemes, protected endpoints ask for those schemes, and only their Try it out logins are shown.
+- **Webhooks** and **flows** work like single endpoints: **Default** shows the visible ones, **Pick** the ones you choose (hidden ones included), **None** nothing. A flow also needs every one of its steps inside the link; the dashboard marks picked flows that have steps outside it.
+- **Branding:** an accent color (`#RRGGBB`, lightened in dark mode when needed), a logo shown instead of the g4t logo (`https://…` or a path on your site), and a welcome message in English and Arabic shown above the endpoints, with its line breaks. All optional.
 - Can expire on a date. Removing the link revokes it.
 - The address always shows in the dashboard. **New address** makes another one, and the old one stops working when you save, for example when it leaked.
 - Requests are matched on a sha256 of the token. The token itself is kept encrypted with your `APP_KEY` so the dashboard can show it. If the key changes, the links still work but their addresses can't be shown, so make new ones.
@@ -600,6 +657,7 @@ All keys live in `config/swagger.php`.
 | `security_schemes` | | HTTP bearer | Bearer, basic, API key in a header or query |
 | `global_headers` | | `[]` | Header parameters added to every operation |
 | `environments` | | `[]` | Shared environments for the g4t UI |
+| `webhooks` | | `[]` | [Webhooks](#-webhooks) your API sends, documented as `x-webhooks` |
 | `auto_login` | `SWAGGER_LOGIN_URL`, `SWAGGER_LOGIN_TOKEN_PATH` | off | One login or a list of logins |
 | `infer_response_examples` | | `true` | Success examples from controllers |
 | `infer_error_response_examples` | | `true` | Error examples (`abort`, `json(…, 4xx)`, `422`) |

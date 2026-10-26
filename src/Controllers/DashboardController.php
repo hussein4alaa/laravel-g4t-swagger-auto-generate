@@ -3,8 +3,10 @@
 namespace G4T\Swagger\Controllers;
 
 use G4T\Swagger\Support\CachedSpec;
+use G4T\Swagger\Support\Flows;
 use G4T\Swagger\Support\PartnerLinks;
 use G4T\Swagger\Support\Settings;
+use G4T\Swagger\Support\Webhooks;
 use G4T\Swagger\Swagger;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -26,7 +28,7 @@ class DashboardController
     private const MAX_ATTEMPTS = 5;
 
     /** Dashboard pages, each at {dashboard}/{page}; the first is the dashboard's own URL. */
-    public const PAGES = ['overview', 'general', 'interface', 'endpoints', 'versions', 'security', 'headers', 'environments', 'logins', 'generation', 'access', 'partner-links', 'storage'];
+    public const PAGES = ['overview', 'general', 'interface', 'endpoints', 'versions', 'security', 'headers', 'environments', 'webhooks', 'logins', 'flows', 'generation', 'access', 'partner-links', 'storage'];
 
     /** @var array{title: string, description: string, tags: array<string, string>} */
     private array $defaults = ['title' => '', 'description' => '', 'tags' => []];
@@ -117,7 +119,10 @@ class DashboardController
     {
         $values = $this->validated($request);
         $layout = (array) $request->input('layout', []);
-        $links = $request->has('links') ? $this->validatedLinks($request, $values) : null;
+        if (array_key_exists('flows', $layout)) {
+            $this->validateFlows($layout['flows'], $request);
+        }
+        $links = $request->has('links') ? $this->validatedLinks($request, $values, array_key_exists('flows', $layout) ? $layout['flows'] : null) : null;
 
         if (! Settings::save($values, $layout) || ($links !== null && ! Settings::saveLinks($links))) {
             return response()->json(['message' => 'Could not write '.Settings::path().'. Check that its directory is writable.'], 500);
@@ -183,7 +188,7 @@ class DashboardController
     /**
      * Every documented operation (hidden ones included), in the current order.
      *
-     * @return list<array{id: string, method: string, path: string, summary: string, tag: string, hidden: bool}>
+     * @return list<array{id: string, method: string, path: string, summary: string, tag: string, hidden: bool, params: list<array{name: string, in: string, required: bool}>, body_fields: ?list<string>}>
      */
     private function operations(Request $request): array
     {
@@ -217,6 +222,9 @@ class DashboardController
                     'hidden' => isset($hidden[$id]),
                     'hidden_in_code' => ! empty($operation['x-hidden-in-code']),
                     'order' => (int) ($operation['x-order'] ?? PHP_INT_MAX),
+                    // What a flow step can fill in.
+                    'params' => array_values(array_map(fn (array $p) => ['name' => (string) $p['name'], 'in' => (string) $p['in'], 'required' => ! empty($p['required'])], array_filter((array) ($operation['parameters'] ?? []), fn ($p) => is_array($p) && isset($p['name']) && in_array($p['in'] ?? null, ['path', 'query', 'header'], true)))),
+                    'body_fields' => $this->bodyFields($spec, $operation),
                 ];
             }
         }
@@ -228,6 +236,27 @@ class DashboardController
 
             return $operation;
         }, array_values($operations));
+    }
+
+    /**
+     * Top-level fields of an operation's JSON (or form) body, for the flow editor's body template.
+     *
+     * @param  array<string, mixed>  $spec
+     * @param  array<string, mixed>  $operation
+     * @return list<string>|null null when the operation takes no body
+     */
+    private function bodyFields(array $spec, array $operation): ?array
+    {
+        $content = (array) ($operation['requestBody']['content'] ?? []);
+        if ($content === []) {
+            return null;
+        }
+        $schema = (array) (($content['application/json'] ?? reset($content))['schema'] ?? []);
+        if (isset($schema['$ref']) && is_string($schema['$ref'])) {
+            $schema = (array) ($spec['components']['schemas'][substr(strrchr($schema['$ref'], '/') ?: '', 1)] ?? []);
+        }
+
+        return array_values(array_map('strval', array_keys((array) ($schema['properties'] ?? []))));
     }
 
     private function credentialsMatch(string $username, string $password): bool
@@ -259,9 +288,10 @@ class DashboardController
      * Partner links to store: a new link sends its token (hashed here), a kept one its stored hash.
      *
      * @param  array<string, mixed>  $values
+     * @param  mixed  $flows  the flows saved with them (null: the saved ones)
      * @return list<array<string, mixed>>
      */
-    private function validatedLinks(Request $request, array $values): array
+    private function validatedLinks(Request $request, array $values, mixed $flows = null): array
     {
         $input = ['links' => (array) $request->input('links', [])];
         $stored = collect(Settings::links())->keyBy('hash');
@@ -270,6 +300,8 @@ class DashboardController
         $schemes = array_map('strval', array_keys($current('security_schemes')));
         $versions = array_values(array_map('strval', $current('versions')));
         $environments = array_values(array_filter(array_map(fn ($env) => is_array($env) ? (string) ($env['name'] ?? '') : '', $current('environments'))));
+        $flows = array_values(array_filter(array_map(fn ($flow) => is_array($flow) ? (string) ($flow['id'] ?? '') : '', is_array($flows) ? $flows : Settings::layout()['flows'])));
+        $webhooks = array_values(array_filter(array_map(fn ($webhook, $key) => is_array($webhook) ? (string) ($webhook['name'] ?? (is_string($key) ? $key : '')) : '', $current('webhooks'), array_keys($current('webhooks')))));
         $validator = Validator::make($input, [
             'links' => ['array', 'max:100'],
             'links.*.id' => ['required', 'string', 'max:40', 'regex:/^[A-Za-z0-9_-]+$/', 'distinct'],
@@ -284,6 +316,20 @@ class DashboardController
             'links.*.versions.*' => ['string', 'distinct', Rule::in($versions)],
             'links.*.environments' => ['nullable', 'array'],
             'links.*.environments.*' => ['string', 'distinct', Rule::in($environments)],
+            'links.*.webhooks' => ['nullable', 'array'],
+            'links.*.webhooks.*' => ['string', 'distinct', Rule::in($webhooks)],
+            'links.*.flows' => ['nullable', 'array'],
+            'links.*.flows.*' => ['string', 'distinct', Rule::in($flows)],
+            'links.*.brand' => ['nullable', 'array'],
+            'links.*.brand.color' => ['nullable', 'string', 'regex:'.PartnerLinks::COLOR],
+            'links.*.brand.logo' => ['nullable', 'string', 'max:500', function ($attribute, $value, $fail) {
+                if (! PartnerLinks::safeLogo((string) $value)) {
+                    $fail('A logo address starts with https:// or / (a path on this site).');
+                }
+            }],
+            'links.*.brand.welcome' => ['nullable', 'array'],
+            'links.*.brand.welcome.en' => ['nullable', 'string', 'max:2000'],
+            'links.*.brand.welcome.ar' => ['nullable', 'string', 'max:2000'],
             'links.*.expires' => ['nullable', 'date_format:Y-m-d'],
             'links.*.token' => ['nullable', 'string', 'regex:/^[A-Za-z0-9_-]{24,128}$/'],
             'links.*.hash' => ['nullable', 'string', 'regex:/^[a-f0-9]{64}$/'],
@@ -293,6 +339,9 @@ class DashboardController
             'links.*.versions.min' => 'Pick at least one version, or use Default.',
             'links.*.versions.*.in' => 'This version does not exist any more.',
             'links.*.environments.*.in' => 'This environment does not exist any more.',
+            'links.*.webhooks.*.in' => 'This webhook does not exist any more.',
+            'links.*.flows.*.in' => 'This flow does not exist any more.',
+            'links.*.brand.color.regex' => 'A color is written #RRGGBB, e.g. #0f766e.',
         ]);
         $validator->after(function ($validator) use ($input, $stored) {
             foreach ($input['links'] as $index => $link) {
@@ -320,10 +369,75 @@ class DashboardController
                 'security' => isset($link['security']) ? array_values((array) $link['security']) : null,
                 'versions' => isset($link['versions']) ? array_values((array) $link['versions']) : null,
                 'environments' => isset($link['environments']) ? array_values((array) $link['environments']) : null,
+                'webhooks' => isset($link['webhooks']) ? array_values((array) $link['webhooks']) : null,
+                'flows' => isset($link['flows']) ? array_values((array) $link['flows']) : null,
+                'brand' => $link['brand'] ?? null,
                 'expires' => $link['expires'] ?? null,
                 'created' => $stored->get($hash)['created'] ?? now()->toDateString(),
             ];
         }, array_values($input['links']));
+    }
+
+    /**
+     * Flows of the layout: each step names a documented operation; a body is JSON once its {{variables}} are filled.
+     */
+    private function validateFlows(mixed $flows, Request $request): void
+    {
+        $operations = null;
+        $known = function () use (&$operations, $request): array {
+            return $operations ??= array_flip(array_column($this->operations($request), 'id'));
+        };
+        $validator = Validator::make(['flows' => $flows], [
+            'flows' => ['array', 'max:'.Flows::MAX_FLOWS],
+            'flows.*.id' => ['required', 'string', 'regex:/^[A-Za-z0-9_-]{1,40}$/', 'distinct'],
+            'flows.*.name' => ['required', 'string', 'max:100'],
+            'flows.*.description' => ['nullable', 'array'],
+            'flows.*.description.en' => ['nullable', 'string', 'max:2000'],
+            'flows.*.description.ar' => ['nullable', 'string', 'max:2000'],
+            'flows.*.steps' => ['required', 'array', 'min:1', 'max:'.Flows::MAX_STEPS],
+            'flows.*.steps.*.operation' => ['required', 'string', 'max:200', function ($attribute, $value, $fail) use ($known) {
+                if (! isset($known()[$value])) {
+                    $fail('This endpoint is not documented any more.');
+                }
+            }],
+            'flows.*.steps.*.params' => ['nullable', 'array'],
+            'flows.*.steps.*.params.*' => ['nullable', 'string', 'max:2000'],
+            'flows.*.steps.*.headers' => ['nullable', 'array'],
+            'flows.*.steps.*.headers.*' => ['nullable', 'string', 'max:2000'],
+            'flows.*.steps.*.body' => ['nullable', 'string', 'max:20000', function ($attribute, $value, $fail) {
+                // {{name}} stands for a value until the flow runs: {"order_id": {{order_id}}} is fine.
+                $json = trim((string) preg_replace('/\{\{\s*[A-Za-z_][\w.-]*\s*\}\}/', '0', (string) $value));
+                if ($json !== '' && json_decode($json) === null && $json !== 'null') {
+                    $fail('The body is not valid JSON.');
+                }
+            }],
+            'flows.*.steps.*.extract' => ['nullable', 'array', 'max:20'],
+            'flows.*.steps.*.extract.*.var' => ['required', 'string', 'max:60', 'regex:'.Flows::VARIABLE],
+            // A closure, not regex:, since older Laravel splits rules on the "|" of the pattern.
+            'flows.*.steps.*.extract.*.from' => ['required', 'string', 'max:200', function ($attribute, $value, $fail) {
+                if (! preg_match(Flows::SOURCE, (string) $value)) {
+                    $fail('Read a value from body.path.to.value, headers.name or status.');
+                }
+            }],
+        ], [
+            'flows.*.steps.required' => 'Add at least one step.',
+            'flows.*.steps.min' => 'Add at least one step.',
+            'flows.*.steps.*.extract.*.var.regex' => 'A variable name uses letters, digits, _ . - and starts with a letter or _.',
+        ]);
+        $validator->after(function ($validator) use ($flows) {
+            foreach (is_array($flows) ? $flows : [] as $f => $flow) {
+                foreach (is_array($flow['steps'] ?? null) ? $flow['steps'] : [] as $s => $step) {
+                    foreach (array_keys(is_array($step['headers'] ?? null) ? $step['headers'] : []) as $name) {
+                        if (! preg_match('/^[A-Za-z0-9!#$%&\'*+.^_`\x7C~-]+$/', (string) $name)) {
+                            $validator->errors()->add("flows.{$f}.steps.{$s}.headers", "\"{$name}\" is not a valid header name.");
+                        }
+                    }
+                }
+            }
+        });
+        if ($validator->fails()) {
+            throw new ValidationException($validator);
+        }
     }
 
     /**
@@ -415,8 +529,27 @@ class DashboardController
             'spatie_query_builder' => ['boolean'],
             'show_prefix' => ['array'],
             'show_prefix.*' => ['string', 'max:100'],
+            'webhooks' => ['array', 'max:100'],
+            'webhooks.*.name' => ['required', 'string', 'max:100', 'distinct', 'regex:/^[A-Za-z][A-Za-z0-9_.:\/-]*$/'],
+            'webhooks.*.summary' => ['nullable', 'string', 'max:200'],
+            'webhooks.*.description' => ['nullable', 'string', 'max:5000'],
+            'webhooks.*.method' => ['nullable', Rule::in(Webhooks::METHODS)],
+            'webhooks.*.headers' => ['array', 'max:20'],
+            'webhooks.*.headers.*.name' => ['required', 'string', 'max:100', $header],
+            'webhooks.*.headers.*.description' => ['nullable', 'string', 'max:500'],
+            'webhooks.*.headers.*.example' => ['nullable', 'string', 'max:500'],
+            // JSON text from the dashboard's editor, or a decoded value.
+            'webhooks.*.example' => ['nullable', function ($attribute, $value, $fail) {
+                if (is_string($value) && (strlen($value) > 50000 || (trim($value) !== '' && json_decode($value) === null && strtolower(trim($value)) !== 'null'))) {
+                    $fail('The example payload is not valid JSON.');
+                }
+            }],
+            'webhooks.*.hidden' => ['boolean'],
+            'webhooks.*.class' => ['nullable', 'string', 'max:255', 'regex:/^\\\\?[A-Za-z_][A-Za-z0-9_\\\\]*$/'],
         ], [
             'versions.*.regex' => 'A version uses letters, digits, . _ - and "/" between parts, e.g. v1 or driver/v1.',
+            'webhooks.*.name.regex' => 'A webhook name starts with a letter and uses letters, digits, . _ - : /, e.g. order.status_changed.',
+            'webhooks.*.name.distinct' => 'Two webhooks have this name.',
         ]);
 
         $validator->after(function ($validator) use ($input) {
@@ -453,7 +586,7 @@ class DashboardController
         if (blank($values['password'] ?? null)) {
             unset($values['password']);
         }
-        foreach (['security_schemes', 'auth_middlewares', 'global_headers', 'environments', 'servers', 'versions', 'show_prefix'] as $listKey) {
+        foreach (['security_schemes', 'auth_middlewares', 'global_headers', 'environments', 'servers', 'versions', 'show_prefix', 'webhooks'] as $listKey) {
             if (array_key_exists($listKey, $values) && $values[$listKey] === null) {
                 $values[$listKey] = [];
             }
@@ -476,6 +609,23 @@ class DashboardController
                 'variables' => $pairs((array) ($env['variables'] ?? [])),
                 'headers' => $pairs((array) ($env['headers'] ?? [])),
             ], $values['environments']));
+        }
+        if (isset($values['webhooks'])) {
+            $values['webhooks'] = array_values(array_map(function (array $webhook) {
+                $example = $webhook['example'] ?? null;
+                $example = is_string($example) ? (trim($example) === '' ? null : json_decode($example, true)) : $example;
+
+                return array_filter([
+                    'name' => $webhook['name'],
+                    'summary' => $webhook['summary'] ?? null,
+                    'description' => $webhook['description'] ?? null,
+                    'method' => $webhook['method'] ?? 'POST',
+                    'headers' => array_values(array_map(fn (array $h) => array_filter($h, fn ($v) => $v !== null && $v !== ''), (array) ($webhook['headers'] ?? []))),
+                    'example' => $example,
+                    'class' => $webhook['class'] ?? null,
+                    'hidden' => ! empty($webhook['hidden']) ? true : null,
+                ], fn ($v) => $v !== null && $v !== '' && $v !== []);
+            }, $values['webhooks']));
         }
         if (isset($values['auto_login'])) {
             $values['auto_login'] = array_values(array_map(fn (array $login) => array_filter($login, fn ($v) => $v !== null && $v !== ''), $values['auto_login']));

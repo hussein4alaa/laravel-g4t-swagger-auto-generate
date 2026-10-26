@@ -460,6 +460,32 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Webhooks
+    |--------------------------------------------------------------------------
+    |
+    | Webhooks your API sends to your clients, documented under "Webhooks" in
+    | the g4t UI (with a "Send test webhook" button) and as x-webhooks in the
+    | document. The payload is a JSON "example", or a "class": a JsonResource,
+    | an Eloquent model or a DTO with public typed properties. They can also
+    | be edited from the dashboard (which then replaces this list).
+    |
+    */
+    "webhooks" => [
+        // [
+        //     "name" => "order.status_changed",
+        //     "summary" => "An order changed status",
+        //     "description" => "Sent when an order is paid, shipped or cancelled.",
+        //     "method" => "POST",
+        //     "headers" => [
+        //         ["name" => "X-Signature", "description" => "HMAC-SHA256 of the body with your webhook secret", "example" => "sha256=5d41402abc4b2a76"],
+        //     ],
+        //     "class" => App\Http\Resources\OrderResource::class,
+        //     // or "example" => ["event" => "order.status_changed", "data" => ["id" => 1, "status" => "paid"]],
+        // ],
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
     | Extensions
     |--------------------------------------------------------------------------
     |

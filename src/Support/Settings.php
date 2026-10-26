@@ -13,8 +13,8 @@ use Throwable;
  * The file (swagger-settings.json in the project root by default, or on a filesystem disk such as s3 with
  * `dashboard.settings_disk`) only holds what was changed in the dashboard:
  * `config` (overridden swagger.* values), `links` (partner links) and `layout` (tag / operation order, hidden operations
- * and controllers, the English / Arabic texts of the info block, tags and operations, and the status /
- * note of each operation). Keys that were never changed keep following the config file.
+ * and controllers, the English / Arabic texts of the info block, tags and operations, the status /
+ * note of each operation, and flows). Keys that were never changed keep following the config file.
  */
 final class Settings
 {
@@ -27,6 +27,7 @@ final class Settings
         'security_schemes', 'auth_middlewares', 'global_headers', 'environments', 'auto_login',
         'infer_response_examples', 'infer_error_response_examples', 'response_schemas',
         'unwrap_resource_collection_examples', 'include_web_routes', 'show_prefix', 'spatie_query_builder',
+        'webhooks',
     ];
 
     /** Languages the dashboard writes texts in; English replaces the generated text. */
@@ -38,7 +39,7 @@ final class Settings
     /** Keys whose value is an associative array merged over the config file value (one level). */
     private const MERGED = ['g4t', 'scalar', 'auto_login'];
 
-    /** @var array{config: array<string, mixed>, links: list<array<string, mixed>>, layout: array{tags: list<string>, operations: array<string, list<string>>, hidden: list<string>, hidden_tags: list<string>, texts: array<string, mixed>, meta: array<string, mixed>}}|null */
+    /** @var array{config: array<string, mixed>, links: list<array<string, mixed>>, layout: array{tags: list<string>, operations: array<string, list<string>>, hidden: list<string>, hidden_tags: list<string>, hidden_webhooks: list<string>, hidden_flows: list<string>, texts: array<string, mixed>, meta: array<string, mixed>, flows: list<array<string, mixed>>}}|null */
     private static ?array $data = null;
 
     /** @var array<string, mixed>|null swagger.* before the dashboard overrides were applied */
@@ -194,7 +195,7 @@ final class Settings
     }
 
     /**
-     * @return array{tags: list<string>, operations: array<string, list<string>>, hidden: list<string>, hidden_tags: list<string>, texts: array<string, mixed>, meta: array<string, mixed>}
+     * @return array{tags: list<string>, operations: array<string, list<string>>, hidden: list<string>, hidden_tags: list<string>, hidden_webhooks: list<string>, hidden_flows: list<string>, texts: array<string, mixed>, meta: array<string, mixed>, flows: list<array<string, mixed>>}
      */
     public static function layout(): array
     {
@@ -205,7 +206,7 @@ final class Settings
      * Stores the given effective values: only keys that differ from the config file are kept.
      *
      * @param  array<string, mixed>  $values  editable swagger.* keys
-     * @param  array{tags?: list<string>, operations?: array<string, list<string>>, hidden?: list<string>, hidden_tags?: list<string>, texts?: array<string, mixed>, meta?: array<string, mixed>}  $layout
+     * @param  array{tags?: list<string>, operations?: array<string, list<string>>, hidden?: list<string>, hidden_tags?: list<string>, hidden_webhooks?: list<string>, hidden_flows?: list<string>, texts?: array<string, mixed>, meta?: array<string, mixed>, flows?: list<array<string, mixed>>}  $layout
      */
     public static function save(array $values, array $layout): bool
     {
@@ -263,7 +264,7 @@ final class Settings
     /**
      * Partner links ({@see PartnerLinks}); only the sha256 of each token is kept.
      *
-     * @return list<array{id: string, name: string, hash: string, secret: ?string, tags: list<string>, operations: list<string>, security: ?list<string>, versions: ?list<string>, environments: ?list<string>, expires: ?string, created: ?string}>
+     * @return list<array{id: string, name: string, hash: string, secret: ?string, tags: list<string>, operations: list<string>, security: ?list<string>, versions: ?list<string>, environments: ?list<string>, webhooks: ?list<string>, flows: ?list<string>, brand: ?array{color: ?string, logo: ?string, welcome: ?array{en: string, ar: string}}, expires: ?string, created: ?string}>
      */
     public static function links(): array
     {
@@ -294,7 +295,7 @@ final class Settings
     }
 
     /**
-     * @return array{config: array<string, mixed>, links: list<array<string, mixed>>, layout: array{tags: list<string>, operations: array<string, list<string>>, hidden: list<string>, hidden_tags: list<string>, texts: array<string, mixed>, meta: array<string, mixed>}}
+     * @return array{config: array<string, mixed>, links: list<array<string, mixed>>, layout: array{tags: list<string>, operations: array<string, list<string>>, hidden: list<string>, hidden_tags: list<string>, hidden_webhooks: list<string>, hidden_flows: list<string>, texts: array<string, mixed>, meta: array<string, mixed>, flows: list<array<string, mixed>>}}
      */
     private static function data(): array
     {
@@ -315,7 +316,7 @@ final class Settings
 
     /**
      * @param  array<string, mixed>  $layout
-     * @return array{tags: list<string>, operations: array<string, list<string>>, hidden: list<string>, hidden_tags: list<string>, texts: array<string, mixed>, meta: array<string, mixed>}
+     * @return array{tags: list<string>, operations: array<string, list<string>>, hidden: list<string>, hidden_tags: list<string>, hidden_webhooks: list<string>, hidden_flows: list<string>, texts: array<string, mixed>, meta: array<string, mixed>, flows: list<array<string, mixed>>}
      */
     private static function cleanLayout(array $layout): array
     {
@@ -333,8 +334,14 @@ final class Settings
             'hidden' => $strings($layout['hidden'] ?? []),
             // Whole controllers, so endpoints added to them later stay hidden too.
             'hidden_tags' => $strings($layout['hidden_tags'] ?? []),
+            // Webhooks hidden from the docs; partner links can still pick them.
+            'hidden_webhooks' => $strings($layout['hidden_webhooks'] ?? []),
+            // Flows (ids) hidden from the docs; partner links can still pick them.
+            'hidden_flows' => $strings($layout['hidden_flows'] ?? []),
             'texts' => self::cleanTexts(is_array($layout['texts'] ?? null) ? $layout['texts'] : []),
             'meta' => self::cleanMeta(is_array($layout['meta'] ?? null) ? $layout['meta'] : []),
+            // Chained requests the g4t UI runs in one click ({@see Flows}).
+            'flows' => Flows::clean($layout['flows'] ?? []),
         ];
     }
 
@@ -436,6 +443,12 @@ final class Settings
                 // Versions it can open (null: every version) and shared environments it shows (null: all, []: none).
                 'versions' => self::linkNames($link['versions'] ?? null),
                 'environments' => self::linkNames($link['environments'] ?? null, true),
+                // Webhooks it documents (null: all, []: none).
+                'webhooks' => self::linkNames($link['webhooks'] ?? null, true),
+                // Flows (ids) it shows, hidden ones included (null: the visible ones, []: none).
+                'flows' => self::linkNames($link['flows'] ?? null, true),
+                // Accent color, logo and welcome message of the link's docs; null keeps the docs' own look.
+                'brand' => self::linkBrand($link['brand'] ?? null),
                 'expires' => $date($link['expires'] ?? null),
                 'created' => $date($link['created'] ?? null),
             ];
@@ -457,6 +470,28 @@ final class Settings
         $names = array_values(array_unique(array_filter($names, fn ($name) => is_string($name) && $name !== '')));
 
         return $names === [] && ! $allowEmpty ? null : $names;
+    }
+
+    /**
+     * A link's branding with only valid values; null when nothing is left.
+     *
+     * @return array{color: ?string, logo: ?string, welcome: ?array{en: string, ar: string}}|null
+     */
+    private static function linkBrand(mixed $brand): ?array
+    {
+        if (! is_array($brand)) {
+            return null;
+        }
+        $color = is_string($brand['color'] ?? null) && preg_match(PartnerLinks::COLOR, $brand['color']) ? strtolower($brand['color']) : null;
+        $logo = is_string($brand['logo'] ?? null) && PartnerLinks::safeLogo(trim($brand['logo'])) ? trim($brand['logo']) : null;
+        $welcome = [];
+        foreach (self::LANGUAGES as $language) {
+            $text = $brand['welcome'][$language] ?? null;
+            $welcome[$language] = is_string($text) ? mb_substr(trim($text), 0, 2000) : '';
+        }
+        $welcome = implode('', $welcome) === '' ? null : $welcome;
+
+        return $color === null && $logo === null && $welcome === null ? null : ['color' => $color, 'logo' => $logo, 'welcome' => $welcome];
     }
 
     private static function merged(string $key, mixed $value, mixed $base): mixed

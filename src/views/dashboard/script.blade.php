@@ -200,6 +200,11 @@
         return '<button type="button" class="d-icon-btn' + (hasTexts(kind, key.slice(kind === 'op' ? 3 : 4)) ? ' has-texts' : '') + '" data-action="edit-texts" data-value="' + esc(key) + '" aria-expanded="' + open + '" aria-label="Edit ' + esc(label) + '" title="' + (kind === 'op' ? 'Status, note and English / Arabic texts' : 'English / Arabic texts') + '">' + ICON.pen + '</button>';
     }
 
+    /** A login of one request that keeps and sends nothing extra: saved the way config/swagger.php writes one. */
+    function loginIsPlain(login) {
+        var st = login.steps[0];
+        return login.steps.length < 2 && (!st || (!st.name && !st.extract.length && !st.send.some(function (x) { return x.key; })));
+    }
     function toModel(state) {
         var s = clone(state.settings || {});
         var schemes = s.security_schemes || {};
@@ -233,10 +238,19 @@
             envs: (Array.isArray(s.environments) ? s.environments : []).map(function (e) {
                 return { name: e.name || '', base_url: e.base_url || '', vars: pairList(e.variables), headers: pairList(e.headers) };
             }),
-            logins: logins.filter(function (l) { return l && l.url; }).map(function (l) {
+            // A login is one request or several steps (send a code, then verify it); the model always has steps.
+            logins: logins.filter(function (l) { return l && (l.url || (Array.isArray(l.steps) && l.steps.length)); }).map(function (l) {
+                var stepped = Array.isArray(l.steps) && l.steps.length;
                 return {
-                    name: l.name || '', url: l.url || '', method: l.method || 'POST', token_path: l.token_path || '', security_scheme: l.security_scheme || '',
-                    fields: Object.keys(l.fields || {}).map(function (k) { return { key: k, label: l.fields[k] }; }), prefill: l.prefill || null
+                    name: l.name || '', token_path: l.token_path || '', security_scheme: l.security_scheme || '',
+                    steps: (stepped ? l.steps : [l]).map(function (st) {
+                        return {
+                            name: stepped ? st.name || '' : '', url: st.url || '', method: st.method || 'POST',
+                            fields: Object.keys(st.fields || {}).map(function (k) { return { key: k, label: st.fields[k] }; }),
+                            send: pairList(st.send), extract: (Array.isArray(st.extract) ? st.extract : []).map(function (x) { return { 'var': x['var'] || '', from: x.from || '' }; }),
+                            prefill: st.prefill && !Array.isArray(st.prefill) ? st.prefill : null
+                        };
+                    })
                 };
             }),
             flags: flags,
@@ -289,10 +303,29 @@
                 return { name: e.name, base_url: e.base_url, variables: pairs(e.vars), headers: pairs(e.headers) };
             }),
             auto_login: m.logins.map(function (l, i) {
-                var fields = {};
-                l.fields.forEach(function (f) { if (f.key) { fields[f.key] = f.label || f.key; } });
-                var out = { name: l.name || 'Login ' + (i + 1), url: l.url, method: l.method, fields: fields, token_path: l.token_path || null, security_scheme: l.security_scheme || null };
-                if (l.prefill) { out.prefill = l.prefill; }
+                var out = { name: l.name || 'Login ' + (i + 1) };
+                var steps = l.steps.map(function (st) {
+                    var step = { url: st.url, method: st.method, fields: {} };
+                    st.fields.forEach(function (f) { if (f.key) { step.fields[f.key] = f.label || f.key; } });
+                    if (st.prefill) { step.prefill = st.prefill; }
+                    return step;
+                });
+                // One plain request keeps the shape of config/swagger.php; anything more is saved as steps.
+                if (loginIsPlain(l)) {
+                    out.url = steps.length ? steps[0].url : ''; out.method = steps.length ? steps[0].method : 'POST'; out.fields = steps.length ? steps[0].fields : {};
+                    if (steps.length && steps[0].prefill) { out.prefill = steps[0].prefill; }
+                } else {
+                    out.steps = steps.map(function (step, j) {
+                        var st = l.steps[j];
+                        if (st.name) { step.name = st.name; }
+                        var send = {};
+                        st.send.forEach(function (x) { if (x.key) { send[x.key] = x.value; } });
+                        if (Object.keys(send).length) { step.send = send; }
+                        if (st.extract.length) { step.extract = st.extract.map(function (x) { return { 'var': x['var'], from: x.from }; }); }
+                        return step;
+                    });
+                }
+                out.token_path = l.token_path || null; out.security_scheme = l.security_scheme || null;
                 return out;
             }),
             webhooks: m.webhooks.map(function (w) {
@@ -542,24 +575,51 @@
         return section('webhooks', 'Webhooks', 'Requests your API sends to your clients. The eye hides one from the documentation, like an endpoint; partner links can still pick it. They get their own group in the g4t UI, where readers can send a test webhook from their browser to their own URL, and travel as <code class="g4t-mono">x-webhooks</code> in the document.',
             (model.webhooks.length ? list : '<div class="d-note">No webhooks documented.</div>') + addBtn('webhooks', 'Add webhook') + errorText('webhooks'));
     }
+    function loginStepHtml(login, li, st, si) {
+        var path = 'logins.' + li + '.steps.' + si, key = loginIsPlain(login) ? 'auto_login.' + li : 'auto_login.' + li + '.steps.' + si, ref = li + ':' + si, several = login.steps.length > 1;
+        // What a later step may send as {{name}}: fields typed and values kept so far.
+        var before = [];
+        login.steps.slice(0, si).forEach(function (earlier) {
+            earlier.fields.forEach(function (f) { if (f.key && before.indexOf(f.key) === -1) { before.push(f.key); } });
+            earlier.extract.forEach(function (x) { if (x['var'] && before.indexOf(x['var']) === -1) { before.push(x['var']); } });
+        });
+        var fields = '<div class="d-list" data-sortable="login-fields:' + ref + '">' + st.fields.map(function (f, i) {
+            return '<div class="d-item" data-sort-index="' + i + '">' + handle('field ' + f.key) + '<div class="d-item-body"><div class="d-row">' +
+                '<label class="d-field">Request field<input class="g4t-mono" data-bind="' + path + '.fields.' + i + '.key" value="' + esc(f.key) + '" placeholder="' + (si ? 'code' : 'email') + '" autocomplete="off" spellcheck="false"></label>' +
+                '<label class="d-field">Label<input data-bind="' + path + '.fields.' + i + '.label" value="' + esc(f.label) + '" placeholder="' + (si ? 'Code' : 'Email') + '" autocomplete="off"></label></div></div>' + removeBtn('login-fields:' + ref, i, 'field ' + f.key) + '</div>';
+        }).join('') + '</div>' + errorText(key + '.fields');
+        var send = '<div class="d-list">' + st.send.map(function (x, i) {
+            return '<div class="d-item"><div class="d-item-body"><div class="d-row"><label class="d-field">Request field<input class="g4t-mono" data-bind="' + path + '.send.' + i + '.key" value="' + esc(x.key) + '" placeholder="session_token" autocomplete="off" spellcheck="false"></label>' +
+                '<label class="d-field" style="grid-column:span 2">Value<input class="g4t-mono" data-bind="' + path + '.send.' + i + '.value" value="' + esc(x.value) + '" placeholder="{{session_token}}" autocomplete="off" spellcheck="false"></label></div></div>' + removeBtn('login-send:' + ref, i, 'value ' + x.key) + '</div>';
+        }).join('') + '</div>' + errorText(key + '.send');
+        var extract = '<div class="d-list">' + st.extract.map(function (x, i) {
+            var xk = key + '.extract.' + i;
+            return '<div class="d-item"><div class="d-item-body"><div class="d-row"><label class="d-field' + (errors[xk + '.var'] ? ' is-invalid' : '') + '">Variable<input class="g4t-mono" data-bind="' + path + '.extract.' + i + '.var" value="' + esc(x['var']) + '" placeholder="session_token" autocomplete="off" spellcheck="false">' + errorText(xk + '.var') + '</label>' +
+                '<label class="d-field' + (errors[xk + '.from'] ? ' is-invalid' : '') + '" style="grid-column:span 2">From the response<input class="g4t-mono" data-bind="' + path + '.extract.' + i + '.from" value="' + esc(x.from) + '" placeholder="body.session_token" autocomplete="off" spellcheck="false">' + errorText(xk + '.from') + '</label></div></div>' + removeBtn('login-extract:' + ref, i, 'variable ' + x['var']) + '</div>';
+        }).join('') + '</div>';
+        return '<div class="d-item d-flow-step" data-sort-index="' + si + '">' + handle('step ' + (si + 1)) + '<div class="d-item-body">' +
+            (several ? '<div class="d-flow-step-head"><span class="d-flow-num">' + (si + 1) + '</span><span>' + esc(st.name || 'Step ' + (si + 1)) + '</span></div>' : '') +
+            '<div class="d-grid">' + (several ? field('Step name', path + '.name', { placeholder: si ? 'Verify the code' : 'Send the code', hint: 'Shown above the form of this step.' }) : '') +
+            field(several ? 'Endpoint' : 'Login endpoint', path + '.url', { placeholder: si ? '/api/auth/verify-otp' : several ? '/api/auth/send-otp' : '/api/auth/login', mono: true, err: key + '.url' }) +
+            field('Method', path + '.method', { options: ['POST', 'PUT'] }) + '</div>' +
+            '<div class="d-field">Form fields<span class="d-hint">What the reader types in this step.</span></div>' + fields + addBtn('login-fields:' + ref, 'Add field') +
+            (si ? '<div class="d-field">Also send<span class="d-hint">Sent with the form, without asking the reader: a fixed value or one from an earlier step' + (before.length ? ', like ' + before.slice(0, 4).map(function (v) { return '{{' + esc(v) + '}}'; }).join(', ') : '') + '.</span></div>' + send + addBtn('login-send:' + ref, 'Add value') : '') +
+            (several && si < login.steps.length - 1 ? '<div class="d-field">Keep from the response<span class="d-hint">body.session_token, headers.x-request-id or status; later steps send it as {{variable}}.</span></div>' + extract + addBtn('login-extract:' + ref, 'Add variable') : '') +
+            '</div>' + (several ? removeBtn('login-steps:' + li, si, 'step ' + (si + 1)) : '') + '</div>';
+    }
     function sLogin() {
         var schemeOptions = [['', '— first bearer scheme —']].concat(model.schemes.filter(function (x) { return x.name; }).map(function (x) { return [x.name, x.name]; }));
         var list = '<div class="d-list" data-sortable="logins">' + model.logins.map(function (login, li) {
             var key = 'auto_login.' + li;
-            var fields = '<div class="d-list" data-sortable="login-fields:' + li + '">' + login.fields.map(function (f, i) {
-                return '<div class="d-item" data-sort-index="' + i + '">' + handle('field ' + f.key) + '<div class="d-item-body"><div class="d-row">' +
-                    '<label class="d-field">Request field<input class="g4t-mono" data-bind="logins.' + li + '.fields.' + i + '.key" value="' + esc(f.key) + '" placeholder="email" autocomplete="off" spellcheck="false"></label>' +
-                    '<label class="d-field">Label<input data-bind="logins.' + li + '.fields.' + i + '.label" value="' + esc(f.label) + '" placeholder="Email" autocomplete="off"></label></div></div>' + removeBtn('login-fields:' + li, i, 'field ' + f.key) + '</div>';
-            }).join('') + '</div>' + errorText(key + '.fields');
             return '<div class="d-item" data-sort-index="' + li + '">' + handle('login ' + login.name) + '<div class="d-item-body">' +
                 '<div class="d-grid">' + field('Name', 'logins.' + li + '.name', { placeholder: li ? 'Admin' : 'Customer', err: key + '.name', hint: 'Shown in the Log in dialog when there are several.' }) +
-                field('Login endpoint', 'logins.' + li + '.url', { placeholder: '/api/auth/login', mono: true, err: key + '.url' }) +
-                field('Method', 'logins.' + li + '.method', { options: ['POST', 'PUT'] }) +
-                field('Token path in the response', 'logins.' + li + '.token_path', { placeholder: 'access_token or data.token', mono: true, hint: 'Empty: token, access_token, data.token… are tried.' }) +
+                field('Token path in the response', 'logins.' + li + '.token_path', { placeholder: 'access_token or data.token', mono: true, hint: 'Empty: token, access_token, data.token… are tried.' + (login.steps.length > 1 ? ' Read from the last step.' : '') }) +
                 field('Security scheme it fills', 'logins.' + li + '.security_scheme', { options: schemeOptions, hint: 'Give each login its own scheme to stay signed in to all of them at once.' }) + '</div>' +
-                '<div class="d-field">Form fields</div>' + fields + addBtn('login-fields:' + li, 'Add field') + '</div>' + removeBtn('logins', li, 'login ' + login.name) + '</div>';
+                '<div class="d-list" data-sortable="login-steps:' + li + '">' + login.steps.map(function (st, si) { return loginStepHtml(login, li, st, si); }).join('') + '</div>' + errorText(key + '.steps') +
+                '<div class="d-row" style="justify-items:start">' + addBtn('login-steps:' + li, 'Add step') + '<span class="d-hint">For a login in several requests, like sending a code and then verifying it.</span></div>' +
+                '</div>' + removeBtn('logins', li, 'login ' + login.name) + '</div>';
         }).join('') + '</div>';
-        return section('login', 'Try it out logins', 'Log in buttons that post these fields to your login endpoints and use the token they return. With several (customer, admin…) the reader picks one in the Log in dialog. Without any, readers can still paste a token.',
+        return section('login', 'Try it out logins', 'Log in buttons that post these fields to your login endpoints and use the token they return. A login can take several steps, like sending a code and then verifying it. With several logins (customer, admin…) the reader picks one in the Log in dialog. Without any, readers can still paste a token.',
             (model.logins.length ? list : '<div class="d-note">No login: readers paste a token in Authorize.</div>') + addBtn('logins', 'Add login'));
     }
     function sGeneration() {
@@ -1070,7 +1130,11 @@
         if (name === 'authMiddlewares') { return model.authMiddlewares; }
         if (name === 'logins') { return model.logins; }
         if (name === 'links') { return model.links; }
-        if (name.indexOf('login-fields:') === 0) { return (model.logins[Number(name.slice(13))] || {}).fields; }
+        var loginPart = /^login-(steps|fields|send|extract):(\d+)(?::(\d+))?$/.exec(name);
+        if (loginPart) {
+            var loginOf = model.logins[Number(loginPart[2])], loginStep = loginOf && loginPart[3] !== undefined ? loginOf.steps[Number(loginPart[3])] : null;
+            return loginPart[1] === 'steps' ? (loginOf || {}).steps : (loginStep || {})[loginPart[1]];
+        }
         if (name === 'envs') { return model.envs; }
         if (name.indexOf('env-vars:') === 0) { return (model.envs[Number(name.slice(9))] || {}).vars; }
         if (name.indexOf('env-headers:') === 0) { return (model.envs[Number(name.slice(12))] || {}).headers; }
@@ -1098,8 +1162,11 @@
         if (name === 'schemes') { model.schemes.push({ name: 'scheme' + (model.schemes.length + 1), type: 'apiKey', scheme: 'bearer', where: 'header', keyName: 'X-API-Key', bearerFormat: '' }); }
         if (name === 'headers') { model.headers.push({ name: '', description: '', required: false, example: '', default: '', enumText: '' }); }
         if (name === 'links') { var linkId = 'l' + Date.now().toString(36); linkTokens[linkId] = newToken(); model.links.push({ id: linkId, name: 'Partner ' + (model.links.length + 1), tags: [], operations: [], token: null, security: null, versions: null, environments: null, webhooks: null, flows: null, brand: brandModel(null), expires: '', hash: null, created: null, expired: false }); }
-        if (name === 'logins') { model.logins.push({ name: model.logins.length ? 'Login ' + (model.logins.length + 1) : 'Customer', url: '', method: 'POST', token_path: '', security_scheme: '', fields: [{ key: 'email', label: 'Email' }, { key: 'password', label: 'Password' }], prefill: null }); }
+        if (name === 'logins') { model.logins.push({ name: model.logins.length ? 'Login ' + (model.logins.length + 1) : 'Customer', token_path: '', security_scheme: '', steps: [{ name: '', url: '', method: 'POST', fields: [{ key: 'email', label: 'Email' }, { key: 'password', label: 'Password' }], send: [], extract: [], prefill: null }] }); }
+        if (name.indexOf('login-steps:') === 0) { var loginStepsList = listArray(name); if (loginStepsList) { loginStepsList.push({ name: '', url: '', method: 'POST', fields: [{ key: '', label: '' }], send: [], extract: [], prefill: null }); } }
         if (name.indexOf('login-fields:') === 0) { var loginFields = listArray(name); if (loginFields) { loginFields.push({ key: '', label: '' }); } }
+        if (name.indexOf('login-send:') === 0) { var loginSend = listArray(name); if (loginSend) { loginSend.push({ key: '', value: '' }); } }
+        if (name.indexOf('login-extract:') === 0) { var loginExtract = listArray(name); if (loginExtract) { loginExtract.push({ 'var': '', from: 'body.' }); } }
         if (name === 'authMiddlewares') { model.authMiddlewares.push(''); }
         if (name === 'flows') { var flowId = 'f' + Date.now().toString(36); flowPicking[flowId] = true; model.flows.push({ id: flowId, name: 'Flow ' + (model.flows.length + 1), descEn: '', descAr: '', steps: [] }); }
         if (name.indexOf('flow-headers:') === 0) { var flowHeaders = listArray(name); if (flowHeaders) { flowHeaders.push({ key: '', value: '' }); } }

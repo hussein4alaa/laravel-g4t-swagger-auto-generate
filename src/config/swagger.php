@@ -384,6 +384,25 @@ return [
     |       ["name" => "Admin", "url" => "/api/admin/login", "fields" => ["username" => "Username", "password" => "Password"], "security_scheme" => "adminAuth"],
     |   ],
     |
+    | A login in several requests (send a code, then verify it) has "steps"
+    | instead of "url" and "fields". Each step has its own "url", "method",
+    | "fields" and "prefill", plus:
+    | "extract": values kept from its response, as {var, from} with "from"
+    |   like body.session_token, headers.x-request-id or status.
+    | "send": extra request fields; {{name}} is a kept value or an earlier field.
+    | The token is read from the last step's response.
+    |
+    |   "auto_login" => [
+    |       "name" => "Customer",
+    |       "token_path" => "token",
+    |       "steps" => [
+    |           ["name" => "Send the code", "url" => "/api/auth/send-otp", "fields" => ["phone" => "Phone"],
+    |               "extract" => [["var" => "session_token", "from" => "body.session_token"]]],
+    |           ["name" => "Verify the code", "url" => "/api/auth/verify-otp", "fields" => ["code" => "Code"],
+    |               "send" => ["session_token" => "{{session_token}}"]],
+    |       ],
+    |   ],
+    |
     */
     "auto_login" => [
         "url" => env("SWAGGER_LOGIN_URL"),

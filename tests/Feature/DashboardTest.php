@@ -380,6 +380,29 @@ class DashboardTest extends TestCase
         $this->assertArrayHasKey('Post', $state['defaults']['tags']);
     }
 
+    public function test_a_login_in_several_steps_can_be_saved(): void
+    {
+        $session = $this->withSession(self::SESSION);
+        $steps = [
+            ['name' => 'Send the code', 'url' => '/api/v1/send-otp', 'method' => 'POST', 'fields' => ['phone' => 'Phone'], 'extract' => [['var' => 'session', 'from' => 'body.session_token']]],
+            ['name' => '', 'url' => '/api/v1/verify-otp', 'method' => 'POST', 'fields' => ['code' => 'Code'], 'send' => ['session_token' => '{{session}}'], 'extract' => []],
+        ];
+        $session->putJson('/swagger/dashboard/api/settings', ['settings' => ['auto_login' => [['name' => 'Customer', 'steps' => $steps, 'token_path' => 'token', 'security_scheme' => 'bearerAuth']]]])
+            ->assertOk()->assertJsonPath('settings.auto_login.0.steps.1.send.session_token', '{{session}}');
+
+        $saved = config('swagger.auto_login')[0];
+        $this->assertArrayNotHasKey('url', $saved, 'A login in steps has no URL of its own');
+        $this->assertSame(['url', 'method', 'fields', 'send'], array_keys($saved['steps'][1]), 'Empty values of a step are not stored');
+        $this->get('/swagger/documentation?ui=g4t')->assertSee('"name":"Send the code","url":"http://localhost/api/v1/send-otp"', false);
+
+        $bad = [['url' => '', 'fields' => ['bad name' => 'x'], 'send' => ['also bad' => 'x'], 'extract' => [['var' => '1x', 'from' => 'somewhere']]]];
+        $session->putJson('/swagger/dashboard/api/settings', ['settings' => ['auto_login' => [['name' => 'Customer', 'steps' => $bad], ['name' => 'Empty', 'steps' => []]]]])
+            ->assertStatus(422)->assertJsonValidationErrors([
+                'auto_login.0.steps.0.url', 'auto_login.0.steps.0.fields', 'auto_login.0.steps.0.send',
+                'auto_login.0.steps.0.extract.0.var', 'auto_login.0.steps.0.extract.0.from', 'auto_login.1.url',
+            ]);
+    }
+
     public function test_several_logins_can_be_saved(): void
     {
         $session = $this->withSession(self::SESSION);

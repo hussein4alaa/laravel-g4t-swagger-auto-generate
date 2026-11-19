@@ -206,6 +206,45 @@ class UiTest extends TestCase
         $this->get('/swagger/documentation?ui=swagger')->assertSee('"url":"http://localhost/api/v1/login"', false)->assertDontSee('/api/admin/login', false);
     }
 
+    public function test_a_login_in_several_steps_reaches_every_ui(): void
+    {
+        config(['swagger.auto_login' => [[
+            'name' => 'Customer',
+            'token_path' => 'data.token',
+            'steps' => [
+                ['name' => 'Send the code', 'url' => '/api/v1/send-otp', 'fields' => ['phone' => 'Phone'], 'extract' => [['var' => 'session', 'from' => 'body.session_token'], ['var' => 'bad name', 'from' => 'nowhere']]],
+                ['name' => 'No URL', 'url' => null],
+                ['name' => 'Verify', 'url' => 'https://auth.test/verify', 'method' => 'put', 'fields' => ['code' => 'Code'], 'send' => ['session_token' => '{{session}}', 'bad name' => 'x'], 'prefill' => ['code' => '1234']],
+            ],
+        ]]]);
+
+        $page = $this->get('/swagger/documentation?ui=g4t')->getContent();
+        preg_match('/window\.G4T_SETTINGS = (\{.*?\});\n/s', $page, $match);
+        $login = json_decode($match[1], true)['autoLogin'];
+        $this->assertSame(['Send the code', 'Verify'], array_column($login['steps'], 'name'), 'Steps without a URL are left out');
+        $this->assertSame('http://localhost/api/v1/send-otp', $login['url'], 'The login keeps the URL, method and fields of its first step');
+        $this->assertSame(['phone' => 'Phone'], $login['fields']);
+        $this->assertSame([['var' => 'session', 'from' => 'body.session_token']], $login['steps'][0]['extract'], 'Malformed values to keep are dropped');
+        $this->assertSame(['url' => 'https://auth.test/verify', 'method' => 'PUT', 'send' => ['session_token' => '{{session}}']], array_intersect_key($login['steps'][1], array_flip(['url', 'method', 'send'])));
+        $this->assertSame([], $login['steps'][1]['prefill'], 'Pre-filled values only reach the local environment');
+        $this->assertSame('data.token', $login['tokenPath']);
+
+        foreach (['swagger', 'scalar'] as $ui) {
+            $this->get('/swagger/documentation?ui='.$ui)->assertSee('name="phone"', false)->assertSee('"send":{"session_token":"{{session}}"}', false);
+        }
+    }
+
+    public function test_a_login_without_steps_is_one_step(): void
+    {
+        config(['swagger.auto_login' => ['name' => 'Customer', 'url' => '/api/v1/login']]);
+
+        $page = $this->get('/swagger/documentation?ui=g4t')->getContent();
+        preg_match('/window\.G4T_SETTINGS = (\{.*?\});\n/s', $page, $match);
+        $steps = json_decode($match[1], true)['autoLogin']['steps'];
+        $this->assertCount(1, $steps);
+        $this->assertSame(['name' => '', 'url' => 'http://localhost/api/v1/login', 'method' => 'POST', 'fields' => ['email' => 'Email', 'password' => 'Password']], array_slice($steps[0], 0, 4));
+    }
+
     public function test_login_button_is_rendered_in_both_uis(): void
     {
         config(['swagger.auto_login.url' => '/api/v1/login']);

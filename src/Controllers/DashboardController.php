@@ -4,6 +4,7 @@ namespace G4T\Swagger\Controllers;
 
 use G4T\Swagger\Support\CachedSpec;
 use G4T\Swagger\Support\Flows;
+use G4T\Swagger\Support\Logins;
 use G4T\Swagger\Support\PartnerLinks;
 use G4T\Swagger\Support\Settings;
 use G4T\Swagger\Support\Webhooks;
@@ -514,13 +515,31 @@ class DashboardController
             'environments.*.headers.*.value' => ['nullable', 'string', 'max:2000'],
             'auto_login' => ['array', 'max:20'],
             'auto_login.*.name' => ['nullable', 'string', 'max:60', 'distinct'],
-            'auto_login.*.url' => ['required', 'string', 'max:500'],
+            // One request (url, method, fields) or several steps, each with its own.
+            'auto_login.*.url' => ['required_without:auto_login.*.steps', 'nullable', 'string', 'max:500'],
             'auto_login.*.method' => [Rule::in(['POST', 'PUT'])],
             'auto_login.*.fields' => ['array'],
             'auto_login.*.fields.*' => ['string', 'max:100'],
             'auto_login.*.token_path' => ['nullable', 'string', 'max:100'],
             'auto_login.*.security_scheme' => ['nullable', 'string', 'max:100'],
             'auto_login.*.prefill' => ['nullable', 'array'],
+            'auto_login.*.steps' => ['array', 'min:1', 'max:'.Logins::MAX_STEPS],
+            'auto_login.*.steps.*.name' => ['nullable', 'string', 'max:60'],
+            'auto_login.*.steps.*.url' => ['required', 'string', 'max:500'],
+            'auto_login.*.steps.*.method' => [Rule::in(['POST', 'PUT'])],
+            'auto_login.*.steps.*.fields' => ['nullable', 'array', 'max:20'],
+            'auto_login.*.steps.*.fields.*' => ['string', 'max:100'],
+            'auto_login.*.steps.*.prefill' => ['nullable', 'array'],
+            'auto_login.*.steps.*.send' => ['nullable', 'array', 'max:20'],
+            'auto_login.*.steps.*.send.*' => ['nullable', 'string', 'max:2000'],
+            'auto_login.*.steps.*.extract' => ['nullable', 'array', 'max:20'],
+            'auto_login.*.steps.*.extract.*.var' => ['required', 'string', 'max:60', 'regex:'.Flows::VARIABLE],
+            // A closure, not regex:, since older Laravel splits rules on the "|" of the pattern.
+            'auto_login.*.steps.*.extract.*.from' => ['required', 'string', 'max:200', function ($attribute, $value, $fail) {
+                if (! preg_match(Flows::SOURCE, (string) $value)) {
+                    $fail('Read a value from body.path.to.value, headers.name or status.');
+                }
+            }],
             'infer_response_examples' => ['boolean'],
             'infer_error_response_examples' => ['boolean'],
             'response_schemas' => ['boolean'],
@@ -550,6 +569,9 @@ class DashboardController
             'versions.*.regex' => 'A version uses letters, digits, . _ - and "/" between parts, e.g. v1 or driver/v1.',
             'webhooks.*.name.regex' => 'A webhook name starts with a letter and uses letters, digits, . _ - : /, e.g. order.status_changed.',
             'webhooks.*.name.distinct' => 'Two webhooks have this name.',
+            'auto_login.*.url.required_without' => 'The login endpoint is required.',
+            'auto_login.*.steps.*.url.required' => 'The endpoint of this step is required.',
+            'auto_login.*.steps.*.extract.*.var.regex' => 'A variable name uses letters, digits, _ . - and starts with a letter or _.',
         ]);
 
         $validator->after(function ($validator) use ($input) {
@@ -569,9 +591,17 @@ class DashboardController
                 $validator->errors()->add('default', 'The default version must be one of the versions.');
             }
             foreach ((array) ($input['auto_login'] ?? []) as $index => $login) {
-                foreach ((array) ($login['fields'] ?? []) as $field => $label) {
-                    if (! is_string($field) || ! preg_match('/^[A-Za-z0-9_.-]+$/', $field)) {
-                        $validator->errors()->add("auto_login.{$index}.fields", 'Login field names use letters, digits, . _ - only.');
+                // The login's own fields, then the fields and the extra values of each of its steps.
+                $maps = ["auto_login.{$index}.fields" => $login['fields'] ?? []];
+                foreach (is_array($login['steps'] ?? null) ? $login['steps'] : [] as $s => $step) {
+                    $maps["auto_login.{$index}.steps.{$s}.fields"] = $step['fields'] ?? [];
+                    $maps["auto_login.{$index}.steps.{$s}.send"] = $step['send'] ?? [];
+                }
+                foreach ($maps as $key => $map) {
+                    foreach (array_keys((array) $map) as $field) {
+                        if (! is_string($field) || ! preg_match(Logins::FIELD, $field)) {
+                            $validator->errors()->add($key, 'Login field names use letters, digits, . _ - only.');
+                        }
                     }
                 }
             }
@@ -628,7 +658,13 @@ class DashboardController
             }, $values['webhooks']));
         }
         if (isset($values['auto_login'])) {
-            $values['auto_login'] = array_values(array_map(fn (array $login) => array_filter($login, fn ($v) => $v !== null && $v !== ''), $values['auto_login']));
+            $values['auto_login'] = array_values(array_map(function (array $login) {
+                if (is_array($login['steps'] ?? null)) {
+                    $login['steps'] = array_values(array_map(fn (array $step) => array_filter($step, fn ($v) => $v !== null && $v !== '' && $v !== []), $login['steps']));
+                }
+
+                return array_filter($login, fn ($v) => $v !== null && $v !== '');
+            }, $values['auto_login']));
         }
 
         return $values;

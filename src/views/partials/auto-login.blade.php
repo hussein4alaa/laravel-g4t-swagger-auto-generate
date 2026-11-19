@@ -69,6 +69,17 @@
             font: inherit;
         }
 
+        .g4t-login-dialog .g4t-login-step {
+            margin: 0;
+            color: #4b5563;
+            font-size: 13px;
+        }
+
+        .g4t-login-dialog #g4t-login-fields {
+            display: grid;
+            gap: 12px;
+        }
+
         .g4t-login-dialog .g4t-login-error {
             margin: 0;
             color: #b91c1c;
@@ -105,15 +116,19 @@
     <dialog class="g4t-login-dialog" id="g4t-login-dialog">
         <form id="g4t-login-form" method="dialog">
             <h2>Login</h2>
-            @foreach ($autoLogin['fields'] as $field => $label)
-                <label>
-                    {{ $label }}
-                    <input name="{{ $field }}"
-                        type="{{ str_contains($field, 'password') ? 'password' : (str_contains($field, 'email') ? 'email' : 'text') }}"
-                        value="{{ $autoLogin['prefill'][$field] ?? '' }}"
-                        autocomplete="{{ str_contains($field, 'password') ? 'current-password' : 'username' }}" required>
-                </label>
-            @endforeach
+            {{-- With several steps (send a code, then verify it) the script swaps these fields for each step's. --}}
+            <p class="g4t-login-step" id="g4t-login-step" hidden></p>
+            <div id="g4t-login-fields">
+                @foreach ($autoLogin['fields'] as $field => $label)
+                    <label>
+                        {{ $label }}
+                        <input name="{{ $field }}"
+                            type="{{ str_contains($field, 'password') ? 'password' : (str_contains($field, 'email') ? 'email' : 'text') }}"
+                            value="{{ $autoLogin['prefill'][$field] ?? '' }}"
+                            autocomplete="{{ str_contains($field, 'password') ? 'current-password' : 'username' }}" required>
+                    </label>
+                @endforeach
+            </div>
             <p class="g4t-login-error" id="g4t-login-error" hidden></p>
             <div class="g4t-login-actions">
                 <button type="button" id="g4t-login-cancel">Cancel</button>
@@ -123,15 +138,24 @@
     </dialog>
 
     <script>
+        @verbatim
         window.G4TAuth = (function(settings) {
             var storageKey = 'g4t-swagger:token:' + settings.url;
             var listeners = [];
             var fallbackPaths = ['token', 'access_token', 'accessToken', 'plainTextToken', 'data.token',
                 'data.access_token', 'data.accessToken', 'data.plainTextToken', 'token.plainTextToken'
             ];
+            // One request, or several steps (send a code, then verify it); the token comes from the last one.
+            var steps = Array.isArray(settings.steps) && settings.steps.length ? settings.steps : [{
+                name: '', url: settings.url, method: settings.method, fields: settings.fields, prefill: settings.prefill, send: {}, extract: []
+            }];
+            var stepIndex = 0;
+            var vars = {};
             var toggle = document.getElementById('g4t-login-toggle');
             var dialog = document.getElementById('g4t-login-dialog');
             var form = document.getElementById('g4t-login-form');
+            var fieldsBox = document.getElementById('g4t-login-fields');
+            var stepLabel = document.getElementById('g4t-login-step');
             var errorBox = document.getElementById('g4t-login-error');
             var submit = document.getElementById('g4t-login-submit');
 
@@ -168,6 +192,17 @@
                 return null;
             }
 
+            /** A value a step keeps from its response: status, headers.name or body.path.to.value. */
+            function valueAt(response, payload, from) {
+                if (from === 'status') {
+                    return response.status;
+                }
+                if (from.indexOf('headers.') === 0) {
+                    return response.headers.get(from.slice(8));
+                }
+                return from === 'body' ? payload : dig(payload, from.slice(5));
+            }
+
             function errorMessage(payload, status) {
                 if (payload && payload.errors && typeof payload.errors === 'object') {
                     return Object.keys(payload.errors).map(function(key) {
@@ -180,6 +215,32 @@
             function render() {
                 toggle.textContent = token ? '✓ Logged in · Logout' : '🔒 Login';
                 toggle.classList.toggle('is-authenticated', !!token);
+            }
+
+            /** Shows the fields of one step. */
+            function showStep(index) {
+                stepIndex = index;
+                var step = steps[index];
+                fieldsBox.textContent = '';
+                Object.keys(step.fields || {}).forEach(function(name) {
+                    var label = document.createElement('label');
+                    var input = document.createElement('input');
+                    label.appendChild(document.createTextNode(step.fields[name]));
+                    input.name = name;
+                    input.type = /password/i.test(name) ? 'password' : /email/i.test(name) ? 'email' : 'text';
+                    input.autocomplete = /password/i.test(name) ? 'current-password' : 'username';
+                    input.required = true;
+                    input.value = vars[name] != null ? vars[name] : ((step.prefill || {})[name] || '');
+                    label.appendChild(input);
+                    fieldsBox.appendChild(label);
+                });
+                stepLabel.hidden = steps.length < 2;
+                stepLabel.textContent = 'Step ' + (index + 1) + ' of ' + steps.length + (step.name ? ' · ' + step.name : '');
+                submit.textContent = index < steps.length - 1 ? 'Continue' : 'Login';
+                var first = fieldsBox.querySelector('input');
+                if (first && dialog.open) {
+                    first.focus();
+                }
             }
 
             function setToken(value) {
@@ -202,6 +263,8 @@
                     return;
                 }
                 showError('');
+                vars = {};
+                showStep(0);
                 dialog.showModal();
             });
 
@@ -211,15 +274,31 @@
 
             form.addEventListener('submit', function(event) {
                 event.preventDefault();
+                var step = steps[stepIndex];
                 var body = {};
+                var unknown = [];
+                // What the reader typed is a variable too, so a later step can send it again.
                 new FormData(form).forEach(function(value, key) {
-                    body[key] = value;
+                    body[key] = vars[key] = value;
                 });
+                Object.keys(step.send || {}).forEach(function(name) {
+                    body[name] = String(step.send[name]).replace(/\{\{\s*([\w.-]+)\s*\}\}/g, function(match, key) {
+                        if (vars[key] == null) {
+                            unknown.push(match);
+                            return '';
+                        }
+                        return typeof vars[key] === 'object' ? JSON.stringify(vars[key]) : String(vars[key]);
+                    });
+                });
+                if (unknown.length) {
+                    showError('Unknown value ' + unknown.join(', ') + ': no earlier step keeps it and no field has this name.');
+                    return;
+                }
 
                 submit.disabled = true;
                 showError('');
-                fetch(settings.url, {
-                        method: settings.method,
+                fetch(step.url, {
+                        method: step.method || 'POST',
                         headers: {
                             'Accept': 'application/json',
                             'Content-Type': 'application/json',
@@ -233,6 +312,17 @@
                         }).then(function(payload) {
                             if (!response.ok) {
                                 throw new Error(errorMessage(payload, response.status));
+                            }
+                            (step.extract || []).forEach(function(extract) {
+                                var value = valueAt(response, payload, extract.from);
+                                if (value === undefined || value === null) {
+                                    throw new Error('The response has no ' + extract.from + ' to keep as {{' + extract['var'] + '}}.');
+                                }
+                                vars[extract['var']] = value;
+                            });
+                            if (stepIndex < steps.length - 1) {
+                                showStep(stepIndex + 1);
+                                return;
                             }
                             var found = findToken(payload);
                             if (!found) {
@@ -263,6 +353,7 @@
                     listeners.push(listener);
                 }
             };
+        @endverbatim
         })({!! json_encode($autoLogin, JSON_UNESCAPED_SLASHES | JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) !!});
     </script>
 @endif

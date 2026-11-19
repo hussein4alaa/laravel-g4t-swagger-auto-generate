@@ -369,8 +369,13 @@
     .m-delete { color: var(--m-delete-fg); background: var(--m-delete-bg); }
     .m-flow { color: var(--accent); background: color-mix(in oklab, var(--accent) 12%, transparent); }
     .g4t-nav-method.m-flow { background: transparent; }
-    .g4t-flow-steps { display: grid; gap: 8px; margin: 0; padding: 0; list-style: none; }
-    .g4t-flow-step { display: grid; gap: 8px; padding: 10px 12px; border: 1px solid var(--border); border-inline-start: 3px solid var(--border); border-radius: 8px; background: var(--surface); min-width: 0; }
+    .g4t-login-steps { display: flex; flex-wrap: wrap; gap: 6px 14px; margin: 0; padding: 0; list-style: none; font-size: 12.5px; color: var(--text-3); }
+    .g4t-login-steps li { display: inline-flex; align-items: center; gap: 6px; min-width: 0; }
+    .g4t-login-steps li.is-current { color: var(--text); font-weight: 600; }
+    .g4t-login-steps li.is-current .g4t-flow-num { background: var(--accent); color: #fff; }
+    .g4t-login-steps li.is-done { color: var(--text-2); }
+    .g4t-flow-steps { display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px; margin: 0; padding: 0; list-style: none; }
+    .g4t-flow-step { display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px; padding: 10px 12px; border: 1px solid var(--border); border-inline-start: 3px solid var(--border); border-radius: 8px; background: var(--surface); min-width: 0; }
     .g4t-flow-step.is-ok { border-inline-start-color: var(--ok-fg, #15803d); }
     .g4t-flow-step.is-fail { border-inline-start-color: var(--err-fg); }
     .g4t-flow-step.is-busy { border-inline-start-color: var(--accent); }
@@ -380,9 +385,11 @@
     .g4t-flow-path { word-break: break-all; text-align: start; font-weight: 500; }
     .g4t-flow-summary { font-size: 13px; min-width: 0; }
     .g4t-flow-state { display: inline-flex; align-items: center; gap: 8px; margin-inline-start: auto; }
-    .g4t-flow-sets { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 12.5px; color: var(--text-2); }
+    .g4t-flow-sets { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 12.5px; color: var(--text-2); min-width: 0; }
+    .g4t-flow-sets > span { min-width: 0; overflow-wrap: anywhere; }
     .g4t-flow-detail > summary { cursor: pointer; font-size: 12.5px; color: var(--text-2); }
-    .g4t-flow-detail { display: grid; gap: 8px; }
+    .g4t-flow-detail { display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px; min-width: 0; }
+    .g4t-flow-detail > .g4t-code { max-width: 100%; }
     .g4t-flow-detail[open] > summary { margin-bottom: 8px; }
     .g4t-flow-desc { white-space: pre-line; }
     .g4t-nav-method.m-get, .g4t-nav-method.m-post, .g4t-nav-method.m-put, .g4t-nav-method.m-patch, .g4t-nav-method.m-delete { background: transparent; }

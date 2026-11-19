@@ -4,6 +4,7 @@ namespace G4T\Swagger\Controllers;
 
 use G4T\Swagger\Support\CachedSpec;
 use G4T\Swagger\Support\Flows;
+use G4T\Swagger\Support\Logins;
 use G4T\Swagger\Support\PartnerLinks;
 use G4T\Swagger\Swagger;
 use Illuminate\Http\Response;
@@ -181,7 +182,7 @@ class DocumentationController
      * Every configured login: swagger.auto_login is one login or a list of them (customer, admin, …).
      * Logins without a URL are left out.
      *
-     * @return list<array{name: string, url: string, method: string, fields: array<string, string>, tokenPath: ?string, scheme: string, prefill: array<string, string>}>
+     * @return list<array{name: string, url: string, method: string, fields: array<string, string>, tokenPath: ?string, scheme: string, prefill: array<string, string>, steps: list<array<string, mixed>>}>
      */
     private function autoLogins(): array
     {
@@ -198,31 +199,37 @@ class DocumentationController
     }
 
     /**
-     * Settings for one Login button, or null when it has no URL.
+     * Settings for one Login button, or null when it has no URL. "steps" holds every request of the login
+     * ({@see Logins}); url, method, fields and prefill are those of the first one.
      *
      * @param  array<string, mixed>  $login
-     * @return array{name: string, url: string, method: string, fields: array<string, string>, tokenPath: ?string, scheme: string, prefill: array<string, string>}|null
+     * @return array{name: string, url: string, method: string, fields: array<string, string>, tokenPath: ?string, scheme: string, prefill: array<string, string>, steps: list<array<string, mixed>>}|null
      */
     private function autoLoginSettings(array $login, int $index): ?array
     {
-        if (blank($login['url'] ?? null)) {
+        $steps = [];
+        foreach (Logins::steps($login) as $step) {
+            $step['url'] = preg_match('#^https?://#i', $step['url']) ? $step['url'] : url($step['url']);
+            // Never ship pre-filled credentials outside the local environment.
+            $step['prefill'] = app()->isLocal() ? $step['prefill'] : [];
+            $steps[] = $step;
+        }
+        if ($steps === []) {
             return null;
         }
 
-        $url = (string) $login['url'];
         $schemes = array_keys((array) config('swagger.security_schemes', []));
         $scheme = (string) ($login['security_scheme'] ?? '');
-        $fields = array_filter((array) ($login['fields'] ?? []), 'is_string');
 
         return [
             'name' => filled($login['name'] ?? null) ? (string) $login['name'] : 'Login '.($index + 1),
-            'url' => preg_match('#^https?://#i', $url) ? $url : url($url),
-            'method' => strtoupper((string) ($login['method'] ?? 'POST')),
-            'fields' => $fields !== [] ? $fields : ['email' => 'Email', 'password' => 'Password'],
+            'url' => $steps[0]['url'],
+            'method' => $steps[0]['method'],
+            'fields' => $steps[0]['fields'],
             'tokenPath' => filled($login['token_path'] ?? null) ? (string) $login['token_path'] : null,
             'scheme' => in_array($scheme, $schemes, true) ? $scheme : (string) ($schemes[0] ?? 'bearerAuth'),
-            // Never ship pre-filled credentials outside the local environment.
-            'prefill' => app()->isLocal() ? array_filter((array) ($login['prefill'] ?? []), 'is_string') : [],
+            'prefill' => $steps[0]['prefill'],
+            'steps' => $steps,
         ];
     }
 

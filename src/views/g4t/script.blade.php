@@ -57,7 +57,7 @@
         theme: store.get('theme', S.defaultTheme || 'default'),
         lang: store.get('lang', 'en') === 'ar' ? 'ar' : 'en',
         drawer: false, appearOpen: false, authMenuOpen: false,
-        loginOpen: false, loggingIn: false, loginError: '', loginValues: {}, loginTab: S.autoLogin ? 'credentials' : 'token', loginIndex: 0,
+        loginOpen: false, loggingIn: false, loginError: '', loginValues: {}, loginStep: 0, loginVars: {}, loginTab: S.autoLogin ? 'credentials' : 'token', loginIndex: 0,
         token: readToken(), server: null, active: null,
         expanded: {}, trying: {}, respTab: {}, exTab: {}, respView: {}, ctype: {},
         bodies: {}, inputs: {}, forms: {}, files: {}, busy: {}, results: {},
@@ -513,21 +513,40 @@
     }
 
     function currentLogin() { return LOGINS[state.loginIndex] || LOGINS[0] || null; }
+    /** The requests of a login, in order: one, or several steps (send a code, then verify it). */
+    function loginSteps(login) {
+        return Array.isArray(login.steps) && login.steps.length ? login.steps : [{ name: '', url: login.url, method: login.method, fields: login.fields, prefill: login.prefill, send: {}, extract: [] }];
+    }
+    function resetLoginSteps() { state.loginStep = 0; state.loginVars = {}; }
+    function loginFieldValue(step, name) { return state.loginValues[name] != null ? state.loginValues[name] : ((step.prefill || {})[name] || ''); }
+    /** A value a step keeps from its response: status, headers.name or body.path.to.value. */
+    function loginValueAt(response, payload, from) {
+        if (from === 'status') { return response.status; }
+        if (from.indexOf('headers.') === 0) { return response.headers.get(from.slice(8)); }
+        return from.split('.').slice(1).reduce(function (v, k) { return v !== null && typeof v === 'object' && Object.prototype.hasOwnProperty.call(v, k) ? v[k] : undefined; }, payload);
+    }
     function renderLogin() {
         if (!state.loginOpen) { els.login.innerHTML = ''; return; }
-        var auto = currentLogin(), tokenTab = !auto || state.loginTab === 'token', fieldsHtml = '', intro, submitLabel;
+        var auto = currentLogin(), tokenTab = !auto || state.loginTab === 'token', fieldsHtml = '', restart = '', intro, submitLabel;
         if (tokenTab) {
             fieldsHtml = credFieldsHtml();
             intro = 'Stored in this browser and sent with protected requests, the way each scheme expects. A leading “Bearer ” is removed from tokens; leave a field empty to remove it.';
             submitLabel = hasAnyCred() ? 'Save' : 'Authorize';
         } else {
-            Object.keys(auto.fields || {}).forEach(function (name, i) {
+            var steps = loginSteps(auto), stepIndex = Math.min(state.loginStep, steps.length - 1), step = steps[stepIndex], lastStep = stepIndex === steps.length - 1;
+            Object.keys(step.fields || {}).forEach(function (name, i) {
                 var isPassword = /password/i.test(name), isEmail = /email/i.test(name);
-                var value = state.loginValues[name] != null ? state.loginValues[name] : ((auto.prefill || {})[name] || '');
-                fieldsHtml += '<label>' + esc(auto.fields[name]) + '<input name="' + esc(name) + '" data-bind="login" type="' + (isPassword ? 'password' : isEmail ? 'email' : 'text') + '" autocomplete="' + (isPassword ? 'current-password' : 'username') + '" required value="' + esc(value) + '"' + (i === 0 ? ' data-autofocus' : '') + '></label>';
+                var value = loginFieldValue(step, name);
+                fieldsHtml += '<label>' + esc(step.fields[name]) + '<input name="' + esc(name) + '" data-bind="login" type="' + (isPassword ? 'password' : isEmail ? 'email' : 'text') + '" autocomplete="' + (isPassword ? 'current-password' : 'username') + '" required value="' + esc(value) + '"' + (i === 0 ? ' data-autofocus' : '') + '></label>';
             });
-            intro = esc(auto.method + ' ' + auto.url.replace(location.origin, '')) + ' — the token is stored in this browser and sent with ' + (LOGINS.length > 1 ? 'requests that use ' + esc(auto.scheme) : 'protected requests') + '.';
-            submitLabel = LOGINS.length > 1 ? 'Log in as ' + auto.name : 'Log in';
+            if (steps.length > 1) {
+                fieldsHtml = '<ol class="g4t-login-steps" aria-label="Steps">' + steps.map(function (st, i) {
+                    return '<li' + (i === stepIndex ? ' class="is-current" aria-current="step"' : i < stepIndex ? ' class="is-done"' : '') + '><span class="g4t-flow-num">' + (i < stepIndex ? '✓' : i + 1) + '</span><span dir="auto">' + esc(st.name || 'Step ' + (i + 1)) + '</span></li>';
+                }).join('') + '</ol>' + fieldsHtml;
+            }
+            intro = esc(step.method + ' ' + step.url.replace(location.origin, '')) + ' — ' + (lastStep ? '' : 'step ' + (stepIndex + 1) + ' of ' + steps.length + '; after the last one ') + 'the token is stored in this browser and sent with ' + (LOGINS.length > 1 ? 'requests that use ' + esc(auto.scheme) : 'protected requests') + '.';
+            submitLabel = !lastStep ? 'Continue' : LOGINS.length > 1 ? 'Log in as ' + auto.name : 'Log in';
+            restart = stepIndex > 0 ? '<button type="button" class="g4t-btn" data-action="login-restart" style="margin-inline-end:auto">Start over</button>' : '';
             if (LOGINS.length > 1) {
                 fieldsHtml = '<div class="g4t-login-picker" role="radiogroup" aria-label="Log in as">' + LOGINS.map(function (login, i) {
                     var signedIn = !!credOf(login.scheme);
@@ -541,12 +560,12 @@
         els.login.innerHTML = '<div class="g4t-modal" data-action="close-login-backdrop"><div id="g4t-login-dialog" class="g4t-login-dialog" role="dialog" aria-modal="true" aria-labelledby="g4t-login-title"><form id="g4t-login-form" novalidate>' +
             '<div style="display:grid;gap:4px"><h2 id="g4t-login-title">' + (tokenTab ? 'Authorize' : 'Log in') + '</h2><p>' + intro + '</p></div>' + tabs + fieldsHtml +
             (state.loginError ? '<p id="g4t-login-error" class="g4t-login-error" role="alert">' + esc(state.loginError) + '</p>' : '') +
-            '<div class="g4t-actions"><button type="button" id="g4t-login-cancel" class="g4t-btn" data-action="close-login">Cancel</button><button type="submit" id="g4t-login-submit" class="g4t-btn g4t-btn-primary"' + (state.loggingIn ? ' disabled' : '') + '>' + (state.loggingIn ? spinner() + 'Logging in…' : submitLabel) + '</button></div></form></div></div>';
+            '<div class="g4t-actions">' + restart + '<button type="button" id="g4t-login-cancel" class="g4t-btn" data-action="close-login">Cancel</button><button type="submit" id="g4t-login-submit" class="g4t-btn g4t-btn-primary"' + (state.loggingIn ? ' disabled' : '') + '>' + (state.loggingIn ? spinner() + (submitLabel === 'Continue' ? 'Sending…' : 'Logging in…') : submitLabel) + '</button></div></form></div></div>';
         var focus = els.login.querySelector('[data-autofocus]');
         if (focus && !state.loggingIn) { setTimeout(function () { focus.focus(); }, 20); }
     }
     function openLogin(tab) {
-        state.loginOpen = true; state.loginError = ''; state.authMenuOpen = false; state.loginValues = {}; state.credDraft = {};
+        state.loginOpen = true; state.loginError = ''; state.authMenuOpen = false; state.loginValues = {}; state.credDraft = {}; resetLoginSteps();
         state.loginIndex = Math.min(Number(store.get('loginIndex', 0)) || 0, Math.max(LOGINS.length - 1, 0));
         state.loginTab = S.autoLogin ? (tab || 'credentials') : 'token';
         renderAuth(); renderLogin();
@@ -582,18 +601,30 @@
             toast('Authorization saved · sent with protected requests');
             return;
         }
-        var body = {}, login = currentLogin();
-        Object.keys(login.fields || {}).forEach(function (name) {
-            body[name] = state.loginValues[name] != null ? state.loginValues[name] : ((login.prefill || {})[name] || '');
+        var body = {}, login = currentLogin(), steps = loginSteps(login), stepIndex = Math.min(state.loginStep, steps.length - 1), step = steps[stepIndex], vars = state.loginVars, unknown = [];
+        // What the reader typed is a variable too, so a later step can send {{phone}} again.
+        Object.keys(step.fields || {}).forEach(function (name) { body[name] = vars[name] = loginFieldValue(step, name); });
+        Object.keys(step.send || {}).forEach(function (name) {
+            body[name] = String(step.send[name]).replace(/\{\{\s*([\w.-]+)\s*\}\}/g, function (m, key) {
+                if (vars[key] == null) { unknown.push(m); return ''; }
+                return typeof vars[key] === 'object' ? JSON.stringify(vars[key]) : String(vars[key]);
+            });
         });
+        if (unknown.length) { state.loginError = 'Unknown value ' + unknown.join(', ') + ': no earlier step keeps it and no field has this name.'; renderLogin(); return; }
         state.loggingIn = true; state.loginError = ''; renderLogin();
-        fetch(login.url, { method: login.method || 'POST', headers: { 'Accept': 'application/json', 'Content-Type': 'application/json', 'X-Requested-With': 'XMLHttpRequest' }, body: JSON.stringify(body) })
+        fetch(step.url, { method: step.method || 'POST', headers: { 'Accept': 'application/json', 'Content-Type': 'application/json', 'X-Requested-With': 'XMLHttpRequest' }, body: JSON.stringify(body) })
             .then(function (response) {
                 return response.json().catch(function () { return null; }).then(function (payload) {
                     if (!response.ok) { throw new Error(loginErrorMessage(payload, response.status)); }
+                    (step.extract || []).forEach(function (x) {
+                        var value = loginValueAt(response, payload, x.from);
+                        if (value === undefined || value === null) { throw new Error('The response has no ' + x.from + ' to keep as {{' + x['var'] + '}}.'); }
+                        vars[x['var']] = value;
+                    });
+                    if (stepIndex < steps.length - 1) { state.loggingIn = false; state.loginStep = stepIndex + 1; renderLogin(); return; }
                     var token = findToken(payload);
                     if (!token) { throw new Error('Logged in, but no token was found in the response. Set swagger.auto_login.token_path.'); }
-                    state.loggingIn = false; state.loginOpen = false; state.loginValues = {}; state.results = {};
+                    state.loggingIn = false; state.loginOpen = false; state.loginValues = {}; state.results = {}; resetLoginSteps();
                     renderLogin();
                     // The first bearer scheme keeps the shared token (also used by Swagger UI / Scalar); others are credentials of their scheme.
                     if (login.scheme === primaryBearer() || LOGINS.length < 2) {
@@ -984,7 +1015,7 @@
                     : kind === 'apiKey' ? (e[1].in === 'query' ? guideCode('?' + e[1].name + '=<key>') : guideCode(e[1].name + ': <key>')) : esc(schemeDescription(e[1]));
                 return '<li><b>' + esc(e[0]) + '</b> · ' + sent + '</li>';
             }).join('');
-            var loginLine = function (l) { return guideCode(l.method + ' ' + l.url.replace(location.origin, '')) + ' with ' + Object.keys(l.fields || {}).map(guideCode).join(', ') + '; the token is ' + (l.tokenPath ? 'at ' + guideCode(l.tokenPath) : 'in ' + guideCode('token') + ' / ' + guideCode('access_token')) + ' of the response'; };
+            var loginLine = function (l) { return loginSteps(l).map(function (st) { var names = Object.keys(st.fields || {}).concat(Object.keys(st.send || {})); return guideCode(st.method + ' ' + st.url.replace(location.origin, '')) + (names.length ? ' with ' + names.map(guideCode).join(', ') : ''); }).join(', then ') + '; the token is ' + (l.tokenPath ? 'at ' + guideCode(l.tokenPath) : 'in ' + guideCode('token') + ' / ' + guideCode('access_token')) + ' of the response'; };
             var login = LOGINS.length > 1
                 ? '<p>Get a token from one of the logins, each for its own scheme:</p><ul>' + LOGINS.map(function (l) { return '<li><b>' + esc(l.name) + '</b> (' + esc(l.scheme) + ') · ' + loginLine(l) + '</li>'; }).join('') + '</ul><p><button type="button" class="g4t-link-btn" data-action="open-login">Log in here</button> and requests send the right token.</p>'
                 : LOGINS.length ? '<p>Get a token with ' + loginLine(LOGINS[0]) + '. <button type="button" class="g4t-link-btn" data-action="open-login">Log in here</button> and every request sends it.</p>'
@@ -1945,7 +1976,8 @@
             case 'logout': state.creds = {}; saveJson('creds', state.creds); setToken(null, 'Logged out · credentials cleared'); break;
             case 'open-login': openLogin('credentials'); break;
             case 'open-token': openLogin('token'); break;
-            case 'login-tab': state.loginTab = value; state.loginError = ''; renderLogin(); break;
+            case 'login-tab': state.loginTab = value; state.loginError = ''; resetLoginSteps(); renderLogin(); break;
+            case 'login-restart': resetLoginSteps(); state.loginError = ''; renderLogin(); break;
             case 'paste-token':
                 if (navigator.clipboard && navigator.clipboard.readText) {
                     var pasteScheme = el.getAttribute('data-scheme') || primaryBearer();
@@ -2023,7 +2055,7 @@
             case 'toggle-download': state.downloadOpen = !state.downloadOpen; state.appearOpen = false; state.authMenuOpen = false; renderDownload(); renderAppear(); renderAuth(); break;
             case 'download': downloadSpec(value); break;
             case 'export': exportClient(value); break;
-            case 'login-pick': state.loginIndex = Number(value) || 0; store.set('loginIndex', String(state.loginIndex)); state.loginValues = {}; state.loginError = ''; renderLogin(); break;
+            case 'login-pick': state.loginIndex = Number(value) || 0; store.set('loginIndex', String(state.loginIndex)); state.loginValues = {}; state.loginError = ''; resetLoginSteps(); renderLogin(); break;
             case 'lang': setLang(value); break;
             case 'toggle-env-menu': state.envMenuOpen = !state.envMenuOpen; state.downloadOpen = false; state.appearOpen = false; state.authMenuOpen = false; renderEnvMenu(); renderDownload(); renderAppear(); renderAuth(); break;
             case 'env-switch': switchEnv(value); break;

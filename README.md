@@ -463,6 +463,36 @@ Point `auto_login` at your login endpoint and a **Log in** button appears in eve
 ],
 ```
 
+**Logins in several steps.** An OTP login sends a code first and verifies it after. Give the login `steps` instead of `url` and `fields`: the dialog shows one step at a time, and the token is read from the last step's response. It works in all three UIs.
+
+```php
+"auto_login" => [
+    "name" => "Customer",
+    "token_path" => "token",
+    "security_scheme" => "bearerAuth",
+    "steps" => [
+        [
+            "name" => "Send the code",
+            "url" => "/api/auth/send-otp",
+            "fields" => ["phone" => "Phone"],
+            // Kept from the response for the next steps: body.path.to.value, headers.name or status.
+            "extract" => [["var" => "session_token", "from" => "body.session_token"]],
+        ],
+        [
+            "name" => "Verify the code",
+            "url" => "/api/auth/verify-otp",
+            "fields" => ["code" => "Code"],
+            // Sent with the form without asking the reader; {{name}} is a kept value or an earlier field, like {{phone}}.
+            "send" => ["session_token" => "{{session_token}}"],
+        ],
+    ],
+],
+```
+
+- Each step has its own `url`, `method`, `fields` and `prefill`.
+- A step that fails stays open with the API's error, and **Start over** goes back to the first step.
+- On the dashboard's **Try it out logins** page, **Add step** turns a login into steps.
+
 ---
 
 ## 🛡️ Security schemes, headers and environments
@@ -580,7 +610,7 @@ Then open **`/swagger/dashboard`** (`SWAGGER_DASHBOARD_URL`). Sign-in uses the s
 | Global headers | Headers documented on every operation |
 | Environments | Shared environments with variables and headers |
 | Webhooks | Webhooks your API sends, their headers and payload ([above](#-webhooks)) |
-| Try it out logins | One or several logins, each with its fields and scheme |
+| Try it out logins | One or several logins, each with its fields and scheme, in one request or several steps |
 | Flows | Chained requests run in one click ([above](#-flows)) |
 | Generation | Response examples, error examples, schemas, web routes, prefixes, Spatie Query Builder |
 | Access | Docs on or off, Basic Auth and its credentials |
